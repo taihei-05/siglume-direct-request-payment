@@ -75,6 +75,43 @@ return {
 };
 ```
 
+Python:
+
+```py
+import os
+
+from siglume_direct_request_payment import create_direct_request_payment_challenge
+
+order = {
+    "id": "order_123",
+    "amount_minor": 1200,
+    "currency": "JPY",
+}
+
+challenge = create_direct_request_payment_challenge(
+    merchant="example_merchant",
+    amount_minor=order["amount_minor"],
+    currency=order["currency"],
+    secret=os.environ["SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET"],
+    nonce=f"{order['id']}-attempt_1",
+)
+
+orders.update(
+    order["id"],
+    {
+        "siglume_challenge_hash": challenge["challenge_hash"],
+        "siglume_payment_status": "pending",
+    },
+)
+
+return {
+    "order_id": order["id"],
+    "amount_minor": order["amount_minor"],
+    "currency": order["currency"],
+    "siglume_challenge": challenge["challenge"],
+}
+```
+
 Never calculate `amount_minor` from browser input.
 The nonce must be unique per order payment attempt and must not contain `:`.
 
@@ -99,6 +136,21 @@ const requirement = await siglume.createPaymentRequirement({
 });
 ```
 
+Python:
+
+```py
+from siglume_direct_request_payment import DirectRequestPaymentClient
+
+siglume = DirectRequestPaymentClient(auth_token=buyer_siglume_bearer_token)
+
+requirement = siglume.create_payment_requirement(
+    merchant="example_merchant",
+    amount_minor=order["amount_minor"],
+    currency=order["currency"],
+    challenge=order["siglume_challenge"],
+)
+```
+
 If Siglume returns `approve_transaction_request`, execute it first. Then execute
 the payment transaction and verify the receipt.
 
@@ -114,6 +166,20 @@ const payment = await siglume.executePaymentTransaction(requirement, {
 await siglume.verifyPaymentRequirement(requirement.requirement_id, {
   receipt_id: String(payment.receipt?.receipt_id ?? ""),
 });
+```
+
+Python:
+
+```py
+if requirement.get("approve_transaction_request"):
+    siglume.execute_allowance_transaction(requirement, await_finality=True)
+
+payment = siglume.execute_payment_transaction(requirement, await_finality=True)
+
+siglume.verify_payment_requirement(
+    requirement["requirement_id"],
+    receipt_id=str((payment.get("receipt") or {}).get("receipt_id") or ""),
+)
 ```
 
 ## 4. Fulfill from Webhook
@@ -139,6 +205,30 @@ if (event.type === "direct_payment.confirmed") {
     siglume_requirement_id: String(data.requirement_id ?? data.direct_payment_requirement_id ?? ""),
   });
 }
+```
+
+Python:
+
+```py
+import os
+
+from siglume_direct_request_payment import verify_direct_request_payment_webhook
+
+verified = verify_direct_request_payment_webhook(
+    os.environ["SIGLUME_WEBHOOK_SECRET"],
+    raw_request_body,
+    siglume_signature_header,
+)
+
+if verified["event"]["type"] == "direct_payment.confirmed":
+    data = verified["event"]["data"]
+    order = orders.find_by_challenge_hash(str(data.get("challenge_hash") or ""))
+    if not order:
+        raise RuntimeError("Unknown Siglume challenge hash")
+    orders.mark_paid_once(
+        order["id"],
+        siglume_requirement_id=str(data.get("requirement_id") or data.get("direct_payment_requirement_id") or ""),
+    )
 ```
 
 ## Failure Handling

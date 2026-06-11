@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "siglume-direct-request-payment"
+version = "0.1.0"
+description = "Python SDK for Siglume Direct Request Payment checkout integrations"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["httpx>=0.27,<1"]
+authors = [{name = "Siglume Contributors"}]
+keywords = ["siglume", "payment", "external-402", "checkout", "sdk"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/taihei-05/siglume-direct-request-payment"
+Documentation = "https://github.com/taihei-05/siglume-direct-request-payment#readme"
+Issues = "https://github.com/taihei-05/siglume-direct-request-payment/issues"
+
+[project.optional-dependencies]
+test = ["pytest>=8.0", "respx>=0.21"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["python_tests"]

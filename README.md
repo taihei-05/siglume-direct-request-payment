@@ -18,7 +18,12 @@ This SDK is intentionally separate from `@siglume/api-sdk`:
 npm install @siglume/direct-request-payment
 ```
 
-Node.js 18 or later is required.
+```bash
+pip install siglume-direct-request-payment
+```
+
+Node.js 18 or later is required for the TypeScript SDK. Python 3.11 or later is
+required for the Python SDK.
 
 ## Current Platform Contract
 
@@ -76,6 +81,22 @@ const challenge = await createDirectRequestPaymentChallenge({
 console.log(challenge.challenge);
 ```
 
+```py
+import os
+
+from siglume_direct_request_payment import create_direct_request_payment_challenge
+
+challenge = create_direct_request_payment_challenge(
+    merchant="example_merchant",
+    amount_minor=1200,
+    currency="JPY",
+    secret=os.environ["SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET"],
+    nonce="order_123-attempt_1",
+)
+
+print(challenge["challenge"])
+```
+
 The signed challenge binds:
 
 - merchant key
@@ -124,6 +145,33 @@ const verified = await siglume.verifyPaymentRequirement(requirement.requirement_
 console.log(verified.status);
 ```
 
+```py
+from siglume_direct_request_payment import DirectRequestPaymentClient
+
+siglume = DirectRequestPaymentClient(auth_token=buyer_siglume_bearer_token)
+
+requirement = siglume.create_payment_requirement(
+    merchant="example_merchant",
+    amount_minor=1200,
+    currency="JPY",
+    challenge=challenge_from_merchant_server,
+)
+
+if requirement.get("approve_transaction_request"):
+    siglume.execute_allowance_transaction(requirement, await_finality=True)
+
+payment = siglume.execute_payment_transaction(requirement, await_finality=True)
+receipt_id = str((payment.get("receipt") or {}).get("receipt_id") or "")
+
+verified = siglume.verify_payment_requirement(
+    requirement["requirement_id"],
+    receipt_id=receipt_id,
+    await_finality=False,
+)
+
+print(verified["status"])
+```
+
 ## Webhooks
 
 Your merchant system should treat Siglume webhooks as the durable delivery
@@ -144,6 +192,22 @@ const { event } = await verifyDirectRequestPaymentWebhook(
 if (event.type === "direct_payment.confirmed") {
   // Mark the order paid if event.data.challenge_hash/order mapping matches.
 }
+```
+
+```py
+import os
+
+from siglume_direct_request_payment import verify_direct_request_payment_webhook
+
+verified = verify_direct_request_payment_webhook(
+    os.environ["SIGLUME_WEBHOOK_SECRET"],
+    raw_request_body,
+    siglume_signature_header,
+)
+
+if verified["event"]["type"] == "direct_payment.confirmed":
+    # Mark the order paid if event.data.challenge_hash/order mapping matches.
+    pass
 ```
 
 ## Security Rules

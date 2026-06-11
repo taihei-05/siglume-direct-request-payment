@@ -1,3 +1,7 @@
 dist/
 node_modules/
 *.tgz
+build/
+*.egg-info/
+__pycache__/
+.pytest_cache/

@@ -1,6 +1,10 @@
 # API Reference
 
-## `createDirectRequestPaymentChallenge(input)`
+The TypeScript package is `@siglume/direct-request-payment`. The Python package
+is `siglume-direct-request-payment` and imports as
+`siglume_direct_request_payment`.
+
+## `createDirectRequestPaymentChallenge(input)` / `create_direct_request_payment_challenge(...)`
 
 Creates the merchant-signed challenge required by Siglume.
 
@@ -14,6 +18,18 @@ const challenge = await createDirectRequestPaymentChallenge({
 });
 ```
 
+```py
+import os
+
+challenge = create_direct_request_payment_challenge(
+    merchant="example_merchant",
+    amount_minor=1200,
+    currency="JPY",
+    secret=os.environ["SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET"],
+    nonce="order_123-attempt_1",
+)
+```
+
 Returns:
 
 - `challenge`: value to pass to Siglume
@@ -24,7 +40,7 @@ Returns:
 `nonce` must not contain `:` because the platform challenge string is delimited
 as `scheme:nonce:signature`.
 
-## `verifyDirectRequestPaymentChallenge(secret, input)`
+## `verifyDirectRequestPaymentChallenge(secret, input)` / `verify_direct_request_payment_challenge(...)`
 
 Verifies a challenge against merchant, amount, currency, and secret. This is
 useful in tests and internal checkout assertions.
@@ -45,7 +61,14 @@ const siglume = new DirectRequestPaymentClient({
 });
 ```
 
-### `createPaymentRequirement(input)`
+```py
+siglume = DirectRequestPaymentClient(
+    auth_token=buyer_siglume_bearer_token,
+    base_url="https://siglume.com/v1",
+)
+```
+
+### `createPaymentRequirement(input)` / `create_payment_requirement(...)`
 
 Calls:
 
@@ -55,7 +78,7 @@ POST /v1/market/api-store/direct-payments/requirements
 
 The SDK sends `mode="external_402"` internally.
 
-### `executeAllowanceTransaction(requirement)`
+### `executeAllowanceTransaction(requirement)` / `execute_allowance_transaction(...)`
 
 Executes `requirement.approve_transaction_request` through:
 
@@ -65,12 +88,12 @@ POST /v1/market/web3/transactions/execute-prepared
 
 Only call this when Siglume returned an approval transaction.
 
-### `executePaymentTransaction(requirement)`
+### `executePaymentTransaction(requirement)` / `execute_payment_transaction(...)`
 
 Executes `requirement.transaction_request` through the same prepared transaction
 route.
 
-### `verifyPaymentRequirement(requirement_id, input)`
+### `verifyPaymentRequirement(requirement_id, input)` / `verify_payment_requirement(...)`
 
 Calls:
 
@@ -84,6 +107,10 @@ POST /v1/market/api-store/direct-payments/requirements/{requirement_id}/verify
 - `verifyWebhookSignature(secret, body, header)`
 - `verifyDirectRequestPaymentWebhook(secret, body, header)`
 - `parseDirectRequestPaymentWebhookEvent(payload)`
+- Python equivalents use snake_case:
+  `build_webhook_signature_header`, `verify_webhook_signature`,
+  `verify_direct_request_payment_webhook`, and
+  `parse_direct_request_payment_webhook_event`.
 
 `verifyDirectRequestPaymentWebhook` verifies the signature and parses the event
 in one call.
