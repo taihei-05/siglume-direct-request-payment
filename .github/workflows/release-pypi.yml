@@ -12,6 +12,8 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment: pypi
+    env:
+      HAS_PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN != '' }}
     permissions:
       id-token: write
       contents: read
@@ -26,10 +28,10 @@ jobs:
       - run: python -m build
       - run: python -m twine check dist/*.whl dist/*.tar.gz
       - name: Publish to PyPI with API token
-        if: ${{ secrets.PYPI_API_TOKEN != '' }}
+        if: ${{ env.HAS_PYPI_API_TOKEN == 'true' }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
       - name: Publish to PyPI with trusted publishing
-        if: ${{ secrets.PYPI_API_TOKEN == '' }}
+        if: ${{ env.HAS_PYPI_API_TOKEN != 'true' }}
         uses: pypa/gh-action-pypi-publish@release/v1
