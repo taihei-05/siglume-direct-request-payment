@@ -9,12 +9,14 @@ is `siglume-direct-request-payment` and imports as
 | Name | Used by | Purpose |
 | --- | --- | --- |
 | `SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET` | merchant server | HMAC secret for order challenges |
+| `SIGLUME_MERCHANT_AUTH_TOKEN` | merchant setup helper | merchant Siglume bearer token for self-service setup |
 | `SIGLUME_AUTH_TOKEN` | buyer payment helper | buyer Siglume bearer token for API calls |
 | `SIGLUME_API_BASE` | optional | API base URL override; defaults to `https://siglume.com/v1` |
 | `SIGLUME_WEBHOOK_SECRET` | merchant server | webhook signing secret returned as `whsec_...` |
 
-Do not use a Developer Portal `cli_` API key as `SIGLUME_AUTH_TOKEN`. Direct
-Request Payment requirement creation is buyer-authenticated.
+Do not use a Developer Portal `cli_` API key as either auth token. Merchant
+setup is merchant-JWT authenticated; payment requirement creation is
+buyer-JWT authenticated.
 
 ## `createDirectRequestPaymentChallenge(input)` / `create_direct_request_payment_challenge(...)`
 
@@ -66,6 +68,103 @@ Returns the `sha256:`-prefixed hash for an existing challenge string.
 Returns the SDK-side request hash material for merchant, amount, currency, and
 challenge. This is mostly useful for tests and internal assertions.
 
+## `DirectRequestPaymentMerchantClient`
+
+Use this client with the merchant's Siglume bearer token. It is the self-service
+setup surface for an external merchant integrating Direct Request Payment.
+
+```ts
+const merchant = new DirectRequestPaymentMerchantClient({
+  auth_token: merchantSiglumeBearerToken,
+  base_url: "https://siglume.com/v1",
+});
+```
+
+```py
+merchant = DirectRequestPaymentMerchantClient(
+    auth_token=merchant_siglume_bearer_token,
+    base_url="https://siglume.com/v1",
+)
+```
+
+### `setupCheckout(input)` / `setup_checkout(...)`
+
+High-level setup for most integrations. It calls merchant setup, billing mandate
+preparation, and webhook subscription creation.
+
+Input:
+
+- `merchant`: self-service merchant key, 3-64 chars using lowercase letters,
+  numbers, `_`, or `-`
+- `display_name`: optional public merchant name
+- `billing_plan`: `launch`, `starter`, `growth`, or `pro`
+- `billing_currency`: `JPY`; `USD` requires agreed USD/USDC billing terms
+- `webhook_callback_url`: HTTPS callback URL for signed payment events
+- `max_amount_minor`: optional billing mandate cap
+
+Returns:
+
+- `merchant`: merchant account setup response
+- `billing_mandate`: billing mandate preparation response, when requested
+- `webhook_subscription`: webhook subscription response, when created
+- `env`: server environment values to store, including returned secrets
+
+Secrets are returned only when created or rotated. Existing secrets are not
+replayed by `getMerchant` / `get_merchant`.
+
+### `setupMerchant(input)` / `setup_merchant(...)`
+
+Calls:
+
+```text
+POST /v1/market/api-store/direct-payments/merchants
+```
+
+Creates or updates the merchant account for the authenticated merchant user.
+
+### `getMerchant(merchant)` / `get_merchant(merchant)`
+
+Calls:
+
+```text
+GET /v1/market/api-store/direct-payments/merchants/{merchant}
+```
+
+Returns setup and billing status without returning the challenge secret.
+
+### `rotateChallengeSecret(merchant)` / `rotate_challenge_secret(merchant)`
+
+Calls:
+
+```text
+POST /v1/market/api-store/direct-payments/merchants/{merchant}/challenge-secret/rotate
+```
+
+Returns the new challenge secret once.
+
+### `prepareBillingMandate(merchant, input)` / `prepare_billing_mandate(...)`
+
+Calls:
+
+```text
+POST /v1/market/api-store/direct-payments/merchants/{merchant}/billing-mandate
+```
+
+Creates or reuses the merchant billing mandate. If the returned mandate requires
+wallet approval, complete that Siglume wallet step before accepting payments.
+
+### `createWebhookSubscription(input)` / `create_webhook_subscription(...)`
+
+Calls:
+
+```text
+POST /v1/market/webhooks/subscriptions
+```
+
+Defaults event types to `direct_payment.confirmed` and
+`direct_payment.spent`. The returned `signing_secret` is shown only at creation
+or rotation.
+
 ## `DirectRequestPaymentClient`
 
 Thin wrapper around the current Siglume Direct Request Payment HTTP contract.
@@ -103,9 +202,9 @@ Input:
 
 - `merchant`: Siglume merchant key
 - `amount_minor`: positive integer in minor currency units
-- `currency`: `JPY` or individually agreed `USD`
+- `currency`: `JPY` or `USD` when enabled for the merchant account
 - `challenge`: merchant-signed challenge string
-- `token_symbol`: optional `JPYC` or individually agreed `USDC`
+- `token_symbol`: optional `JPYC` or `USDC` when enabled for the merchant account
 - `allowance_amount_minor`: optional positive integer
 - `metadata`: optional JSON object
 

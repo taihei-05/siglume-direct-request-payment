@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 import hmac
@@ -52,7 +52,7 @@ class DirectRequestPaymentClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.1.0",
+        user_agent: str = "siglume-direct-request-payment/0.2.0",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -141,6 +141,208 @@ class DirectRequestPaymentClient:
     ) -> dict[str, Any]:
         payload = build_allowance_execution_payload(requirement, await_finality=await_finality, metadata=metadata)
         return self.execute_prepared_transaction(payload)
+
+    def _request(self, method: str, path: str, *, json_body: Any | None = None) -> dict[str, Any]:
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.auth_token}",
+            "User-Agent": self.user_agent,
+        }
+        close_client = self._client is None
+        client = self._client or httpx.Client(timeout=self.timeout)
+        try:
+            response = client.request(
+                method,
+                f"{self.base_url}{path}",
+                headers=headers,
+                json=json_body,
+                timeout=self.timeout,
+            )
+        finally:
+            if close_client:
+                client.close()
+
+        raw_text = response.text
+        parsed: Any = {}
+        if raw_text:
+            try:
+                parsed = response.json()
+            except ValueError as exc:
+                raise SiglumeApiError(
+                    "Siglume API returned invalid JSON.",
+                    status=502,
+                    code="INVALID_JSON_RESPONSE",
+                    data=raw_text,
+                ) from exc
+        if response.is_error:
+            error = parsed.get("error", {}) if isinstance(parsed, dict) else {}
+            code = error.get("code") or (parsed.get("code") if isinstance(parsed, dict) else None) or f"HTTP_{response.status_code}"
+            message = error.get("message") or (parsed.get("message") if isinstance(parsed, dict) else None) or response.reason_phrase
+            raise SiglumeApiError(str(message), status=response.status_code, code=str(code), data=parsed)
+        if isinstance(parsed, dict) and "data" in parsed:
+            data = parsed["data"]
+            return data if isinstance(data, dict) else {"data": data}
+        return parsed if isinstance(parsed, dict) else {"data": parsed}
+
+
+class DirectRequestPaymentMerchantClient:
+    def __init__(
+        self,
+        *,
+        auth_token: str | None = None,
+        base_url: str | None = None,
+        timeout: float = 15.0,
+        client: httpx.Client | None = None,
+        user_agent: str = "siglume-direct-request-payment/0.2.0",
+    ) -> None:
+        token = auth_token or _env_value("SIGLUME_MERCHANT_AUTH_TOKEN") or _env_value("SIGLUME_AUTH_TOKEN")
+        if not token:
+            raise DirectRequestPaymentError(
+                "A merchant Siglume bearer token is required for Direct Request Payment merchant setup. "
+                "Developer Portal API keys are not accepted."
+            )
+        self.auth_token = token
+        self.base_url = (base_url or _env_value("SIGLUME_API_BASE") or DEFAULT_SIGLUME_API_BASE).rstrip("/")
+        self.timeout = max(float(timeout), 0.001)
+        self.user_agent = user_agent
+        self._client = client
+
+    def setup_merchant(
+        self,
+        *,
+        merchant: str,
+        display_name: str | None = None,
+        billing_plan: str = "launch",
+        billing_currency: str = "JPY",
+        allowed_currencies: Mapping[str, str] | list[str] | tuple[str, ...] | None = None,
+        webhook_callback_url: str | None = None,
+        billing_mandate_cap_minor: int | None = None,
+        max_amount_minor: int | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "merchant": _normalize_self_service_merchant(merchant),
+            "billing_plan": _normalize_billing_plan(billing_plan),
+            "billing_currency": _normalize_currency(billing_currency),
+        }
+        if display_name is not None:
+            payload["display_name"] = _require_non_empty(display_name, "display_name")
+        if allowed_currencies is not None:
+            payload["allowed_currencies"] = _normalize_allowed_currencies(allowed_currencies)
+        if webhook_callback_url is not None:
+            payload["webhook_callback_url"] = _require_non_empty(webhook_callback_url, "webhook_callback_url")
+        if billing_mandate_cap_minor is not None:
+            payload["billing_mandate_cap_minor"] = _positive_int(billing_mandate_cap_minor, "billing_mandate_cap_minor")
+        if max_amount_minor is not None:
+            payload["max_amount_minor"] = _positive_int(max_amount_minor, "max_amount_minor")
+        return self._request("POST", "/market/api-store/direct-payments/merchants", json_body=payload)
+
+    def get_merchant(self, merchant: str) -> dict[str, Any]:
+        merchant_key = _normalize_self_service_merchant(merchant)
+        return self._request("GET", f"/market/api-store/direct-payments/merchants/{merchant_key}")
+
+    def rotate_challenge_secret(self, merchant: str) -> dict[str, Any]:
+        merchant_key = _normalize_self_service_merchant(merchant)
+        return self._request("POST", f"/market/api-store/direct-payments/merchants/{merchant_key}/challenge-secret/rotate")
+
+    def prepare_billing_mandate(
+        self,
+        merchant: str,
+        *,
+        currency: str | None = None,
+        billing_currency: str | None = None,
+        max_amount_minor: int | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if currency is not None:
+            payload["currency"] = _normalize_currency(currency)
+        if billing_currency is not None:
+            payload["billing_currency"] = _normalize_currency(billing_currency)
+        if max_amount_minor is not None:
+            payload["max_amount_minor"] = _positive_int(max_amount_minor, "max_amount_minor")
+        merchant_key = _normalize_self_service_merchant(merchant)
+        return self._request(
+            "POST",
+            f"/market/api-store/direct-payments/merchants/{merchant_key}/billing-mandate",
+            json_body=payload,
+        )
+
+    def create_webhook_subscription(
+        self,
+        *,
+        callback_url: str,
+        description: str | None = None,
+        event_types: list[str] | tuple[str, ...] | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "callback_url": _require_non_empty(callback_url, "callback_url"),
+            "event_types": [
+                _require_non_empty(event_type, "event_type")
+                for event_type in (event_types or ("direct_payment.confirmed", "direct_payment.spent"))
+            ],
+        }
+        if description is not None:
+            payload["description"] = _require_non_empty(description, "description")
+        if metadata is not None:
+            payload["metadata"] = _clone_json_object(metadata, "metadata")
+        return self._request("POST", "/market/webhooks/subscriptions", json_body=payload)
+
+    def setup_checkout(
+        self,
+        *,
+        merchant: str,
+        display_name: str | None = None,
+        billing_plan: str = "launch",
+        billing_currency: str = "JPY",
+        allowed_currencies: Mapping[str, str] | list[str] | tuple[str, ...] | None = None,
+        webhook_callback_url: str | None = None,
+        billing_mandate_cap_minor: int | None = None,
+        max_amount_minor: int | None = None,
+        create_webhook_subscription: bool | None = None,
+        prepare_billing_mandate: bool = True,
+        webhook_event_types: list[str] | tuple[str, ...] | None = None,
+        webhook_description: str | None = None,
+    ) -> dict[str, Any]:
+        merchant_setup = self.setup_merchant(
+            merchant=merchant,
+            display_name=display_name,
+            billing_plan=billing_plan,
+            billing_currency=billing_currency,
+            allowed_currencies=allowed_currencies,
+            webhook_callback_url=webhook_callback_url,
+            billing_mandate_cap_minor=billing_mandate_cap_minor,
+            max_amount_minor=max_amount_minor,
+        )
+        merchant_key = str((merchant_setup.get("merchant_account") or {}).get("merchant") or merchant)
+        billing = None
+        if prepare_billing_mandate:
+            billing = self.prepare_billing_mandate(
+                merchant_key,
+                billing_currency=str((merchant_setup.get("merchant_account") or {}).get("billing_currency") or billing_currency),
+                max_amount_minor=max_amount_minor or billing_mandate_cap_minor,
+            )
+        should_create_webhook = create_webhook_subscription if create_webhook_subscription is not None else bool(webhook_callback_url)
+        webhook = None
+        if should_create_webhook and webhook_callback_url:
+            webhook = self.create_webhook_subscription(
+                callback_url=webhook_callback_url,
+                description=webhook_description or f"{merchant_key} Direct Request Payment",
+                event_types=webhook_event_types,
+                metadata={"merchant": merchant_key, "sdk": "siglume-direct-request-payment"},
+            )
+        env = {"SIGLUME_DIRECT_PAYMENT_MERCHANT": merchant_key}
+        challenge_secret = merchant_setup.get("challenge_secret")
+        if challenge_secret:
+            env["SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET"] = str(challenge_secret)
+        webhook_secret = (webhook or {}).get("signing_secret") if isinstance(webhook, Mapping) else None
+        if webhook_secret:
+            env["SIGLUME_WEBHOOK_SECRET"] = str(webhook_secret)
+        return {
+            "merchant": merchant_setup,
+            "billing_mandate": billing,
+            "webhook_subscription": webhook,
+            "env": env,
+        }
 
     def _request(self, method: str, path: str, *, json_body: Any | None = None) -> dict[str, Any]:
         headers = {
@@ -422,6 +624,20 @@ def _normalize_merchant(value: str) -> str:
     return merchant
 
 
+def _normalize_self_service_merchant(value: str) -> str:
+    merchant = _require_non_empty(value, "merchant").lower()
+    if not re.match(r"^[a-z0-9][a-z0-9_-]{2,63}$", merchant):
+        raise DirectRequestPaymentError("merchant must be 3-64 chars using lowercase letters, numbers, underscore, or hyphen.")
+    return merchant
+
+
+def _normalize_billing_plan(value: str) -> str:
+    plan = _require_non_empty(value, "billing_plan").lower()
+    if plan in {"launch", "free", "starter", "growth", "pro"}:
+        return plan
+    raise DirectRequestPaymentError("billing_plan must be launch, starter, growth, or pro.")
+
+
 def _normalize_currency(value: str) -> str:
     currency = _require_non_empty(value, "currency").upper()
     if currency not in {"JPY", "USD"}:
@@ -434,6 +650,26 @@ def _normalize_token(value: str) -> str:
     if token not in {"JPYC", "USDC"}:
         raise DirectRequestPaymentError("token_symbol must be JPYC or USDC.")
     return token
+
+
+def _normalize_allowed_currencies(value: Mapping[str, str] | list[str] | tuple[str, ...]) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    if isinstance(value, Mapping):
+        for raw_currency, raw_token in value.items():
+            normalized[_normalize_currency(str(raw_currency))] = _normalize_token(str(raw_token))
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            currency = _normalize_currency(str(item))
+            normalized[currency] = _default_token_for_currency(currency)
+    else:
+        raise DirectRequestPaymentError("allowed_currencies must be an array or a currency-to-token mapping.")
+    if not normalized:
+        raise DirectRequestPaymentError("allowed_currencies must include at least one currency.")
+    return normalized
+
+
+def _default_token_for_currency(currency: str) -> str:
+    return "JPYC" if currency == "JPY" else "USDC"
 
 
 def _positive_int(value: int, name: str) -> int:

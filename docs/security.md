@@ -14,6 +14,16 @@ These values must stay server-side:
 The buyer-facing browser may receive the signed `challenge` string, but never
 the secret that produced it.
 
+## Keep JWT Roles Separate
+
+Use the merchant's Siglume JWT only for setup actions such as `setupCheckout`,
+challenge secret rotation, billing mandate preparation, and webhook subscription
+creation.
+
+Use the buyer's Siglume JWT only when creating and paying a payment requirement.
+A merchant JWT or Developer Portal `cli_` key must not be used to charge a
+customer wallet.
+
 ## Bind the Order Server-Side
 
 The HMAC challenge covers:

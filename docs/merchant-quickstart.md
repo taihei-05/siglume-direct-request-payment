@@ -14,33 +14,67 @@ external merchant.
 The merchant server must not create charges with a customer wallet. It signs the
 order challenge; the buyer-facing Siglume payment flow pays it.
 
-## 1. Configure the Merchant
+## 1. Run Merchant Setup
 
-During onboarding, Siglume assigns:
+Run setup from the merchant server, CI, or an integration agent with the
+merchant's Siglume JWT. Do not use a Developer Portal `cli_` key here.
 
-- `merchant` key, for example `example_merchant`
-- challenge secret
-- allowed currency and token, initially `JPY`/`JPYC`; `USD`/`USDC` requires
-  separately agreed merchant billing terms
-- billing plan; see [Pricing](./pricing.md)
+TypeScript:
 
-Keep the challenge secret server-side. Create a marketplace webhook subscription
-to receive the `whsec_` signing secret.
+```ts
+import { DirectRequestPaymentMerchantClient } from "@siglume/direct-request-payment";
 
-```bash
-curl -X POST https://siglume.com/v1/market/webhooks/subscriptions \
-  -H "Authorization: Bearer <merchant-siglume-bearer-token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "callback_url": "https://merchant.example/siglume/webhook",
-    "event_types": ["direct_payment.confirmed", "direct_payment.spent"],
-    "description": "Direct Request Payment production webhook"
-  }'
+const merchantClient = new DirectRequestPaymentMerchantClient({
+  auth_token: process.env.SIGLUME_MERCHANT_AUTH_TOKEN!,
+});
+
+const setup = await merchantClient.setupCheckout({
+  merchant: "example_merchant",
+  display_name: "Example Merchant",
+  billing_plan: "launch",
+  billing_currency: "JPY",
+  webhook_callback_url: "https://merchant.example/siglume/webhook",
+  max_amount_minor: 100000,
+});
+
+console.log(setup.env);
 ```
 
-The `signing_secret` is returned only when the subscription is created or
-rotated. Store it as `SIGLUME_WEBHOOK_SECRET`. Fulfillment should be based on a
-verified `direct_payment.confirmed` event.
+Python:
+
+```py
+import os
+
+from siglume_direct_request_payment import DirectRequestPaymentMerchantClient
+
+merchant_client = DirectRequestPaymentMerchantClient(
+    auth_token=os.environ["SIGLUME_MERCHANT_AUTH_TOKEN"],
+)
+
+setup = merchant_client.setup_checkout(
+    merchant="example_merchant",
+    display_name="Example Merchant",
+    billing_plan="launch",
+    billing_currency="JPY",
+    webhook_callback_url="https://merchant.example/siglume/webhook",
+    max_amount_minor=100000,
+)
+
+print(setup["env"])
+```
+
+`setupCheckout` / `setup_checkout` performs:
+
+- merchant key claim
+- challenge secret creation
+- billing mandate preparation
+- webhook subscription creation for `direct_payment.confirmed` and
+  `direct_payment.spent`
+
+Store `SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET` and `SIGLUME_WEBHOOK_SECRET`
+server-side only. Secrets are returned only when they are created or rotated.
+If the returned billing mandate requires wallet approval, complete that Siglume
+wallet step before accepting production payments.
 
 ## 2. Create an Order and Challenge
 
@@ -240,15 +274,18 @@ if verified["event"]["type"] == "direct_payment.confirmed":
   signature does not match.
 - `EXTERNAL_402_CHALLENGE_ALREADY_USED`: the challenge is already bound to a
   different buyer.
-- `EXTERNAL_402_MERCHANT_BILLING_SETUP_REQUIRED`: merchant onboarding is not
-  complete.
+- `EXTERNAL_402_MERCHANT_NOT_FOUND`: run merchant setup with the merchant's
+  Siglume JWT.
+- `EXTERNAL_402_MERCHANT_BILLING_SETUP_REQUIRED`: the merchant billing mandate
+  is not active yet.
 - `EXTERNAL_402_MERCHANT_BILLING_PAST_DUE` or
   `EXTERNAL_402_MERCHANT_BILLING_SUSPENDED`: merchant billing must be fixed
   before new payments can be accepted.
 
 ## Go-Live Checklist
 
-- Merchant onboarding and billing mandate are complete.
+- `setupCheckout` / `setup_checkout` has claimed the merchant key.
+- Merchant billing mandate is active.
 - Challenge secret is only in server-side environment variables.
 - Webhook endpoint receives raw body and verifies `Siglume-Signature`.
 - Orders store `challenge_hash`, `requirement_id`, and fulfillment status.

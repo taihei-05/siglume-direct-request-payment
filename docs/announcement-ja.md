@@ -1,68 +1,64 @@
-# Siglume Direct Request Payment SDK 公開案内ドラフト
+# Siglume Direct Request Payment SDK 公開ドラフト
 
 Siglume Direct Request Payment 向けの外部事業者用SDKを公開しました。
 
-このSDKは、小規模EC、予約サービス、会員制サービス、API販売、AtoA
-エージェント決済など、Siglumeウォレット決済を自社チェックアウトに組み込みたい
-事業者向けの導入支援SDKです。
+- npm: https://www.npmjs.com/package/@siglume/direct-request-payment
+- PyPI: https://pypi.org/project/siglume-direct-request-payment/
+- GitHub: https://github.com/taihei-05/siglume-direct-request-payment
 
-TypeScript/JavaScript:
+このSDKは、外部EC、予約サービス、会員制サービス、API販売、AtoAの都度課金などで、Siglumeウォレット決済を自社プロダクトに組み込むためのSDKです。
 
-```bash
-npm install @siglume/direct-request-payment
+## できること
+
+- merchant JWT によるセルフサービスの導入設定
+- merchant key の作成
+- challenge secret の発行とローテーション
+- billing mandate の準備
+- webhook subscription の作成
+- merchant server 側での署名付き challenge 生成
+- buyer JWT による payment requirement 作成
+- prepared transaction の実行補助
+- `direct_payment.confirmed` webhook の署名検証
+
+Developer Portal の `cli_` API key を使うSDKではありません。導入設定は merchant の Siglume JWT、支払い作成は buyer の Siglume JWT で行います。
+
+## 最短導入
+
+```ts
+import { DirectRequestPaymentMerchantClient } from "@siglume/direct-request-payment";
+
+const merchant = new DirectRequestPaymentMerchantClient({
+  auth_token: process.env.SIGLUME_MERCHANT_AUTH_TOKEN!,
+});
+
+const setup = await merchant.setupCheckout({
+  merchant: "example_merchant",
+  display_name: "Example Merchant",
+  billing_plan: "launch",
+  billing_currency: "JPY",
+  webhook_callback_url: "https://merchant.example/siglume/webhook",
+  max_amount_minor: 100000,
+});
+
+console.log(setup.env);
 ```
 
-Python:
+`setup.env` に、サーバー側で保存すべき `SIGLUME_DIRECT_PAYMENT_MERCHANT`、`SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET`、`SIGLUME_WEBHOOK_SECRET` が返ります。
 
-```bash
-pip install siglume-direct-request-payment
-```
-
-SDKが提供するもの:
-
-- マーチャントサーバーでの署名付き決済チャレンジ生成
-- 購入者のSiglume bearer tokenによる決済要求作成
-- Siglumeが返すprepared transactionの実行補助
-- 決済要求の検証
-- `direct_payment.confirmed` webhookの署名検証
-
-このSDKは `@siglume/api-sdk` とは用途が異なります。`@siglume/api-sdk` は
-Siglume API Storeにエージェント向けAPIを公開するためのSDKです。一方、
-`@siglume/direct-request-payment` は外部ECやSaaSの checkout に Siglume
-Direct Request Payment を組み込むためのSDKです。
-
-## Trial Pricing
-
-実証フェーズの料金は以下です。
+## 料金
 
 | Plan | Monthly fee | Payment fee |
 | --- | ---: | ---: |
-| Launch | JPY 0 | 0% through 100 payments/month, then 1.8% |
+| Launch | JPY 0 | 月100決済まで0%、以後1.8% |
 | Starter | JPY 980 | 1.0% |
 | Growth | JPY 2,980 | 0.7% |
 | Pro | JPY 9,800 | 0.5% |
 
-最低手数料は、手数料が発生する決済について共通でJPY 3/決済です。Launch
-プランでも、100決済/月を超えた後は1.8%の従量手数料が発生します。
+手数料が発生する決済の最低手数料は JPY 3 です。手数料は決済時に差し引かれ、マーチャントは純額を受け取ります。月額料金は merchant billing mandate 経由で請求されます。
 
-手数料は決済時に差し引かれ、マーチャントは純額を受領します。月額料金は
-マーチャントのbilling mandateを通じて月次請求されます。現時点の公開料金は
-JPY建てです。USD/USDCについては個別合意が必要です。
+## 注意点
 
-## 導入時の重要な境界
-
-- マーチャントサーバーは注文金額、通貨、nonce、challenge secretを管理します。
-- 購入者ウォレットを課金するAPI呼び出しには、購入者のSiglume bearer tokenが必要です。
-- Developer Portalの `cli_` API key はこのSDKの決済要求作成には使えません。
-- 決済完了処理は、ブラウザの戻り値ではなく署名検証済みwebhookを基準にしてください。
-- challenge secretとwebhook secretはサーバー側にのみ保持してください。
-
-## 公開リンク
-
-- GitHub: https://github.com/taihei-05/siglume-direct-request-payment
-- npm: https://www.npmjs.com/package/@siglume/direct-request-payment
-- PyPI: https://pypi.org/project/siglume-direct-request-payment/
-
-まずは実証フェーズのため、初期導入、技術相談、ユースケース検証まで個別に
-サポートします。導入を検討したいEC、予約サービス、会員制サービス、API提供者、
-AtoA課金の検証希望者はお問い合わせください。
+- challenge secret と webhook secret はサーバー側だけに保存してください。
+- merchant JWT で購入者ウォレットを課金することはできません。
+- buyer の支払い作成には buyer JWT が必要です。
+- 本番受付前に billing mandate の承認状態を確認してください。

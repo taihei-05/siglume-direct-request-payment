@@ -4,6 +4,7 @@ import {
   buildAllowanceExecutionPayload,
   buildPaymentExecutionPayload,
   DirectRequestPaymentClient,
+  DirectRequestPaymentMerchantClient,
   type DirectPaymentRequirement,
   SiglumeApiError,
 } from "../src/index";
@@ -129,5 +130,88 @@ describe("DirectRequestPaymentClient", () => {
       code: "EXTERNAL_402_MERCHANT_NOT_FOUND",
       status: 404,
     } satisfies Partial<SiglumeApiError>);
+  });
+});
+
+describe("DirectRequestPaymentMerchantClient", () => {
+  it("sets up merchant checkout with billing mandate and webhook subscription", async () => {
+    const calls: Array<{ url: string; init: RequestInit; body: any }> = [];
+    const merchantAccount = {
+      merchant_account_id: "macc_test",
+      merchant: "example_merchant",
+      merchant_user_id: "usr_merchant",
+      billing_plan: "free",
+      billing_currency: "JPY",
+      token_symbol: "JPYC",
+      billing_status: "setup_required",
+      metadata_jsonb: { self_service: true },
+    };
+    const responses = [
+      envelope({
+        merchant_account: merchantAccount,
+        challenge_secret: "edrp_secret",
+        challenge_secret_created: true,
+        created: true,
+        listing_id: "listing_external_402",
+      }),
+      envelope({
+        merchant_account: { ...merchantAccount, billing_mandate_id: "mandate_test" },
+        mandate: { mandate_id: "mandate_test", status: "active" },
+        created: true,
+      }),
+      envelope({
+        id: "whsub_test",
+        callback_url: "https://merchant.example/webhooks/siglume",
+        signing_secret: "whsec_test",
+        status: "active",
+      }),
+    ];
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      const body = init.body ? JSON.parse(String(init.body)) : null;
+      calls.push({ url: String(input), init, body });
+      return new Response(JSON.stringify(responses.shift()), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const client = new DirectRequestPaymentMerchantClient({
+      auth_token: "merchant_jwt",
+      base_url: "https://siglume.example/v1",
+      fetch: fetchImpl,
+    });
+
+    const result = await client.setupCheckout({
+      merchant: "Example_Merchant",
+      display_name: "Example Merchant",
+      billing_plan: "launch",
+      billing_currency: "jpy",
+      webhook_callback_url: "https://merchant.example/webhooks/siglume",
+      max_amount_minor: 100000,
+    });
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://siglume.example/v1/market/api-store/direct-payments/merchants",
+      "https://siglume.example/v1/market/api-store/direct-payments/merchants/example_merchant/billing-mandate",
+      "https://siglume.example/v1/market/webhooks/subscriptions",
+    ]);
+    expect((calls[0]?.init.headers as Record<string, string>).Authorization).toBe("Bearer merchant_jwt");
+    expect(calls[0]?.body).toMatchObject({
+      merchant: "example_merchant",
+      display_name: "Example Merchant",
+      billing_plan: "launch",
+      billing_currency: "JPY",
+      max_amount_minor: 100000,
+    });
+    expect(calls[1]?.body).toMatchObject({ billing_currency: "JPY", max_amount_minor: 100000 });
+    expect(calls[2]?.body).toMatchObject({
+      callback_url: "https://merchant.example/webhooks/siglume",
+      event_types: ["direct_payment.confirmed", "direct_payment.spent"],
+      metadata: { merchant: "example_merchant", sdk: "@siglume/direct-request-payment" },
+    });
+    expect(result.env).toEqual({
+      SIGLUME_DIRECT_PAYMENT_MERCHANT: "example_merchant",
+      SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET: "edrp_secret",
+      SIGLUME_WEBHOOK_SECRET: "whsec_test",
+    });
   });
 });

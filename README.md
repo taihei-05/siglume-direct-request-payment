@@ -17,15 +17,19 @@ This SDK is intentionally separate from `@siglume/api-sdk`:
 
 ## What This SDK Covers
 
+- merchant self-service setup with a Siglume merchant JWT
+- challenge secret creation and rotation
+- merchant billing mandate preparation
+- webhook subscription creation
 - merchant-signed payment challenges
 - buyer-authenticated payment requirement creation
 - prepared wallet transaction execution payloads
 - payment requirement verification
 - signed webhook verification
 
-It does not create merchant accounts, store funds, manage customer wallets, or
-replace Siglume onboarding. Merchant pricing, billing mandates, and webhook
-subscriptions are platform configuration, not local SDK state.
+It does not custody funds or manage customer wallets. Merchant setup runs through
+Siglume APIs with the merchant's Siglume JWT; buyer payment creation runs with
+the buyer's Siglume JWT.
 
 ## Install
 
@@ -51,8 +55,10 @@ context. Your merchant server must not use a merchant secret or API key to
 charge a customer wallet. The merchant server creates the signed challenge; the
 buyer-facing Siglume payment flow creates and pays the requirement.
 
-`DirectRequestPaymentClient` requires the buyer's Siglume bearer token. Do not
-use a Developer Portal `cli_` API key with this package.
+`DirectRequestPaymentMerchantClient` requires the merchant's Siglume bearer
+token for setup. `DirectRequestPaymentClient` requires the buyer's Siglume
+bearer token for payment requirements. Do not use a Developer Portal `cli_` API
+key with this package.
 
 Current HTTP endpoints live under Siglume's market/API Store route namespace for
 compatibility with the existing platform contract. That does not make this SDK an
@@ -81,6 +87,62 @@ Per-payment fees are deducted at payment settlement time, so the merchant
 receives the net amount. Monthly base fees are collected through the merchant
 billing mandate. The listed public pricing is JPY-denominated; USD/USDC merchant
 billing requires separately agreed terms.
+
+## Merchant Setup: One SDK Call
+
+Run this once from the merchant server or an integration agent with the
+merchant's Siglume JWT. It reserves the merchant key, creates the challenge
+secret, prepares the billing mandate, and creates the webhook subscription.
+
+```ts
+import { DirectRequestPaymentMerchantClient } from "@siglume/direct-request-payment";
+
+const merchant = new DirectRequestPaymentMerchantClient({
+  auth_token: process.env.SIGLUME_MERCHANT_AUTH_TOKEN!,
+});
+
+const setup = await merchant.setupCheckout({
+  merchant: "example_merchant",
+  display_name: "Example Merchant",
+  billing_plan: "launch",
+  billing_currency: "JPY",
+  webhook_callback_url: "https://merchant.example/siglume/webhook",
+  max_amount_minor: 100000,
+});
+
+console.log(setup.env);
+// {
+//   SIGLUME_DIRECT_PAYMENT_MERCHANT: "example_merchant",
+//   SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET: "edrp_...",
+//   SIGLUME_WEBHOOK_SECRET: "whsec_..."
+// }
+```
+
+```py
+import os
+
+from siglume_direct_request_payment import DirectRequestPaymentMerchantClient
+
+merchant = DirectRequestPaymentMerchantClient(
+    auth_token=os.environ["SIGLUME_MERCHANT_AUTH_TOKEN"],
+)
+
+setup = merchant.setup_checkout(
+    merchant="example_merchant",
+    display_name="Example Merchant",
+    billing_plan="launch",
+    billing_currency="JPY",
+    webhook_callback_url="https://merchant.example/siglume/webhook",
+    max_amount_minor=100000,
+)
+
+print(setup["env"])
+```
+
+Store returned secrets on the merchant server. `challenge_secret` and
+`signing_secret` are returned only when they are created or rotated. If a billing
+mandate response requires wallet approval, complete that Siglume wallet step
+before accepting production payments.
 
 ## Merchant Server: Create a Challenge
 
@@ -245,9 +307,10 @@ Read [docs/security.md](./docs/security.md) before going live.
 
 ## Go-Live Checklist
 
-- Confirm Siglume merchant onboarding and billing mandate are complete.
+- Run `setupCheckout` with the merchant Siglume JWT.
+- Complete the merchant billing mandate wallet approval if required.
 - Store `SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET` only on the merchant server.
-- Register a production webhook endpoint and store the returned `whsec_` secret.
+- Store the returned `SIGLUME_WEBHOOK_SECRET` only on the merchant server.
 - Persist `challenge_hash`, `requirement_id`, and fulfillment state per order.
 - Fulfill orders only from verified webhook data, with idempotency.
 - Treat `fee_bps` returned by Siglume as the runtime fee source of truth.
@@ -258,6 +321,7 @@ Read [docs/security.md](./docs/security.md) before going live.
 - [API reference](./docs/api-reference.md)
 - [Pricing](./docs/pricing.md)
 - [Security guide](./docs/security.md)
+- [Merchant setup example](./examples/setup-merchant.ts)
 - [Express checkout example](./examples/express-checkout.ts)
 - [Japanese launch announcement draft](./docs/announcement-ja.md)
 - [Changelog](./CHANGELOG.md)

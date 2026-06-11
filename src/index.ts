@@ -1,4 +1,4 @@
-export const DEFAULT_SIGLUME_API_BASE = "https://siglume.com/v1";
+﻿export const DEFAULT_SIGLUME_API_BASE = "https://siglume.com/v1";
 export const DIRECT_REQUEST_PAYMENT_CHALLENGE_SCHEME = "siglume-external-402-v1";
 export const DIRECT_REQUEST_PAYMENT_MODE = "external_402";
 export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "api_store_direct_payment";
@@ -121,6 +121,87 @@ export interface DirectRequestPaymentClientOptions {
   user_agent?: string;
 }
 
+export type DirectRequestPaymentBillingPlan = "launch" | "free" | "starter" | "growth" | "pro";
+
+export interface DirectRequestPaymentMerchantAccount {
+  merchant_account_id: string;
+  merchant: string;
+  merchant_user_id: string;
+  user_wallet_id?: string | null;
+  billing_mandate_id?: string | null;
+  display_name?: string | null;
+  status?: string | null;
+  billing_status?: string | null;
+  billing_plan?: string | null;
+  billing_currency?: string | null;
+  token_symbol?: string | null;
+  monthly_fee_minor?: number | null;
+  settlement_fee_bps?: number | null;
+  settlement_fee_min_minor?: number | null;
+  included_monthly_payments?: number | null;
+  metadata_jsonb?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentMerchantSetupInput {
+  merchant: string;
+  display_name?: string;
+  billing_plan?: DirectRequestPaymentBillingPlan | string;
+  billing_currency?: DirectRequestPaymentCurrency | string;
+  allowed_currencies?: Record<string, string> | Array<DirectRequestPaymentCurrency | string>;
+  webhook_callback_url?: string;
+  billing_mandate_cap_minor?: number;
+  max_amount_minor?: number;
+}
+
+export interface DirectRequestPaymentMerchantBillingMandateInput {
+  currency?: DirectRequestPaymentCurrency | string;
+  billing_currency?: DirectRequestPaymentCurrency | string;
+  max_amount_minor?: number;
+}
+
+export interface DirectRequestPaymentMerchantResponse {
+  merchant_account: DirectRequestPaymentMerchantAccount;
+  challenge_secret?: string | null;
+  challenge_secret_created?: boolean;
+  created?: boolean | null;
+  listing_id?: string | null;
+  mandate?: Record<string, unknown> | null;
+  next_steps?: Record<string, unknown>;
+}
+
+export interface DirectRequestPaymentWebhookSubscriptionInput {
+  callback_url: string;
+  description?: string;
+  event_types?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface DirectRequestPaymentWebhookSubscription {
+  webhook_subscription_id?: string;
+  subscription_id?: string;
+  id?: string;
+  callback_url?: string;
+  signing_secret?: string;
+  status?: string;
+  event_types?: string[];
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentCheckoutSetupInput extends DirectRequestPaymentMerchantSetupInput {
+  create_webhook_subscription?: boolean;
+  prepare_billing_mandate?: boolean;
+  webhook_event_types?: string[];
+  webhook_description?: string;
+}
+
+export interface DirectRequestPaymentCheckoutSetupResult {
+  merchant: DirectRequestPaymentMerchantResponse;
+  billing_mandate?: DirectRequestPaymentMerchantResponse | null;
+  webhook_subscription?: DirectRequestPaymentWebhookSubscription | null;
+  env: Record<string, string>;
+}
+
 export interface SiglumeEnvelopeMeta {
   request_id?: string | null;
   trace_id?: string | null;
@@ -208,7 +289,7 @@ export class DirectRequestPaymentClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.1.0";
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.2.0";
     this.fetch_impl = fetchImpl;
   }
 
@@ -272,6 +353,177 @@ export class DirectRequestPaymentClient {
     options: { await_finality?: boolean; metadata?: Record<string, unknown> } = {},
   ): Promise<Web3PreparedTransactionExecuteResult> {
     return this.executePreparedTransaction(buildAllowanceExecutionPayload(requirement, options));
+  }
+
+  async request<T>(method: string, path: string, json_body?: unknown): Promise<T> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeout_ms);
+    try {
+      const headers: Record<string, string> = {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${this.auth_token}`,
+        "User-Agent": this.user_agent,
+      };
+      let body: string | undefined;
+      if (json_body !== undefined) {
+        headers["Content-Type"] = "application/json";
+        body = JSON.stringify(json_body);
+      }
+      const response = await this.fetch_impl(`${this.base_url}${path}`, {
+        method,
+        headers,
+        body,
+        signal: controller.signal,
+      });
+      const rawText = await response.text();
+      const parsed = rawText ? parseJson(rawText) : {};
+      if (!response.ok) {
+        const error = isRecord(parsed) && isRecord(parsed.error) ? parsed.error : {};
+        const code = stringOrNull(error.code) ?? stringOrNull((parsed as Record<string, unknown>).code) ?? `HTTP_${response.status}`;
+        const message = stringOrNull(error.message) ?? stringOrNull((parsed as Record<string, unknown>).message) ?? response.statusText;
+        throw new SiglumeApiError(message, { status: response.status, code, data: parsed });
+      }
+      if (isRecord(parsed) && "data" in parsed) {
+        return parsed.data as T;
+      }
+      return parsed as T;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+export class DirectRequestPaymentMerchantClient {
+  readonly auth_token: string;
+  readonly base_url: string;
+  readonly timeout_ms: number;
+  readonly user_agent: string;
+  private readonly fetch_impl: typeof fetch;
+
+  constructor(options: DirectRequestPaymentClientOptions = {}) {
+    const authToken = options.auth_token ?? envValue("SIGLUME_MERCHANT_AUTH_TOKEN") ?? envValue("SIGLUME_AUTH_TOKEN");
+    if (!authToken) {
+      throw new SiglumeDirectRequestPaymentError(
+        "A merchant Siglume bearer token is required for Direct Request Payment merchant setup. Developer Portal API keys are not accepted.",
+      );
+    }
+    const fetchImpl = options.fetch ?? globalThis.fetch;
+    if (!fetchImpl) {
+      throw new SiglumeDirectRequestPaymentError("A fetch implementation is required in this runtime.");
+    }
+    this.auth_token = authToken;
+    this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
+    this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.2.0";
+    this.fetch_impl = fetchImpl;
+  }
+
+  async setupMerchant(input: DirectRequestPaymentMerchantSetupInput): Promise<DirectRequestPaymentMerchantResponse> {
+    const payload: Record<string, unknown> = {
+      merchant: normalizeSelfServiceMerchant(input.merchant),
+      billing_plan: normalizeBillingPlan(input.billing_plan ?? "launch"),
+      billing_currency: normalizeCurrency(input.billing_currency ?? "JPY"),
+    };
+    if (input.display_name !== undefined) {
+      payload.display_name = requireNonEmpty(input.display_name, "display_name");
+    }
+    if (input.allowed_currencies !== undefined) {
+      payload.allowed_currencies = normalizeAllowedCurrencies(input.allowed_currencies);
+    }
+    if (input.webhook_callback_url !== undefined) {
+      payload.webhook_callback_url = requireNonEmpty(input.webhook_callback_url, "webhook_callback_url");
+    }
+    if (input.billing_mandate_cap_minor !== undefined) {
+      payload.billing_mandate_cap_minor = positiveInteger(input.billing_mandate_cap_minor, "billing_mandate_cap_minor");
+    }
+    if (input.max_amount_minor !== undefined) {
+      payload.max_amount_minor = positiveInteger(input.max_amount_minor, "max_amount_minor");
+    }
+    return this.request<DirectRequestPaymentMerchantResponse>("POST", "/market/api-store/direct-payments/merchants", payload);
+  }
+
+  async getMerchant(merchant: string): Promise<DirectRequestPaymentMerchantResponse> {
+    return this.request<DirectRequestPaymentMerchantResponse>(
+      "GET",
+      `/market/api-store/direct-payments/merchants/${encodeURIComponent(normalizeSelfServiceMerchant(merchant))}`,
+    );
+  }
+
+  async rotateChallengeSecret(merchant: string): Promise<DirectRequestPaymentMerchantResponse> {
+    return this.request<DirectRequestPaymentMerchantResponse>(
+      "POST",
+      `/market/api-store/direct-payments/merchants/${encodeURIComponent(normalizeSelfServiceMerchant(merchant))}/challenge-secret/rotate`,
+    );
+  }
+
+  async prepareBillingMandate(
+    merchant: string,
+    input: DirectRequestPaymentMerchantBillingMandateInput = {},
+  ): Promise<DirectRequestPaymentMerchantResponse> {
+    const payload: Record<string, unknown> = {};
+    if (input.currency !== undefined) {
+      payload.currency = normalizeCurrency(input.currency);
+    }
+    if (input.billing_currency !== undefined) {
+      payload.billing_currency = normalizeCurrency(input.billing_currency);
+    }
+    if (input.max_amount_minor !== undefined) {
+      payload.max_amount_minor = positiveInteger(input.max_amount_minor, "max_amount_minor");
+    }
+    return this.request<DirectRequestPaymentMerchantResponse>(
+      "POST",
+      `/market/api-store/direct-payments/merchants/${encodeURIComponent(normalizeSelfServiceMerchant(merchant))}/billing-mandate`,
+      payload,
+    );
+  }
+
+  async createWebhookSubscription(
+    input: DirectRequestPaymentWebhookSubscriptionInput,
+  ): Promise<DirectRequestPaymentWebhookSubscription> {
+    const payload: Record<string, unknown> = {
+      callback_url: requireNonEmpty(input.callback_url, "callback_url"),
+      event_types: input.event_types?.length
+        ? input.event_types.map((eventType) => requireNonEmpty(eventType, "event_type"))
+        : ["direct_payment.confirmed", "direct_payment.spent"],
+    };
+    if (input.description !== undefined) {
+      payload.description = requireNonEmpty(input.description, "description");
+    }
+    if (input.metadata !== undefined) {
+      payload.metadata = cloneJsonObject(input.metadata, "metadata");
+    }
+    return this.request<DirectRequestPaymentWebhookSubscription>("POST", "/market/webhooks/subscriptions", payload);
+  }
+
+  async setupCheckout(input: DirectRequestPaymentCheckoutSetupInput): Promise<DirectRequestPaymentCheckoutSetupResult> {
+    const merchant = await this.setupMerchant(input);
+    const merchantKey = merchant.merchant_account.merchant;
+    const billing_mandate = input.prepare_billing_mandate === false
+      ? null
+      : await this.prepareBillingMandate(merchantKey, {
+        billing_currency: merchant.merchant_account.billing_currency ?? input.billing_currency ?? "JPY",
+        max_amount_minor: input.max_amount_minor ?? input.billing_mandate_cap_minor,
+      });
+    const shouldCreateWebhook = input.create_webhook_subscription ?? Boolean(input.webhook_callback_url);
+    const webhook_subscription = shouldCreateWebhook && input.webhook_callback_url
+      ? await this.createWebhookSubscription({
+        callback_url: input.webhook_callback_url,
+        description: input.webhook_description ?? `${merchantKey} Direct Request Payment`,
+        event_types: input.webhook_event_types,
+        metadata: { merchant: merchantKey, sdk: "@siglume/direct-request-payment" },
+      })
+      : null;
+    const env: Record<string, string> = {
+      SIGLUME_DIRECT_PAYMENT_MERCHANT: merchantKey,
+    };
+    if (merchant.challenge_secret) {
+      env.SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET = merchant.challenge_secret;
+    }
+    const webhookSecret = stringOrNull(webhook_subscription?.signing_secret);
+    if (webhookSecret) {
+      env.SIGLUME_WEBHOOK_SECRET = webhookSecret;
+    }
+    return { merchant, billing_mandate, webhook_subscription, env };
   }
 
   async request<T>(method: string, path: string, json_body?: unknown): Promise<T> {
@@ -544,6 +796,22 @@ function normalizeMerchant(value: string): string {
   return merchant;
 }
 
+function normalizeSelfServiceMerchant(value: string): string {
+  const merchant = requireNonEmpty(value, "merchant").toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(merchant)) {
+    throw new SiglumeDirectRequestPaymentError("merchant must be 3-64 chars using lowercase letters, numbers, underscore, or hyphen.");
+  }
+  return merchant;
+}
+
+function normalizeBillingPlan(value: string): DirectRequestPaymentBillingPlan {
+  const plan = requireNonEmpty(value, "billing_plan").toLowerCase();
+  if (plan === "launch" || plan === "free" || plan === "starter" || plan === "growth" || plan === "pro") {
+    return plan;
+  }
+  throw new SiglumeDirectRequestPaymentError("billing_plan must be launch, starter, growth, or pro.");
+}
+
 function normalizeCurrency(value: string): DirectRequestPaymentCurrency {
   const currency = requireNonEmpty(value, "currency").toUpperCase();
   if (currency !== "JPY" && currency !== "USD") {
@@ -558,6 +826,30 @@ function normalizeToken(value: string): DirectRequestPaymentToken {
     throw new SiglumeDirectRequestPaymentError("token_symbol must be JPYC or USDC.");
   }
   return token;
+}
+
+function normalizeAllowedCurrencies(value: Record<string, string> | Array<DirectRequestPaymentCurrency | string>): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const currency = normalizeCurrency(item);
+      normalized[currency] = defaultTokenForCurrency(currency);
+    }
+  } else if (isRecord(value)) {
+    for (const [rawCurrency, rawToken] of Object.entries(value)) {
+      normalized[normalizeCurrency(rawCurrency)] = normalizeToken(String(rawToken));
+    }
+  } else {
+    throw new SiglumeDirectRequestPaymentError("allowed_currencies must be an array or a currency-to-token object.");
+  }
+  if (Object.keys(normalized).length === 0) {
+    throw new SiglumeDirectRequestPaymentError("allowed_currencies must include at least one currency.");
+  }
+  return normalized;
+}
+
+function defaultTokenForCurrency(currency: DirectRequestPaymentCurrency): DirectRequestPaymentToken {
+  return currency === "JPY" ? "JPYC" : "USDC";
 }
 
 function positiveInteger(value: number, name: string): number {

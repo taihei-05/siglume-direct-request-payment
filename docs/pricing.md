@@ -17,7 +17,7 @@ fee data returned at runtime.
 The minimum fee is JPY 3 for each fee-bearing payment, including Launch-plan
 payments after the included monthly allowance.
 
-If no paid plan is selected during onboarding, the merchant account uses the
+If no paid plan is selected during merchant setup, the merchant account uses the
 Launch plan. A merchant billing mandate is still required before accepting
 payments so Siglume can collect fees automatically after the 100-payment monthly
 allowance is exceeded.
@@ -34,9 +34,9 @@ Per-payment fees are collected during payment settlement through the
 DirectPaymentHub split. The merchant receives the net amount after that fee.
 Monthly base fees are collected separately through the merchant billing mandate.
 
-The public trial pricing above is JPY-denominated. If a merchant needs USD/USDC
-settlement, agree the USD merchant billing terms during onboarding; do not infer
-USD monthly or minimum fees from the JPY table.
+The public trial pricing above is JPY-denominated. If USD/USDC settlement is
+enabled for a merchant account, use the billing terms returned by Siglume at
+runtime; do not infer USD monthly or minimum fees from the JPY table.
 
 ## SDK Behavior
 

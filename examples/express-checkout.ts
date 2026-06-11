@@ -7,6 +7,7 @@ import {
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
+const merchantKey = process.env.SIGLUME_DIRECT_PAYMENT_MERCHANT || "example_merchant";
 
 // Use JSON for normal routes. Use raw body only on the webhook route.
 app.use((req, res, next) => {
@@ -35,7 +36,7 @@ app.post("/checkout/siglume/start", asyncRoute(async (req, res) => {
 
   order.payment_attempt = Number(order.payment_attempt || 0) + 1;
   const challenge = await createDirectRequestPaymentChallenge({
-    merchant: "example_merchant",
+    merchant: merchantKey,
     amount_minor: order.amount_minor,
     currency: order.currency,
     secret: process.env.SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET!,
@@ -68,7 +69,7 @@ app.post("/checkout/siglume/pay", asyncRoute(async (req, res) => {
   });
 
   const requirement = await siglume.createPaymentRequirement({
-    merchant: "example_merchant",
+    merchant: merchantKey,
     amount_minor: order.amount_minor,
     currency: order.currency,
     challenge: String(req.body.siglume_challenge || ""),

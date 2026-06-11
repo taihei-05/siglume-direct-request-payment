@@ -7,6 +7,7 @@ import respx
 from siglume_direct_request_payment import (
     DIRECT_REQUEST_PAYMENT_MODE,
     DirectRequestPaymentClient,
+    DirectRequestPaymentMerchantClient,
     DirectRequestPaymentError,
     build_allowance_execution_payload,
     build_payment_execution_payload,
@@ -77,3 +78,93 @@ def test_builds_prepared_transaction_payloads() -> None:
     assert payment["metadata"] == {"source": "test", "order_id": "order_123"}
     assert payment["await_finality"] is True
     assert allowance["receipt_kind"] == "api_store_direct_payment_allowance"
+
+
+@respx.mock
+def test_merchant_client_sets_up_checkout() -> None:
+    merchant_account = {
+        "merchant_account_id": "macc_test",
+        "merchant": "example_merchant",
+        "merchant_user_id": "usr_merchant",
+        "billing_plan": "free",
+        "billing_currency": "JPY",
+        "token_symbol": "JPYC",
+        "billing_status": "setup_required",
+        "metadata_jsonb": {"self_service": True},
+    }
+    setup_route = respx.post("https://siglume.test/v1/market/api-store/direct-payments/merchants").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "data": {
+                    "merchant_account": merchant_account,
+                    "challenge_secret": "edrp_secret",
+                    "challenge_secret_created": True,
+                    "created": True,
+                    "listing_id": "listing_external_402",
+                }
+            },
+        )
+    )
+    billing_route = respx.post(
+        "https://siglume.test/v1/market/api-store/direct-payments/merchants/example_merchant/billing-mandate"
+    ).mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "data": {
+                    "merchant_account": {**merchant_account, "billing_mandate_id": "mandate_test"},
+                    "mandate": {"mandate_id": "mandate_test", "status": "active"},
+                    "created": True,
+                }
+            },
+        )
+    )
+    webhook_route = respx.post("https://siglume.test/v1/market/webhooks/subscriptions").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "data": {
+                    "id": "whsub_test",
+                    "callback_url": "https://merchant.example/webhooks/siglume",
+                    "signing_secret": "whsec_test",
+                    "status": "active",
+                }
+            },
+        )
+    )
+    client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
+
+    result = client.setup_checkout(
+        merchant="Example_Merchant",
+        display_name="Example Merchant",
+        billing_plan="launch",
+        billing_currency="jpy",
+        webhook_callback_url="https://merchant.example/webhooks/siglume",
+        max_amount_minor=100000,
+    )
+
+    assert setup_route.calls.last.request.headers["authorization"] == "Bearer merchant_jwt"
+    assert json.loads(setup_route.calls.last.request.content) == {
+        "merchant": "example_merchant",
+        "billing_plan": "launch",
+        "billing_currency": "JPY",
+        "display_name": "Example Merchant",
+        "webhook_callback_url": "https://merchant.example/webhooks/siglume",
+        "max_amount_minor": 100000,
+    }
+    assert json.loads(billing_route.calls.last.request.content) == {
+        "billing_currency": "JPY",
+        "max_amount_minor": 100000,
+    }
+    assert json.loads(webhook_route.calls.last.request.content) == {
+        "callback_url": "https://merchant.example/webhooks/siglume",
+        "event_types": ["direct_payment.confirmed", "direct_payment.spent"],
+        "description": "example_merchant Direct Request Payment",
+        "metadata": {"merchant": "example_merchant", "sdk": "siglume-direct-request-payment"},
+    }
+    assert result["env"] == {
+        "SIGLUME_DIRECT_PAYMENT_MERCHANT": "example_merchant",
+        "SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET": "edrp_secret",
+        "SIGLUME_WEBHOOK_SECRET": "whsec_test",
+    }
