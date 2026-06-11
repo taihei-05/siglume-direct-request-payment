@@ -22,6 +22,20 @@ and sdist patterns shown below.
 
 ## Publish to npm
 
+Preferred: configure npm Trusted Publishing for:
+
+- Owner: `taihei-05`
+- Repository: `siglume-direct-request-payment`
+- Workflow: `release-npm.yml`
+- Environment: `npm`
+- Package: `@siglume/direct-request-payment`
+
+Or add a GitHub Actions secret named `NPM_TOKEN` with an npm automation token.
+
+Then push a `v*` tag or run the `Release npm` workflow manually.
+
+Manual OTP upload:
+
 ```powershell
 npm publish --access public --otp=<npm-otp>
 ```
