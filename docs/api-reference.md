@@ -4,6 +4,18 @@ The TypeScript package is `@siglume/direct-request-payment`. The Python package
 is `siglume-direct-request-payment` and imports as
 `siglume_direct_request_payment`.
 
+## Environment Variables
+
+| Name | Used by | Purpose |
+| --- | --- | --- |
+| `SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET` | merchant server | HMAC secret for order challenges |
+| `SIGLUME_AUTH_TOKEN` | buyer payment helper | buyer Siglume bearer token for API calls |
+| `SIGLUME_API_BASE` | optional | API base URL override; defaults to `https://siglume.com/v1` |
+| `SIGLUME_WEBHOOK_SECRET` | merchant server | webhook signing secret returned as `whsec_...` |
+
+Do not use a Developer Portal `cli_` API key as `SIGLUME_AUTH_TOKEN`. Direct
+Request Payment requirement creation is buyer-authenticated.
+
 ## `createDirectRequestPaymentChallenge(input)` / `create_direct_request_payment_challenge(...)`
 
 Creates the merchant-signed challenge required by Siglume.
@@ -45,6 +57,15 @@ as `scheme:nonce:signature`.
 Verifies a challenge against merchant, amount, currency, and secret. This is
 useful in tests and internal checkout assertions.
 
+## `directRequestPaymentChallengeHash(challenge)` / `direct_request_payment_challenge_hash(...)`
+
+Returns the `sha256:`-prefixed hash for an existing challenge string.
+
+## `directRequestPaymentRequestHash(input)` / `direct_request_payment_request_hash(...)`
+
+Returns the SDK-side request hash material for merchant, amount, currency, and
+challenge. This is mostly useful for tests and internal assertions.
+
 ## `DirectRequestPaymentClient`
 
 Thin wrapper around the current Siglume Direct Request Payment HTTP contract.
@@ -78,6 +99,16 @@ POST /v1/market/api-store/direct-payments/requirements
 
 The SDK sends `mode="external_402"` internally.
 
+Input:
+
+- `merchant`: Siglume merchant key
+- `amount_minor`: positive integer in minor currency units
+- `currency`: `JPY` or individually agreed `USD`
+- `challenge`: merchant-signed challenge string
+- `token_symbol`: optional `JPYC` or individually agreed `USDC`
+- `allowance_amount_minor`: optional positive integer
+- `metadata`: optional JSON object
+
 ### `executeAllowanceTransaction(requirement)` / `execute_allowance_transaction(...)`
 
 Executes `requirement.approve_transaction_request` through:
@@ -101,6 +132,15 @@ Calls:
 POST /v1/market/api-store/direct-payments/requirements/{requirement_id}/verify
 ```
 
+Input may include:
+
+- `receipt_id`
+- `chain_receipt_id`
+- `await_finality`
+- `await_required_status`
+- `await_timeout_seconds`
+- `await_poll_seconds`
+
 ## Webhook Helpers
 
 - `buildWebhookSignatureHeader(secret, body)` for tests
@@ -114,3 +154,22 @@ POST /v1/market/api-store/direct-payments/requirements/{requirement_id}/verify
 
 `verifyDirectRequestPaymentWebhook` verifies the signature and parses the event
 in one call.
+
+## Errors
+
+TypeScript exports:
+
+- `SiglumeDirectRequestPaymentError`
+- `SiglumeApiError`
+- `SiglumeWebhookSignatureError`
+- `SiglumeWebhookPayloadError`
+
+Python exports:
+
+- `DirectRequestPaymentError`
+- `SiglumeApiError`
+- `SiglumeWebhookSignatureError`
+- `SiglumeWebhookPayloadError`
+
+`SiglumeApiError` includes the HTTP status, platform error code, and parsed
+response data where available.

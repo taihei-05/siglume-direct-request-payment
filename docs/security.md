@@ -59,6 +59,10 @@ The signed payload is:
 
 The default tolerance is 300 seconds.
 
+Use verified webhook data as the durable completion signal. Browser redirects,
+client-side callbacks, or local transaction responses can improve UX, but they
+should not be the only source used to fulfill an order.
+
 ## Idempotency
 
 Fulfill exactly once per order. Store at least:

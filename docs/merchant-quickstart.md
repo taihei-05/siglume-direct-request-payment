@@ -33,13 +33,14 @@ curl -X POST https://siglume.com/v1/market/webhooks/subscriptions \
   -H "Content-Type: application/json" \
   -d '{
     "callback_url": "https://merchant.example/siglume/webhook",
-    "event_types": ["direct_payment.confirmed"],
+    "event_types": ["direct_payment.confirmed", "direct_payment.spent"],
     "description": "Direct Request Payment production webhook"
   }'
 ```
 
 The `signing_secret` is returned only when the subscription is created or
-rotated. Store it as `SIGLUME_WEBHOOK_SECRET`.
+rotated. Store it as `SIGLUME_WEBHOOK_SECRET`. Fulfillment should be based on a
+verified `direct_payment.confirmed` event.
 
 ## 2. Create an Order and Challenge
 
@@ -247,9 +248,12 @@ if verified["event"]["type"] == "direct_payment.confirmed":
 
 ## Go-Live Checklist
 
+- Merchant onboarding and billing mandate are complete.
 - Challenge secret is only in server-side environment variables.
 - Webhook endpoint receives raw body and verifies `Siglume-Signature`.
 - Orders store `challenge_hash`, `requirement_id`, and fulfillment status.
 - Fulfillment is idempotent.
 - Browser input cannot change the amount or currency.
 - Nonces cannot be reused for separate order attempts.
+- The order is fulfilled only after a verified webhook maps back to the stored
+  `challenge_hash`.

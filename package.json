@@ -2,7 +2,20 @@
   "name": "@siglume/direct-request-payment",
   "version": "0.1.0",
   "description": "Merchant SDK for Siglume Direct Request Payment checkout integrations",
+  "keywords": [
+    "siglume",
+    "payment",
+    "checkout",
+    "external-402",
+    "wallet",
+    "sdk"
+  ],
   "license": "MIT",
+  "author": "Siglume Contributors",
+  "homepage": "https://github.com/taihei-05/siglume-direct-request-payment#readme",
+  "bugs": {
+    "url": "https://github.com/taihei-05/siglume-direct-request-payment/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/taihei-05/siglume-direct-request-payment.git"
@@ -37,6 +50,7 @@
     "docs",
     "examples",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {

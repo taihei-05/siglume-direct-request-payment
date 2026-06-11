@@ -1,5 +1,8 @@
 # @siglume/direct-request-payment
 
+[![npm version](https://img.shields.io/npm/v/@siglume/direct-request-payment.svg)](https://www.npmjs.com/package/@siglume/direct-request-payment)
+[![PyPI version](https://img.shields.io/pypi/v/siglume-direct-request-payment.svg)](https://pypi.org/project/siglume-direct-request-payment/)
+
 Merchant SDK for Siglume Direct Request Payment checkout integrations.
 
 Use this package when an external EC site, booking service, membership service,
@@ -11,6 +14,18 @@ This SDK is intentionally separate from `@siglume/api-sdk`:
 - `@siglume/api-sdk` is for publishing agent-facing APIs to the Siglume API Store.
 - `@siglume/direct-request-payment` is for external merchants integrating
   Siglume Direct Request Payment into their own checkout.
+
+## What This SDK Covers
+
+- merchant-signed payment challenges
+- buyer-authenticated payment requirement creation
+- prepared wallet transaction execution payloads
+- payment requirement verification
+- signed webhook verification
+
+It does not create merchant accounts, store funds, manage customer wallets, or
+replace Siglume onboarding. Merchant pricing, billing mandates, and webhook
+subscriptions are platform configuration, not local SDK state.
 
 ## Install
 
@@ -38,6 +53,10 @@ buyer-facing Siglume payment flow creates and pays the requirement.
 
 `DirectRequestPaymentClient` requires the buyer's Siglume bearer token. Do not
 use a Developer Portal `cli_` API key with this package.
+
+Current HTTP endpoints live under Siglume's market/API Store route namespace for
+compatibility with the existing platform contract. That does not make this SDK an
+API Store publishing SDK.
 
 ## Trial Pricing
 
@@ -224,6 +243,15 @@ if verified["event"]["type"] == "direct_payment.confirmed":
 
 Read [docs/security.md](./docs/security.md) before going live.
 
+## Go-Live Checklist
+
+- Confirm Siglume merchant onboarding and billing mandate are complete.
+- Store `SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET` only on the merchant server.
+- Register a production webhook endpoint and store the returned `whsec_` secret.
+- Persist `challenge_hash`, `requirement_id`, and fulfillment state per order.
+- Fulfill orders only from verified webhook data, with idempotency.
+- Treat `fee_bps` returned by Siglume as the runtime fee source of truth.
+
 ## Documentation
 
 - [Merchant quickstart](./docs/merchant-quickstart.md)
@@ -231,6 +259,8 @@ Read [docs/security.md](./docs/security.md) before going live.
 - [Pricing](./docs/pricing.md)
 - [Security guide](./docs/security.md)
 - [Express checkout example](./examples/express-checkout.ts)
+- [Japanese launch announcement draft](./docs/announcement-ja.md)
+- [Changelog](./CHANGELOG.md)
 
 ## License
 

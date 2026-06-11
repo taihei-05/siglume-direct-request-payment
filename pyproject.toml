@@ -17,6 +17,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
     "Topic :: Software Development :: Libraries",
 ]
 
@@ -30,6 +31,9 @@ test = ["pytest>=8.0", "respx>=0.21"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+siglume_direct_request_payment = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["python_tests"]
