@@ -1,5 +1,9 @@
 ﻿export const DEFAULT_SIGLUME_API_BASE = "https://siglume.com/v1";
 export const DIRECT_REQUEST_PAYMENT_CHALLENGE_SCHEME = "siglume-external-402-v1";
+// Recurring (subscription / scheduled autopay) approval uses a DISTINCT scheme
+// with cadence bound into the HMAC, so a one-time checkout challenge can never
+// be replayed as a recurring authorization and vice versa.
+export const DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME = "siglume-external-402-recurring-v1";
 export const DIRECT_REQUEST_PAYMENT_MODE = "external_402";
 export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "api_store_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "api_store_direct_payment_allowance";
@@ -32,6 +36,31 @@ export interface ParsedDirectRequestPaymentChallenge {
   scheme: string;
   nonce: string;
   signature: string;
+}
+
+/** "monthly" authorizes a Siglume-swept subscription; "daily" authorizes a
+ *  scheduled autopay (at most one charge per day, merchant-triggered). */
+export type DirectRequestPaymentRecurringCadence = "monthly" | "daily";
+
+export interface DirectRequestPaymentRecurringChallengeInput {
+  merchant: string;
+  amount_minor: number;
+  currency: DirectRequestPaymentCurrency | string;
+  cadence: DirectRequestPaymentRecurringCadence | string;
+  secret: string;
+  nonce?: string;
+}
+
+export interface DirectRequestPaymentRecurringChallenge {
+  scheme: typeof DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME;
+  merchant: string;
+  amount_minor: number;
+  currency: DirectRequestPaymentCurrency;
+  cadence: DirectRequestPaymentRecurringCadence;
+  nonce: string;
+  signature: string;
+  challenge: string;
+  challenge_hash: string;
 }
 
 export interface Web3TransactionRequest {
@@ -289,7 +318,7 @@ export class DirectRequestPaymentClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.2.0";
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.0";
     this.fetch_impl = fetchImpl;
   }
 
@@ -414,7 +443,7 @@ export class DirectRequestPaymentMerchantClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.2.0";
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.0";
     this.fetch_impl = fetchImpl;
   }
 
@@ -618,6 +647,86 @@ export function parseDirectRequestPaymentChallenge(challenge: string): ParsedDir
     throw new SiglumeDirectRequestPaymentError("Direct Request Payment challenge is incomplete.");
   }
   return { scheme, nonce, signature };
+}
+
+/** Merchant-side, ONE-TIME approval of a recurring authorization: amount +
+ *  currency + cadence are bound into the HMAC. Recurring charges afterwards
+ *  are deliberately challenge-free — the on-chain mandate cap/cadence and the
+ *  amount frozen on the Siglume authorization are the per-charge integrity
+ *  checks. Cadence "monthly" = subscription, "daily" = scheduled autopay. */
+export async function createDirectRequestPaymentRecurringChallenge(
+  input: DirectRequestPaymentRecurringChallengeInput,
+): Promise<DirectRequestPaymentRecurringChallenge> {
+  const merchant = normalizeMerchant(input.merchant);
+  const amount_minor = positiveInteger(input.amount_minor, "amount_minor");
+  const currency = normalizeCurrency(input.currency);
+  const cadence = normalizeRecurringCadence(input.cadence);
+  const nonce = input.nonce ? normalizeChallengeNonce(input.nonce) : await randomNonce();
+  const signature = await createDirectRequestPaymentRecurringChallengeSignature(input.secret, {
+    merchant,
+    amount_minor,
+    currency,
+    cadence,
+    nonce,
+  });
+  const challenge = `${DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME}:${nonce}:${signature}`;
+  return {
+    scheme: DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME,
+    merchant,
+    amount_minor,
+    currency,
+    cadence,
+    nonce,
+    signature,
+    challenge,
+    challenge_hash: await sha256Prefixed(challenge),
+  };
+}
+
+export async function createDirectRequestPaymentRecurringChallengeSignature(
+  secret: string,
+  input: {
+    merchant: string;
+    amount_minor: number;
+    currency: DirectRequestPaymentCurrency | string;
+    cadence: DirectRequestPaymentRecurringCadence | string;
+    nonce: string;
+  },
+): Promise<string> {
+  const normalizedSecret = requireNonEmpty(secret, "secret");
+  const merchant = normalizeMerchant(input.merchant);
+  const amount = positiveInteger(input.amount_minor, "amount_minor");
+  const currency = normalizeCurrency(input.currency);
+  const cadence = normalizeRecurringCadence(input.cadence);
+  const nonce = normalizeChallengeNonce(input.nonce);
+  // MUST stay byte-identical to the server's
+  // _external_402_recurring_challenge_signature — both sides change together.
+  const material = `${merchant}:${amount}:${currency}:${cadence}:${nonce}`;
+  return hmacSha256Hex(normalizedSecret, new TextEncoder().encode(material));
+}
+
+export async function verifyDirectRequestPaymentRecurringChallenge(
+  secret: string,
+  input: {
+    merchant: string;
+    amount_minor: number;
+    currency: DirectRequestPaymentCurrency | string;
+    cadence: DirectRequestPaymentRecurringCadence | string;
+    challenge: string;
+  },
+): Promise<boolean> {
+  const parsed = parseDirectRequestPaymentChallenge(input.challenge);
+  if (parsed.scheme !== DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME) {
+    return false;
+  }
+  const expected = await createDirectRequestPaymentRecurringChallengeSignature(secret, {
+    merchant: input.merchant,
+    amount_minor: input.amount_minor,
+    currency: input.currency,
+    cadence: input.cadence,
+    nonce: parsed.nonce,
+  });
+  return timingSafeEqualHex(expected, parsed.signature);
 }
 
 export async function verifyDirectRequestPaymentChallenge(
@@ -874,6 +983,16 @@ function normalizeChallengeNonce(value: string): string {
     throw new SiglumeDirectRequestPaymentError("nonce must not contain ':'.");
   }
   return nonce;
+}
+
+function normalizeRecurringCadence(value: string): DirectRequestPaymentRecurringCadence {
+  const cadence = requireNonEmpty(value, "cadence").toLowerCase();
+  if (cadence !== "monthly" && cadence !== "daily") {
+    throw new SiglumeDirectRequestPaymentError(
+      'cadence must be "monthly" (subscription) or "daily" (scheduled autopay).',
+    );
+  }
+  return cadence;
 }
 
 function cloneJsonObject(value: Record<string, unknown>, name: string): Record<string, unknown> {
