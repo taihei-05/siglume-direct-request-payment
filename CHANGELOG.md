@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Docs: scheduled autopay (`cadence: "daily"`) is documented as an approval
+  tag, not a once-per-day run limit. Siglume no longer caps scheduled autopay
+  at one charge per day; occurrences are bounded by the buyer's per-run,
+  daily, and monthly auto-pay budget plus the authorization's `max_runs` /
+  expiry. No code or wire-format changes — challenges signed by 0.3.0 verify
+  unchanged.
+
 ## 0.3.0 - 2026-06-12
 
 Recurring payment approval release.

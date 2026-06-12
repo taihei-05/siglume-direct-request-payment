@@ -263,18 +263,20 @@ print(verified["status"])
 ## Recurring Payments: Subscription and Scheduled Autopay
 
 Beyond one-time checkout, a buyer can authorize recurring payments. The merchant
-approves the price and cadence ONCE by signing a recurring challenge (a distinct
-scheme, so one-time challenges and recurring approvals can never be replayed as
-each other); after that, recurring charges are challenge-free by design — the
-buyer's on-chain payment mandate (frozen payee, amount cap, cadence) is the
-per-charge integrity check.
+approves the price and recurring product tag ONCE by signing a recurring
+challenge (a distinct scheme, so one-time challenges and recurring approvals can
+never be replayed as each other); after that, recurring charges are
+challenge-free by design. Subscriptions are bounded by the buyer's mandate;
+scheduled autopay is bounded by the buyer's per-run, daily, and monthly
+auto-pay budget.
 
 - **Subscription** (`cadence: "monthly"`): Siglume charges the buyer's wallet
   monthly and pays your merchant wallet automatically. First month is charged at
   setup. The buyer can cancel from their Siglume wallet at any time.
-- **Scheduled autopay** (`cadence: "daily"`): the buyer authorizes at most one
-  charge per day at a fixed amount and hands you a `schedule_token`; YOUR
-  scheduler triggers each occurrence with that token.
+- **Scheduled autopay** (`cadence: "daily"`): `daily` is the approval tag for
+  merchant-triggered scheduled autopay, not a run-count limiter. The
+  buyer authorizes the per-run amount and budget envelope, then hands you a
+  `schedule_token`; YOUR scheduler triggers each occurrence with that token.
 
 ```ts
 import { createDirectRequestPaymentRecurringChallenge } from "@siglume/direct-request-payment";
