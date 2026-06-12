@@ -319,7 +319,7 @@ export class DirectRequestPaymentClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.0";
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.1";
     this.fetch_impl = fetchImpl;
   }
 
@@ -444,7 +444,7 @@ export class DirectRequestPaymentMerchantClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.0";
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.1";
     this.fetch_impl = fetchImpl;
   }
 
@@ -897,6 +897,8 @@ export async function verifyDirectRequestPaymentWebhook(
 
 export const createExternal402Challenge = createDirectRequestPaymentChallenge;
 export const verifyExternal402Challenge = verifyDirectRequestPaymentChallenge;
+export const createExternal402RecurringChallenge = createDirectRequestPaymentRecurringChallenge;
+export const verifyExternal402RecurringChallenge = verifyDirectRequestPaymentRecurringChallenge;
 
 function normalizeMerchant(value: string): string {
   const merchant = requireNonEmpty(value, "merchant").toLowerCase();

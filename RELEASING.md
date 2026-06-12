@@ -5,66 +5,75 @@ This repository publishes the same Siglume Direct Request Payment SDK surface to
 - npm: `@siglume/direct-request-payment`
 - PyPI: `siglume-direct-request-payment`
 
-## Verify
+Releases are automated through GitHub Actions. Do not publish from a developer
+machine during the normal release flow; local `npm publish` requires OTP and
+local PyPI upload depends on workstation credentials/network state.
+
+## One-Time Registry Setup
+
+npm Trusted Publishing must be configured for:
+
+- Package: `@siglume/direct-request-payment`
+- Owner: `taihei-05`
+- Repository: `siglume-direct-request-payment`
+- Workflow: `release-npm.yml`
+- Environment: `npm`
+
+PyPI Trusted Publishing must be configured for:
+
+- Project: `siglume-direct-request-payment`
+- Owner: `taihei-05`
+- Repository: `siglume-direct-request-payment`
+- Workflow: `release-pypi.yml`
+- Environment: `pypi`
+
+After these registry-side settings exist, no npm OTP, PyPI token, or local
+publish command is needed for normal releases.
+
+## Verify Locally
 
 ```powershell
 npm run typecheck
 npm test
 D:\Users\taihei2\AppData\Local\Programs\Python\Python311\python.exe -m pytest python_tests
+npm publish --dry-run --access public
+if (Test-Path dist) { Remove-Item -Recurse -Force dist }
 D:\Users\taihei2\AppData\Local\Programs\Python\Python311\python.exe -m build
 D:\Users\taihei2\AppData\Local\Programs\Python\Python311\python.exe -m twine check dist\*.whl dist\*.tar.gz
-npm publish --dry-run --access public
 ```
 
-`npm publish --dry-run` rebuilds the TypeScript `dist` directory. If you run it
-before publishing to PyPI, run `python -m build` again or upload only the wheel
-and sdist patterns shown below.
+`npm publish --dry-run` rebuilds the TypeScript `dist` directory. Rebuild Python
+artifacts after npm dry-run before running `twine check`.
 
-## Publish to npm
+## Release
 
-Preferred: configure npm Trusted Publishing for:
+Update both versions to the same value:
 
-- Owner: `taihei-05`
-- Repository: `siglume-direct-request-payment`
-- Workflow: `release-npm.yml`
-- Environment: `npm`
-- Package: `@siglume/direct-request-payment`
+- `package.json`
+- `package-lock.json`
+- `pyproject.toml`
+- runtime user-agent strings, when they include the package version
+- `CHANGELOG.md`
 
-Or add a GitHub Actions secret named `NPM_TOKEN` with an npm automation token.
-
-Then push a `v*` tag or run the `Release npm` workflow manually.
-
-Manual OTP upload:
+Then commit and push a matching tag:
 
 ```powershell
-npm publish --access public --otp=<npm-otp>
+git commit -am "Release direct request payment SDK <version>"
+git tag v<version>
+git push origin main
+git push origin v<version>
 ```
 
-Confirm:
+The `v*` tag triggers:
+
+- `.github/workflows/release-npm.yml`
+- `.github/workflows/release-pypi.yml`
+
+## Confirm
 
 ```powershell
 npm view @siglume/direct-request-payment version repository --json
-```
-
-## Publish to PyPI
-
-Use a PyPI API token or configure PyPI Trusted Publishing for:
-
-- Owner: `taihei-05`
-- Repository: `siglume-direct-request-payment`
-- Workflow: release-pypi.yml
-- Environment: `pypi`
-- Project: `siglume-direct-request-payment`
-
-Manual token upload:
-
-```powershell
-D:\Users\taihei2\AppData\Local\Programs\Python\Python311\python.exe -m build
-D:\Users\taihei2\AppData\Local\Programs\Python\Python311\python.exe -m twine upload dist\*.whl dist\*.tar.gz
-```
-
-Confirm:
-
-```powershell
 D:\Users\taihei2\AppData\Local\Programs\Python\Python311\python.exe -m pip index versions siglume-direct-request-payment
 ```
+
+Both registries should show the tag version as latest.

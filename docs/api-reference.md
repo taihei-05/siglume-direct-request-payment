@@ -59,6 +59,63 @@ as `scheme:nonce:signature`.
 Verifies a challenge against merchant, amount, currency, and secret. This is
 useful in tests and internal checkout assertions.
 
+## `createDirectRequestPaymentRecurringChallenge(input)` / `create_direct_request_payment_recurring_challenge(...)`
+
+Creates the merchant-signed, one-time approval challenge used when a buyer sets
+up a subscription or scheduled autopay authorization.
+
+```ts
+const recurring = await createDirectRequestPaymentRecurringChallenge({
+  merchant: "example_merchant",
+  amount_minor: 980,
+  currency: "JPY",
+  cadence: "daily",
+  secret: process.env.SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET!,
+  nonce: "schedule_setup_4711",
+});
+```
+
+```py
+recurring = create_direct_request_payment_recurring_challenge(
+    merchant="example_merchant",
+    amount_minor=980,
+    currency="JPY",
+    cadence="daily",
+    secret=os.environ["SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET"],
+    nonce="schedule_setup_4711",
+)
+```
+
+The recurring signature binds:
+
+- merchant key
+- amount in minor units
+- currency
+- cadence
+- nonce
+
+The HMAC material is:
+
+```text
+merchant:amount_minor:currency:cadence:nonce
+```
+
+`cadence` must be:
+
+- `monthly` for subscriptions
+- `daily` for scheduled autopay
+
+For scheduled autopay, `daily` is an approval tag. It is not a one-run-per-day
+limit. Occurrence execution is bounded by the buyer-approved per-run, daily, and
+monthly auto-pay budget.
+
+Returns the same fields as the one-time challenge helper, plus `cadence`.
+
+## `verifyDirectRequestPaymentRecurringChallenge(secret, input)` / `verify_direct_request_payment_recurring_challenge(...)`
+
+Verifies a recurring approval challenge against merchant, amount, currency,
+cadence, and secret.
+
 ## `directRequestPaymentChallengeHash(challenge)` / `direct_request_payment_challenge_hash(...)`
 
 Returns the `sha256:`-prefixed hash for an existing challenge string.

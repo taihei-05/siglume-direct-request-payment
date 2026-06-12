@@ -14,8 +14,6 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment: npm
-    env:
-      HAS_NPM_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -28,9 +26,5 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - name: Configure npm token
-        if: ${{ env.HAS_NPM_TOKEN == 'true' }}
-        run: npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - run: npm publish --access public --provenance
+      - name: Publish with npm Trusted Publishing
+        run: npm publish --access public --provenance

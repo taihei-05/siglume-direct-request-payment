@@ -1,7 +1,7 @@
 # Pricing
 
 This page documents the trial-phase merchant pricing for Siglume Direct Request
-Payment as of 2026-06-11. Pricing can change by agreement or future product
+Payment as of 2026-06-12. Pricing can change by agreement or future product
 release; the Siglume platform response is the source of truth for per-payment
 fee data returned at runtime.
 

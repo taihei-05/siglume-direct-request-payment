@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 - 2026-06-12
 
 - Docs: scheduled autopay (`cadence: "daily"`) is documented as an approval
   tag, not a once-per-day run limit. Siglume no longer caps scheduled autopay
@@ -8,6 +8,8 @@
   daily, and monthly auto-pay budget plus the authorization's `max_runs` /
   expiry. No code or wire-format changes — challenges signed by 0.3.0 verify
   unchanged.
+- Release automation now uses npm and PyPI Trusted Publishing from GitHub
+  Actions, so normal releases do not require local npm OTP or PyPI credentials.
 
 ## 0.3.0 - 2026-06-12
 

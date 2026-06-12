@@ -34,6 +34,8 @@ from ._client import (
 
 create_external_402_challenge = create_direct_request_payment_challenge
 verify_external_402_challenge = verify_direct_request_payment_challenge
+create_external_402_recurring_challenge = create_direct_request_payment_recurring_challenge
+verify_external_402_recurring_challenge = verify_direct_request_payment_recurring_challenge
 
 __all__ = [
     "DEFAULT_SIGLUME_API_BASE",
@@ -60,6 +62,7 @@ __all__ = [
     "create_direct_request_payment_recurring_challenge",
     "create_direct_request_payment_recurring_challenge_signature",
     "create_external_402_challenge",
+    "create_external_402_recurring_challenge",
     "direct_request_payment_challenge_hash",
     "direct_request_payment_request_hash",
     "parse_direct_request_payment_challenge",
@@ -68,5 +71,6 @@ __all__ = [
     "verify_direct_request_payment_recurring_challenge",
     "verify_direct_request_payment_webhook",
     "verify_external_402_challenge",
+    "verify_external_402_recurring_challenge",
     "verify_webhook_signature",
 ]

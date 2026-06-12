@@ -38,6 +38,17 @@ challenge is encoded as `scheme:nonce:signature`. Store the returned
 `challenge_hash` on the order. When a
 webhook arrives, look up the order by `challenge_hash`.
 
+Recurring approvals use a different challenge scheme and HMAC material:
+
+```text
+merchant:amount_minor:currency:cadence:nonce
+```
+
+`cadence="monthly"` is for subscriptions. `cadence="daily"` is the scheduled
+autopay approval tag; it does not itself limit occurrences to once per day.
+Scheduled autopay execution is bounded by the buyer-approved per-run, daily, and
+monthly auto-pay budget.
+
 ## Do Not Trust Browser Amounts
 
 The merchant server owns:
