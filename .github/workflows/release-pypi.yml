@@ -28,3 +28,5 @@ jobs:
       - run: python -m twine check dist/*.whl dist/*.tar.gz
       - name: Publish to PyPI with Trusted Publishing
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true

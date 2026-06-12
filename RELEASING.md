@@ -69,6 +69,9 @@ The `v*` tag triggers:
 - `.github/workflows/release-npm.yml`
 - `.github/workflows/release-pypi.yml`
 
+Both workflows are idempotent for already-published versions. npm checks the
+exact package version before publishing; PyPI uses `skip-existing`.
+
 ## Confirm
 
 ```powershell
