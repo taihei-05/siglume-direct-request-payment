@@ -38,8 +38,9 @@ export interface ParsedDirectRequestPaymentChallenge {
   signature: string;
 }
 
-/** "monthly" authorizes a Siglume-swept subscription; "daily" authorizes a
- *  scheduled autopay (at most one charge per day, merchant-triggered). */
+/** "monthly" authorizes a Siglume-swept subscription; "daily" authorizes
+ *  merchant-triggered scheduled autopay. It is an approval tag, not a
+ *  run-count limiter. */
 export type DirectRequestPaymentRecurringCadence = "monthly" | "daily";
 
 export interface DirectRequestPaymentRecurringChallengeInput {
@@ -651,9 +652,9 @@ export function parseDirectRequestPaymentChallenge(challenge: string): ParsedDir
 
 /** Merchant-side, ONE-TIME approval of a recurring authorization: amount +
  *  currency + cadence are bound into the HMAC. Recurring charges afterwards
- *  are deliberately challenge-free — the on-chain mandate cap/cadence and the
- *  amount frozen on the Siglume authorization are the per-charge integrity
- *  checks. Cadence "monthly" = subscription, "daily" = scheduled autopay. */
+ *  are deliberately challenge-free; the recurring authorization and the
+ *  buyer's mandate/budget caps are the per-charge integrity checks. Cadence
+ *  "monthly" = subscription, "daily" = scheduled autopay approval tag. */
 export async function createDirectRequestPaymentRecurringChallenge(
   input: DirectRequestPaymentRecurringChallengeInput,
 ): Promise<DirectRequestPaymentRecurringChallenge> {

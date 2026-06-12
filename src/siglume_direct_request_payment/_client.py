@@ -462,9 +462,9 @@ def create_direct_request_payment_recurring_challenge(
 ) -> dict[str, Any]:
     """Merchant-side, ONE-TIME approval of a recurring authorization: amount +
     currency + cadence are bound into the HMAC. Recurring charges afterwards
-    are deliberately challenge-free — the on-chain mandate cap/cadence and the
-    amount frozen on the Siglume authorization are the per-charge integrity
-    checks. Cadence "monthly" = subscription, "daily" = scheduled autopay."""
+    are deliberately challenge-free; the recurring authorization and the
+    buyer's mandate/budget caps are the per-charge integrity checks. Cadence
+    "monthly" = subscription, "daily" = scheduled autopay approval tag."""
     normalized_merchant = _normalize_merchant(merchant)
     normalized_amount = _positive_int(amount_minor, "amount_minor")
     normalized_currency = _normalize_currency(currency)
