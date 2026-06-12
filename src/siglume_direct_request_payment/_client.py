@@ -15,6 +15,10 @@ import httpx
 
 DEFAULT_SIGLUME_API_BASE = "https://siglume.com/v1"
 DIRECT_REQUEST_PAYMENT_CHALLENGE_SCHEME = "siglume-external-402-v1"
+# Recurring (subscription / scheduled autopay) approval uses a DISTINCT scheme
+# with cadence bound into the HMAC, so a one-time checkout challenge can never
+# be replayed as a recurring authorization and vice versa.
+DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME = "siglume-external-402-recurring-v1"
 DIRECT_REQUEST_PAYMENT_MODE = "external_402"
 DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "api_store_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "api_store_direct_payment_allowance"
@@ -52,7 +56,7 @@ class DirectRequestPaymentClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.2.0",
+        user_agent: str = "siglume-direct-request-payment/0.3.0",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -193,7 +197,7 @@ class DirectRequestPaymentMerchantClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.2.0",
+        user_agent: str = "siglume-direct-request-payment/0.3.0",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_MERCHANT_AUTH_TOKEN") or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -447,6 +451,92 @@ def parse_direct_request_payment_challenge(challenge: str) -> dict[str, str]:
     return {"scheme": scheme, "nonce": nonce, "signature": signature}
 
 
+def create_direct_request_payment_recurring_challenge(
+    *,
+    merchant: str,
+    amount_minor: int,
+    currency: str,
+    cadence: str,
+    secret: str,
+    nonce: str | None = None,
+) -> dict[str, Any]:
+    """Merchant-side, ONE-TIME approval of a recurring authorization: amount +
+    currency + cadence are bound into the HMAC. Recurring charges afterwards
+    are deliberately challenge-free — the on-chain mandate cap/cadence and the
+    amount frozen on the Siglume authorization are the per-charge integrity
+    checks. Cadence "monthly" = subscription, "daily" = scheduled autopay."""
+    normalized_merchant = _normalize_merchant(merchant)
+    normalized_amount = _positive_int(amount_minor, "amount_minor")
+    normalized_currency = _normalize_currency(currency)
+    normalized_cadence = _normalize_recurring_cadence(cadence)
+    normalized_nonce = _normalize_challenge_nonce(nonce) if nonce is not None else str(uuid.uuid4())
+    signature = create_direct_request_payment_recurring_challenge_signature(
+        secret=secret,
+        merchant=normalized_merchant,
+        amount_minor=normalized_amount,
+        currency=normalized_currency,
+        cadence=normalized_cadence,
+        nonce=normalized_nonce,
+    )
+    challenge = f"{DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME}:{normalized_nonce}:{signature}"
+    return {
+        "scheme": DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME,
+        "merchant": normalized_merchant,
+        "amount_minor": normalized_amount,
+        "currency": normalized_currency,
+        "cadence": normalized_cadence,
+        "nonce": normalized_nonce,
+        "signature": signature,
+        "challenge": challenge,
+        "challenge_hash": _sha256_prefixed(challenge),
+    }
+
+
+def create_direct_request_payment_recurring_challenge_signature(
+    *,
+    secret: str,
+    merchant: str,
+    amount_minor: int,
+    currency: str,
+    cadence: str,
+    nonce: str,
+) -> str:
+    normalized_secret = _require_non_empty(secret, "secret")
+    # MUST stay byte-identical to the server's
+    # _external_402_recurring_challenge_signature — both sides change together.
+    material = (
+        f"{_normalize_merchant(merchant)}:"
+        f"{_positive_int(amount_minor, 'amount_minor')}:"
+        f"{_normalize_currency(currency)}:"
+        f"{_normalize_recurring_cadence(cadence)}:"
+        f"{_normalize_challenge_nonce(nonce)}"
+    )
+    return hmac.new(normalized_secret.encode("utf-8"), material.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def verify_direct_request_payment_recurring_challenge(
+    *,
+    secret: str,
+    merchant: str,
+    amount_minor: int,
+    currency: str,
+    cadence: str,
+    challenge: str,
+) -> bool:
+    parsed = parse_direct_request_payment_challenge(challenge)
+    if parsed["scheme"] != DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME:
+        return False
+    expected = create_direct_request_payment_recurring_challenge_signature(
+        secret=secret,
+        merchant=merchant,
+        amount_minor=amount_minor,
+        currency=currency,
+        cadence=cadence,
+        nonce=parsed["nonce"],
+    )
+    return hmac.compare_digest(expected, parsed["signature"])
+
+
 def verify_direct_request_payment_challenge(
     *,
     secret: str,
@@ -691,6 +781,15 @@ def _normalize_challenge_nonce(value: str) -> str:
     if ":" in nonce:
         raise DirectRequestPaymentError("nonce must not contain ':'.")
     return nonce
+
+
+def _normalize_recurring_cadence(value: str) -> str:
+    cadence = _require_non_empty(value, "cadence").lower()
+    if cadence not in {"monthly", "daily"}:
+        raise DirectRequestPaymentError(
+            'cadence must be "monthly" (subscription) or "daily" (scheduled autopay).'
+        )
+    return cadence
 
 
 def _clone_json_object(value: Mapping[str, Any], name: str) -> dict[str, Any]:

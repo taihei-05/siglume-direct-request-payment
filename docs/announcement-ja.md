@@ -47,14 +47,14 @@ console.log(setup.env);
 
 ## 料金
 
-| Plan | Monthly fee | Payment fee |
+| Plan | Monthly fee (JPY / USD) | Payment fee |
 | --- | ---: | ---: |
-| Launch | JPY 0 | 月100決済まで0%、以後1.8% |
-| Starter | JPY 980 | 1.0% |
-| Growth | JPY 2,980 | 0.7% |
-| Pro | JPY 9,800 | 0.5% |
+| Launch | JPY 0 / USD 0 | 1.8% |
+| Starter | JPY 980 / USD 6.00 | 1.0% |
+| Growth | JPY 2,980 / USD 18.00 | 0.7% |
+| Pro | JPY 9,800 / USD 60.00 | 0.5% |
 
-手数料が発生する決済の最低手数料は JPY 3 です。手数料は決済時に差し引かれ、マーチャントは純額を受け取ります。月額料金は merchant billing mandate 経由で請求されます。
+すべての決済にプラン料率の手数料が発生します。最低手数料は 1 決済あたり JPY 30(USD マーチャントは USD 0.20)です。手数料は決済時に差し引かれ、マーチャントは純額を受け取ります。月額料金は merchant billing mandate 経由で請求されます。
 
 ## 注意点
 

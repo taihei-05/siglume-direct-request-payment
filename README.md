@@ -70,23 +70,30 @@ Siglume Direct Request Payment is currently offered with trial-phase merchant
 pricing designed for small EC sites, booking services, membership services, paid
 APIs, and agent-to-agent payment experiments.
 
-| Plan | Monthly fee | Payment fee |
-| --- | ---: | ---: |
-| Launch | JPY 0 | 0% through 100 payments/month, then 1.8% |
-| Starter | JPY 980 | 1.0% |
-| Growth | JPY 2,980 | 0.7% |
-| Pro | JPY 9,800 | 0.5% |
+Both launch settlement currencies are first-class: JPY settled in JPYC, and USD
+settled in USDC. A merchant settles in one currency, chosen at onboarding. The
+settlement fee percentage is identical in both currencies; only the flat
+amounts differ.
 
-The minimum fee is JPY 3 for each fee-bearing payment, including Launch-plan
-payments after the included monthly allowance. A merchant billing mandate is
-required before accepting payments, even on the Launch plan. The API and merchant
-registry may still expose the internal plan key `free` for this tier. See
-[docs/pricing.md](./docs/pricing.md) for details.
+| Plan | Monthly fee (JPY / USD) | Payment fee |
+| --- | ---: | ---: |
+| Launch | JPY 0 / USD 0 | 1.8% |
+| Starter | JPY 980 / USD 6.00 | 1.0% |
+| Growth | JPY 2,980 / USD 18.00 | 0.7% |
+| Pro | JPY 9,800 / USD 60.00 | 0.5% |
+
+Every payment is fee-bearing at the plan rate. The minimum fee is JPY 30
+(USD merchants: USD 0.20) per payment — it recovers the per-payment settlement
+cost (an on-chain signature plus network gas) on small payments; the percentage
+rate applies on larger payments. A merchant billing
+mandate is required before accepting payments, even on the Launch plan. The API
+and merchant registry may still expose the internal plan key `free` for this
+tier. See [docs/pricing.md](./docs/pricing.md) for details.
 
 Per-payment fees are deducted at payment settlement time, so the merchant
 receives the net amount. Monthly base fees are collected through the merchant
-billing mandate. The listed public pricing is JPY-denominated; USD/USDC merchant
-billing requires separately agreed terms.
+billing mandate. `fee_bps` returned on a payment requirement is the authoritative
+per-payment rate for that payment in the merchant's settlement currency.
 
 ## Merchant Setup: One SDK Call
 
@@ -252,6 +259,72 @@ verified = siglume.verify_payment_requirement(
 
 print(verified["status"])
 ```
+
+## Recurring Payments: Subscription and Scheduled Autopay
+
+Beyond one-time checkout, a buyer can authorize recurring payments. The merchant
+approves the price and cadence ONCE by signing a recurring challenge (a distinct
+scheme, so one-time challenges and recurring approvals can never be replayed as
+each other); after that, recurring charges are challenge-free by design — the
+buyer's on-chain payment mandate (frozen payee, amount cap, cadence) is the
+per-charge integrity check.
+
+- **Subscription** (`cadence: "monthly"`): Siglume charges the buyer's wallet
+  monthly and pays your merchant wallet automatically. First month is charged at
+  setup. The buyer can cancel from their Siglume wallet at any time.
+- **Scheduled autopay** (`cadence: "daily"`): the buyer authorizes at most one
+  charge per day at a fixed amount and hands you a `schedule_token`; YOUR
+  scheduler triggers each occurrence with that token.
+
+```ts
+import { createDirectRequestPaymentRecurringChallenge } from "@siglume/direct-request-payment";
+
+// Merchant server: approve a JPY 980 monthly subscription once.
+const recurring = await createDirectRequestPaymentRecurringChallenge({
+  merchant: "example_merchant",
+  amount_minor: 980,
+  currency: "JPY",
+  cadence: "monthly",
+  secret: process.env.SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET!,
+  nonce: "subscription_setup_4711",
+});
+
+// Hand recurring.challenge to the buyer-facing page. The buyer creates the
+// subscription with their Siglume token:
+//   POST /v1/market/api-store/direct-payments/subscriptions
+//   { merchant, amount_minor, currency, cadence: "monthly", challenge }
+// For scheduled autopay, the buyer instead creates a scheduled auto-pay
+// authorization (mode: "external_402") and gives you the schedule_token.
+```
+
+```py
+import os
+
+from siglume_direct_request_payment import create_direct_request_payment_recurring_challenge
+
+# Merchant server: approve a JPY 980 monthly subscription once.
+recurring = create_direct_request_payment_recurring_challenge(
+    merchant="example_merchant",
+    amount_minor=980,
+    currency="JPY",
+    cadence="monthly",
+    secret=os.environ["SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET"],
+    nonce="subscription_setup_4711",
+)
+
+# Hand recurring["challenge"] to the buyer-facing page, as in the TS example.
+print(recurring["challenge"])
+```
+
+Each recurring challenge is single-use: it authorizes exactly one subscription
+or schedule, bound to the first buyer who redeems it. Issue a fresh challenge
+per setup. The platform fee on recurring charges is your plan's payment fee
+(with the per-payment minimum), frozen at setup.
+
+Merchant-facing webhook events: `subscription.created`, `subscription.renewed`
+(each monthly charge), `payment.failed` (renewal failure, with `will_retry` /
+`final_failure` flags), `subscription.cancelled`, and — for each scheduled
+autopay occurrence — the usual `direct_payment.confirmed`.
 
 ## Webhooks
 
