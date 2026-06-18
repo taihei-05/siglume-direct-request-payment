@@ -5,9 +5,9 @@ Payment as of 2026-06-18. Pricing can change by agreement or future product
 release; the Siglume platform response is the source of truth for per-payment
 fee data returned at runtime.
 
-These prices apply to **SDRP Standard Payment** through the external merchant
-Direct Request Payment SDK. They do not apply to Micro Payment or Nano Payment
-usage events.
+Pricing has one structure: a merchant selects the Standard Payment plan during
+setup, then Siglume applies the fee for each payment by amount. Micro Payment
+and Nano Payment are automatic amount bands, not separate choices.
 
 ## Settlement Currencies
 
@@ -22,36 +22,17 @@ percentage (the payment fee column below) is identical in both currencies. Only
 the flat amounts — the monthly base fee and the per-payment minimum fee — are
 quoted per currency.
 
-## SDRP Menu Boundary
+## Pricing Table
 
-SDRP is the protocol family. This SDK is for external-merchant Standard Payment:
-one buyer-approved payment, subscription charge, or scheduled-autopay occurrence
-settles through DirectPaymentHub.
-
-| SDRP menu | Amount band | Fee model | Settlement cadence |
-| --- | --- | --- | --- |
-| Standard Payment | Over JPY 500 / over USD 3.00, or immediate finality required | Merchant plan percentage with JPY 30 / USD 0.20 minimum | Immediate ordinary wallet settlement |
-| Micro Payment | JPY 50-500 / about USD 0.30-3.00 | USD 0.01 / accepted Tx, about JPY 2 | SDRP internal meter, weekly delayed settlement |
-| Nano Payment | Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | USD 0.001 / accepted usage, about JPY 0.2 | SDRP internal meter, monthly delayed settlement |
+| Payment amount | Applied automatically | What you select | Fee | Settlement |
+| --- | --- | --- | --- | --- |
+| Over JPY 500 / over USD 3.00, or whenever immediate finality is required | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Immediate on-chain split through DirectPaymentHub after payment confirmation |
+| JPY 50-500 / about USD 0.30-3.00 | Micro Payment | No selection. Applied automatically by amount. | USD 0.01 / Tx, about JPY 2 | Meter gate before provider execution; weekly delayed settlement |
+| Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | Nano Payment | No selection. Applied automatically by amount. | USD 0.001 / usage, about JPY 0.2 | Meter gate before provider execution; monthly delayed settlement |
 
 For Micro Payment and Nano Payment, the SDRP meter gate runs before provider
 execution. Budget or scope failures are recorded as `rejected_no_charge`; the
 provider API is not called and no pending provider revenue is created.
-
-## Trial Plans
-
-| Plan | Monthly fee (JPY) | Monthly fee (USD) | Payment fee | Intended starting point |
-| --- | ---: | ---: | ---: | --- |
-| Launch | JPY 0 | USD 0 | 1.8% | Proofs of concept and low-volume trials |
-| Starter | JPY 980 | USD 6.00 | 1.0% | Early production checkout trials |
-| Growth | JPY 2,980 | USD 18.00 | 0.7% | Growing EC, booking, membership, and API services |
-| Pro | JPY 9,800 | USD 60.00 | 0.5% | Higher-volume merchant integrations |
-
-Every payment is fee-bearing at the plan rate. The minimum fee is JPY 30
-(USD merchants: USD 0.20) per payment. The minimum covers the worst-case
-per-payment settlement cost (an on-chain signature plus network gas), so small
-payments are never processed at a loss; on larger payments the percentage rate
-applies instead.
 
 USD pricing is the JPY tier converted at roughly 160 JPY/USD and rounded to
 clean price points that keep the same 1:3:10 tier ratio.

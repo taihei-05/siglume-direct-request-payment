@@ -109,6 +109,6 @@ Direct Request Payment is not:
 - the Micro Payment or Nano Payment meter
 
 It is a Standard Payment wallet gate backed by an on-chain receipt. Micro
-Payment and Nano Payment are separate SDRP internal-meter, delayed-settlement
-menus; they must fail closed before provider API execution when the buyer's
-metered budget, scope, or amount band is invalid.
+Payment and Nano Payment are SDRP amount bands with internal-meter,
+delayed-settlement behavior; they must fail closed before provider API
+execution when the buyer's metered budget, scope, or amount band is invalid.

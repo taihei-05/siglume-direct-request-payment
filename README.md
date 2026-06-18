@@ -42,11 +42,20 @@ pip install siglume-direct-request-payment
 Node.js 18 or later is required for the TypeScript SDK. Python 3.11 or later is
 required for the Python SDK.
 
-## Current Platform Contract
+## Protocol Overview
 
-The public product name is **Siglume Direct Request Payment**. The current
-platform payload still uses the internal mode name `external_402`; this SDK sets
-that value for you when creating a payment requirement.
+Siglume Direct Request Payment is an SDRP payment protocol for products that
+want to accept Siglume wallet payments. The merchant fixes the order, amount,
+and currency on its server; the buyer pays with a Siglume wallet; Siglume
+applies the correct pricing and settlement path from the payment amount and
+execution conditions.
+
+During merchant setup, only the **Standard Payment plan** is selected. Micro
+Payment and Nano Payment are not separate choices for the merchant or buyer.
+They are applied automatically by amount.
+
+The current platform payload still uses the internal mode name `external_402`;
+this SDK sets that value for you when creating a payment requirement.
 
 Payment requirement creation must run in the authenticated buyer's Siglume
 context. Your merchant server must not use a merchant secret or API key to
@@ -60,54 +69,28 @@ key with this package.
 
 The canonical HTTP endpoints live under `/v1/sdrp/direct-payments/...`.
 
-## SDRP Payment Menu Boundary
+## Pricing
 
-SDRP is the overall protocol name. This SDK covers **Standard Payment** for
-external merchants: checkout, subscription, and scheduled-autopay flows that
-settle through the ordinary DirectPaymentHub wallet-payment rail.
-
-The small-payment menus are separate from this SDK:
-
-| SDRP menu | Amount band | Settlement behavior | SDK boundary |
-| --- | --- | --- | --- |
-| Standard Payment | Over JPY 500 / over USD 3.00, or immediate finality required | Buyer confirms payment; DirectPaymentHub settles on-chain immediately | Covered by `@siglume/direct-request-payment` |
-| Micro Payment | JPY 50-500 / about USD 0.30-3.00 | SDRP meter gate before provider execution; weekly delayed settlement | Use the SDRP metered-payment server flow, not this merchant checkout SDK |
-| Nano Payment | Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | SDRP meter gate before provider execution; monthly delayed settlement | Use the SDRP metered-payment server flow, not this merchant checkout SDK |
-
-Micro Payment and Nano Payment do not execute an on-chain payment during the
-provider API call. If the buyer has no valid metered budget, scope, or remaining
-limit, Siglume records `rejected_no_charge` and does not call the provider API.
-
-## Standard Payment Merchant Pricing
-
-Siglume Direct Request Payment is currently offered with trial-phase merchant
-pricing designed for small EC sites, booking services, membership services, paid
-APIs, and external scheduled-payment experiments.
+Pricing has one structure: choose a Standard Payment plan, then Siglume applies
+the fee for each payment by amount. Micro / Nano are automatic amount bands, not
+extra setup choices.
 
 Both launch settlement currencies are first-class: JPY settled in JPYC, and USD
 settled in USDC. A merchant settles in one currency, chosen at onboarding. The
 settlement fee percentage is identical in both currencies; only the flat
 amounts differ.
 
-| Plan | Monthly fee (JPY / USD) | Payment fee |
-| --- | ---: | ---: |
-| Launch | JPY 0 / USD 0 | 1.8% |
-| Starter | JPY 980 / USD 6.00 | 1.0% |
-| Growth | JPY 2,980 / USD 18.00 | 0.7% |
-| Pro | JPY 9,800 / USD 60.00 | 0.5% |
+| Payment amount | Applied automatically | What you select | Fee | Settlement |
+| --- | --- | --- | --- | --- |
+| Over JPY 500 / over USD 3.00, or whenever immediate finality is required | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Immediate on-chain split through DirectPaymentHub after payment confirmation |
+| JPY 50-500 / about USD 0.30-3.00 | Micro Payment | No selection. Applied automatically by amount. | USD 0.01 / Tx, about JPY 2 | Meter gate before provider execution; weekly delayed settlement |
+| Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | Nano Payment | No selection. Applied automatically by amount. | USD 0.001 / usage, about JPY 0.2 | Meter gate before provider execution; monthly delayed settlement |
 
-Every payment is fee-bearing at the plan rate. The minimum fee is JPY 30
-(USD merchants: USD 0.20) per payment — it recovers the per-payment settlement
-cost (an on-chain signature plus network gas) on small payments; the percentage
-rate applies on larger payments. A merchant billing
-mandate is required before accepting payments, even on the Launch plan. The API
-and merchant registry may still expose the internal plan key `free` for this
-tier. See [docs/pricing.md](./docs/pricing.md) for details.
-
-Per-payment fees are deducted at payment settlement time, so the merchant
-receives the net amount. Monthly base fees are collected through the merchant
-billing mandate. `fee_bps` returned on a payment requirement is the authoritative
-per-payment rate for that payment in the merchant's settlement currency.
+A merchant billing mandate is required before accepting payments, even on the
+Launch plan. The API and merchant registry may still expose the internal plan key
+`free` for the Launch tier; treat it as a compatibility key, not a public plan
+name. `fee_bps` returned on a payment requirement is the authoritative fee rate
+for that payment in the merchant's settlement currency.
 
 ## Merchant Setup: One SDK Call
 
