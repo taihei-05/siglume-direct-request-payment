@@ -182,6 +182,48 @@ export interface DirectRequestPaymentMerchantSetupInput {
   webhook_callback_url?: string;
   billing_mandate_cap_minor?: number;
   max_amount_minor?: number;
+  // Hosted Checkout return-URL origin allowlist (open-redirect defense). Each
+  // entry is an absolute origin such as "https://shop.example.com". The origin
+  // of webhook_callback_url is auto-allowed in addition to these.
+  checkout_allowed_origins?: string[];
+}
+
+export interface HostedCheckoutSessionCreateInput {
+  merchant: string;
+  amount_minor: number;
+  currency: DirectRequestPaymentCurrency | string;
+  nonce: string;
+  success_url: string;
+  cancel_url: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface HostedCheckoutSessionCreateResult {
+  checkout_url: string;
+  session_id: string;
+  challenge_hash: string;
+  status?: string;
+  expires_at?: string | null;
+}
+
+export interface HostedCheckoutSession {
+  session_id: string;
+  merchant: string;
+  currency: string;
+  token_symbol: string;
+  amount_minor: number;
+  status: string;
+  challenge_hash: string;
+  requirement_id?: string | null;
+  success_url: string;
+  cancel_url: string;
+  expires_at?: string | null;
+  authenticated_at?: string | null;
+  paid_at?: string | null;
+  cancelled_at?: string | null;
+  created_at?: string | null;
+  metadata_jsonb?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface DirectRequestPaymentMerchantBillingMandateInput {
@@ -319,7 +361,7 @@ export class DirectRequestPaymentClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.6";
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.4.0";
     this.fetch_impl = fetchImpl;
   }
 
@@ -444,7 +486,7 @@ export class DirectRequestPaymentMerchantClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.6";
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.4.0";
     this.fetch_impl = fetchImpl;
   }
 
@@ -469,7 +511,48 @@ export class DirectRequestPaymentMerchantClient {
     if (input.max_amount_minor !== undefined) {
       payload.max_amount_minor = positiveInteger(input.max_amount_minor, "max_amount_minor");
     }
+    if (input.checkout_allowed_origins !== undefined) {
+      payload.checkout_allowed_origins = normalizeOriginList(input.checkout_allowed_origins);
+    }
     return this.request<DirectRequestPaymentMerchantResponse>("POST", "/sdrp/direct-payments/merchants", payload);
+  }
+
+  /**
+   * Create a Hosted Checkout session (Stripe-Checkout-equivalent for human web
+   * shoppers). Siglume authors the challenge server-side, persists a single-use
+   * expiring session, and returns a `checkout_url`. Redirect the shopper there;
+   * they log into Siglume, approve, and pay from their own wallet, then return
+   * to your `success_url`. Fulfill on the `direct_payment.confirmed` webhook
+   * (the source of truth), exactly as with the agent flow.
+   *
+   * `success_url`/`cancel_url` must be on an origin you registered via
+   * `checkout_allowed_origins` (or your `webhook_callback_url` origin).
+   */
+  async createCheckoutSession(input: HostedCheckoutSessionCreateInput): Promise<HostedCheckoutSessionCreateResult> {
+    const payload: Record<string, unknown> = {
+      merchant: normalizeSelfServiceMerchant(input.merchant),
+      amount_minor: positiveInteger(input.amount_minor, "amount_minor"),
+      currency: normalizeCurrency(input.currency),
+      nonce: requireNonEmpty(input.nonce, "nonce"),
+      success_url: requireNonEmpty(input.success_url, "success_url"),
+      cancel_url: requireNonEmpty(input.cancel_url, "cancel_url"),
+    };
+    if (input.metadata !== undefined) {
+      payload.metadata = cloneJsonObject(input.metadata, "metadata");
+    }
+    return this.request<HostedCheckoutSessionCreateResult>(
+      "POST",
+      "/sdrp/direct-payments/checkout-sessions",
+      payload,
+    );
+  }
+
+  /** Read a Hosted Checkout session's status (open / authenticated / paid / expired / cancelled / failed). */
+  async getCheckoutSession(session_id: string): Promise<HostedCheckoutSession> {
+    return this.request<HostedCheckoutSession>(
+      "GET",
+      `/sdrp/direct-payments/checkout-sessions/${encodeURIComponent(requireNonEmpty(session_id, "session_id"))}`,
+    );
   }
 
   async getMerchant(merchant: string): Promise<DirectRequestPaymentMerchantResponse> {
@@ -962,6 +1045,30 @@ function normalizeAllowedCurrencies(value: Record<string, string> | Array<Direct
 
 function defaultTokenForCurrency(currency: DirectRequestPaymentCurrency): DirectRequestPaymentToken {
   return currency === "JPY" ? "JPYC" : "USDC";
+}
+
+function normalizeOriginList(value: string[]): string[] {
+  if (!Array.isArray(value)) {
+    throw new SiglumeDirectRequestPaymentError("checkout_allowed_origins must be an array of origin URLs.");
+  }
+  const seen = new Set<string>();
+  const origins: string[] = [];
+  for (const item of value) {
+    let url: URL;
+    try {
+      url = new URL(requireNonEmpty(String(item), "checkout_allowed_origins entry"));
+    } catch {
+      throw new SiglumeDirectRequestPaymentError(
+        "each checkout_allowed_origins entry must be an absolute origin such as https://shop.example.com.",
+      );
+    }
+    const origin = `${url.protocol.toLowerCase()}//${url.host.toLowerCase()}`;
+    if (!seen.has(origin)) {
+      seen.add(origin);
+      origins.push(origin);
+    }
+  }
+  return origins;
 }
 
 function positiveInteger(value: number, name: string): number {
