@@ -3,15 +3,38 @@
 [![npm version](https://img.shields.io/npm/v/@siglume/direct-request-payment.svg)](https://www.npmjs.com/package/@siglume/direct-request-payment)
 [![PyPI version](https://img.shields.io/pypi/v/siglume-direct-request-payment.svg)](https://pypi.org/project/siglume-direct-request-payment/)
 
-Merchant SDK for Siglume Direct Request Payment checkout integrations.
+## Protocol Overview
+
+Siglume Direct Request Payment is an SDRP payment protocol for products that
+want to accept Siglume wallet payments. The merchant fixes the order, amount,
+and currency on its server; the buyer pays with a Siglume wallet; Siglume
+applies the correct pricing and settlement path from the payment amount and
+execution conditions.
+
+During merchant setup, only the **Standard Payment plan** is selected. Micro
+Payment and Nano Payment are not separate choices for the merchant or buyer.
+They are applied automatically by amount.
 
 Use this package when an external EC site, booking service, membership service,
 or paid API wants to accept Siglume wallet payments without taking custody of
-customer funds.
+customer funds. This SDK is for external merchants integrating Siglume Direct
+Request Payment into their own checkout. It is not the server contract for SDRP
+Micro Payment or Nano Payment.
 
-This SDK is for external merchants integrating Siglume Direct Request Payment
-into their own checkout. It is not the server contract for SDRP Micro Payment or
-Nano Payment.
+The current platform payload still uses the internal mode name `external_402`;
+this SDK sets that value for you when creating a payment requirement.
+
+Payment requirement creation must run in the authenticated buyer's Siglume
+context. Your merchant server must not use a merchant secret or API key to
+charge a customer wallet. The merchant server creates the signed challenge; the
+buyer-facing Siglume payment flow creates and pays the requirement.
+
+`DirectRequestPaymentMerchantClient` requires the merchant's Siglume bearer
+token for setup. `DirectRequestPaymentClient` requires the buyer's Siglume
+bearer token for payment requirements. Do not use a Developer Portal `cli_` API
+key with this package.
+
+The canonical HTTP endpoints live under `/v1/sdrp/direct-payments/...`.
 
 ## What This SDK Covers
 
@@ -41,33 +64,6 @@ pip install siglume-direct-request-payment
 
 Node.js 18 or later is required for the TypeScript SDK. Python 3.11 or later is
 required for the Python SDK.
-
-## Protocol Overview
-
-Siglume Direct Request Payment is an SDRP payment protocol for products that
-want to accept Siglume wallet payments. The merchant fixes the order, amount,
-and currency on its server; the buyer pays with a Siglume wallet; Siglume
-applies the correct pricing and settlement path from the payment amount and
-execution conditions.
-
-During merchant setup, only the **Standard Payment plan** is selected. Micro
-Payment and Nano Payment are not separate choices for the merchant or buyer.
-They are applied automatically by amount.
-
-The current platform payload still uses the internal mode name `external_402`;
-this SDK sets that value for you when creating a payment requirement.
-
-Payment requirement creation must run in the authenticated buyer's Siglume
-context. Your merchant server must not use a merchant secret or API key to
-charge a customer wallet. The merchant server creates the signed challenge; the
-buyer-facing Siglume payment flow creates and pays the requirement.
-
-`DirectRequestPaymentMerchantClient` requires the merchant's Siglume bearer
-token for setup. `DirectRequestPaymentClient` requires the buyer's Siglume
-bearer token for payment requirements. Do not use a Developer Portal `cli_` API
-key with this package.
-
-The canonical HTTP endpoints live under `/v1/sdrp/direct-payments/...`.
 
 ## Pricing
 
