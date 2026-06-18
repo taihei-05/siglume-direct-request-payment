@@ -65,7 +65,7 @@ class DirectRequestPaymentClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.4.1",
+        user_agent: str = "siglume-direct-request-payment/0.4.2",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -205,7 +205,7 @@ class DirectRequestPaymentMerchantClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.4.1",
+        user_agent: str = "siglume-direct-request-payment/0.4.2",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_MERCHANT_AUTH_TOKEN") or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:

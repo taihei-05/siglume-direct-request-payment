@@ -368,7 +368,7 @@ export class DirectRequestPaymentClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.4.1";
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.4.2";
     this.fetch_impl = fetchImpl;
   }
 
@@ -493,7 +493,7 @@ export class DirectRequestPaymentMerchantClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.4.1";
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.4.2";
     this.fetch_impl = fetchImpl;
   }
 

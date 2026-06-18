@@ -361,6 +361,26 @@ siglume.verify_payment_requirement(
 )
 ```
 
+### Subscriptions and scheduled autopay (no SDK method)
+
+The SDK signs the merchant-side recurring approval challenge
+(`createDirectRequestPaymentRecurringChallenge` /
+`create_direct_request_payment_recurring_challenge`), but there is **no SDK
+method for subscription creation**. After you hand the buyer the recurring
+challenge, the subscription itself is created over **raw HTTP** with the buyer's
+Siglume bearer token:
+
+```text
+POST /v1/sdrp/direct-payments/subscriptions
+{ merchant, amount_minor, currency, cadence: "monthly", challenge }
+```
+
+For scheduled autopay (`cadence: "daily"`), the buyer instead creates a scheduled
+auto-pay authorization and hands you a `schedule_token`; your scheduler triggers
+each occurrence with that token. Neither of these calls is wrapped by
+`DirectRequestPaymentClient` today — the SDK's recurring surface is the challenge
+signer and verifier only.
+
 ## 4. Fulfill from Webhook
 
 Use the webhook as the durable signal, not just the browser return path.
@@ -425,6 +445,13 @@ if verified["event"]["type"] == "direct_payment.confirmed":
 - `EXTERNAL_402_MERCHANT_BILLING_PAST_DUE` or
   `EXTERNAL_402_MERCHANT_BILLING_SUSPENDED`: merchant billing must be fixed
   before new payments can be accepted.
+- `METERED_SETTLEMENT_PAST_DUE` (Micro / Nano only): a previous Micro / Nano
+  metered settlement for this buyer is unresolved, so new Micro / Nano usage in
+  the same fee band is paused until it settles. Siglume retries settlement
+  automatically every 6 hours, up to 28 attempts, before it requires manual
+  resolution. The provider's Micro / Nano revenue stays unsettled until the
+  settlement succeeds. This is a settlement-side state, not a per-request
+  challenge error.
 
 ## Go-Live Checklist
 

@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.4.2 - 2026-06-19
+
+Documentation completeness release. No wire-format or API changes; 0.4.x clients
+interoperate unchanged. The SDK is the only manual integrators have, so every
+public capability is now documented and every signature verified against code.
+
+- Documented previously-undocumented public methods/functions: buyer-client
+  `getPaymentRequirement` and `executePreparedTransaction`; the module helpers
+  `parseDirectRequestPaymentChallenge`, `createDirectRequestPaymentChallengeSignature`,
+  `createDirectRequestPaymentRecurringChallengeSignature`,
+  `buildPaymentExecutionPayload` / `buildAllowanceExecutionPayload` /
+  `buildPreparedTransactionExecutionPayload`, and `computeWebhookSignature` (plus
+  full per-function webhook-verification entries with examples).
+- Added an **Exported Constants** table (all 8 importable constants with values)
+  and an **Aliases** table (the `external_402*` legacy aliases → preferred
+  `DirectRequestPayment*` names).
+- Replaced the "Python uses snake_case" hand-wave with the **actual Python
+  keyword-only signatures** for the challenge / webhook / signature verifiers.
+- Documented the `setupCheckout` toggles (`prepare_billing_mandate`,
+  `create_webhook_subscription`, `webhook_event_types`, `webhook_description`)
+  and completed the `getCheckoutSession` / `HostedCheckoutSession` return fields
+  (`authenticated_at`, `cancelled_at`, `created_at`, …).
+- Clarified that `billing_plan` also accepts the legacy `free` (Launch) key, that
+  subscription creation (`POST /v1/sdrp/direct-payments/subscriptions`) has no SDK
+  method and must be called over raw HTTP, and added `METERED_SETTLEMENT_PAST_DUE`
+  to the merchant-quickstart failure-handling list.
+- README: added the missing **Python** Hosted Checkout example and a
+  `getCheckoutSession` status-poll example.
+
 ## 0.4.1 - 2026-06-18
 
 Hosted Checkout rollout correction release.

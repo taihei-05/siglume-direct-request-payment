@@ -80,10 +80,79 @@ Returns:
 `nonce` must not contain `:` because the platform challenge string is delimited
 as `scheme:nonce:signature`.
 
+## `createDirectRequestPaymentChallengeSignature(secret, input)` / `create_direct_request_payment_challenge_signature(...)`
+
+Returns just the HMAC-SHA256 hex digest (no `scheme:nonce:signature` wrapper),
+for callers who assemble the challenge string themselves. This is the primitive
+that `createDirectRequestPaymentChallenge` calls internally. The HMAC material is
+`merchant:amount_minor:currency:nonce`.
+
+```ts
+const signature = await createDirectRequestPaymentChallengeSignature(secret, {
+  merchant: "example_merchant",
+  amount_minor: 1200,
+  currency: "JPY",
+  nonce: "order_123-attempt_1",
+});
+```
+
+```py
+signature = create_direct_request_payment_challenge_signature(
+    secret=secret,
+    merchant="example_merchant",
+    amount_minor=1200,
+    currency="JPY",
+    nonce="order_123-attempt_1",
+)
+```
+
+In TypeScript the secret is the first positional argument and the rest are an
+object. In Python every argument is keyword-only:
+`create_direct_request_payment_challenge_signature(*, secret, merchant, amount_minor, currency, nonce)`.
+Returns a `string` (TS) / `str` (Py).
+
 ## `verifyDirectRequestPaymentChallenge(secret, input)` / `verify_direct_request_payment_challenge(...)`
 
 Verifies a challenge against merchant, amount, currency, and secret. This is
-useful in tests and internal checkout assertions.
+useful in tests and internal checkout assertions. Returns `boolean` (TS) /
+`bool` (Py) — `true` only when the challenge scheme matches and the recomputed
+signature is a timing-safe match.
+
+```ts
+const ok = await verifyDirectRequestPaymentChallenge(secret, {
+  merchant: "example_merchant",
+  amount_minor: 1200,
+  currency: "JPY",
+  challenge: challengeString,
+});
+```
+
+In TypeScript the secret is positional and the rest is an object
+(`verifyDirectRequestPaymentChallenge(secret, { merchant, amount_minor, currency, challenge })`).
+In Python every argument is keyword-only:
+
+```py
+ok = verify_direct_request_payment_challenge(
+    secret=secret,
+    merchant="example_merchant",
+    amount_minor=1200,
+    currency="JPY",
+    challenge=challenge_string,
+)
+```
+
+## `parseDirectRequestPaymentChallenge(challenge)` / `parse_direct_request_payment_challenge(challenge)`
+
+Splits a `scheme:nonce:signature` challenge string into its parts. Throws
+`SiglumeDirectRequestPaymentError` (TS) / `DirectRequestPaymentError` (Py) when
+the string is not exactly three non-empty colon-delimited parts. The `challenge`
+argument is positional in both languages.
+
+Returns:
+
+- `scheme`
+- `nonce`
+- `signature`
 
 ## `createDirectRequestPaymentRecurringChallenge(input)` / `create_direct_request_payment_recurring_challenge(...)`
 
@@ -137,10 +206,59 @@ monthly auto-pay budget.
 
 Returns the same fields as the one-time challenge helper, plus `cadence`.
 
+## `createDirectRequestPaymentRecurringChallengeSignature(secret, input)` / `create_direct_request_payment_recurring_challenge_signature(...)`
+
+Returns just the HMAC-SHA256 hex digest for a recurring approval, for callers who
+assemble the challenge string themselves. This is the primitive that
+`createDirectRequestPaymentRecurringChallenge` calls internally. The HMAC
+material is `merchant:amount_minor:currency:cadence:nonce` and must stay
+byte-identical to the server's recurring-challenge signer.
+
+```ts
+const signature = await createDirectRequestPaymentRecurringChallengeSignature(secret, {
+  merchant: "example_merchant",
+  amount_minor: 980,
+  currency: "JPY",
+  cadence: "monthly",
+  nonce: "subscription_setup_4711",
+});
+```
+
+```py
+signature = create_direct_request_payment_recurring_challenge_signature(
+    secret=secret,
+    merchant="example_merchant",
+    amount_minor=980,
+    currency="JPY",
+    cadence="monthly",
+    nonce="subscription_setup_4711",
+)
+```
+
+In TypeScript the secret is positional and the rest is an object. In Python every
+argument is keyword-only:
+`create_direct_request_payment_recurring_challenge_signature(*, secret, merchant, amount_minor, currency, cadence, nonce)`.
+Returns a `string` (TS) / `str` (Py).
+
 ## `verifyDirectRequestPaymentRecurringChallenge(secret, input)` / `verify_direct_request_payment_recurring_challenge(...)`
 
 Verifies a recurring approval challenge against merchant, amount, currency,
-cadence, and secret.
+cadence, and secret. Returns `boolean` (TS) / `bool` (Py).
+
+In TypeScript the secret is positional and the rest is an object
+(`verifyDirectRequestPaymentRecurringChallenge(secret, { merchant, amount_minor, currency, cadence, challenge })`).
+In Python every argument is keyword-only:
+
+```py
+ok = verify_direct_request_payment_recurring_challenge(
+    secret=secret,
+    merchant="example_merchant",
+    amount_minor=980,
+    currency="JPY",
+    cadence="monthly",
+    challenge=challenge_string,
+)
+```
 
 ## `directRequestPaymentChallengeHash(challenge)` / `direct_request_payment_challenge_hash(...)`
 
@@ -180,7 +298,9 @@ Input:
 - `merchant`: self-service merchant key, 3-64 chars using lowercase letters,
   numbers, `_`, or `-`
 - `display_name`: optional public merchant name
-- `billing_plan`: `launch`, `starter`, `growth`, or `pro`
+- `billing_plan`: `launch`, `starter`, `growth`, or `pro` (default `launch`). The
+  legacy key `free` is also accepted as a compatibility input and maps to the
+  Launch tier; prefer `launch` in new code.
 - `billing_currency`: `JPY`; `USD` requires agreed USD/USDC billing terms
 - `webhook_callback_url`: HTTPS callback URL for signed payment events
 - `max_amount_minor`: optional billing mandate cap
@@ -190,6 +310,21 @@ Input:
   `webhook_callback_url` is auto-allowed in addition. Each entry must be an
   absolute origin such as `https://shop.example.com`; entries are normalized to
   bare, lowercased origins and deduped.
+
+In addition to the `setupMerchant` inputs above, `setupCheckout` accepts these
+orchestration toggles:
+
+- `prepare_billing_mandate`: default `true`. When `false`, the billing mandate
+  step is skipped and `billing_mandate` in the result is `null`.
+- `create_webhook_subscription`: optional. When omitted, a webhook subscription
+  is created only if `webhook_callback_url` is set. Set `false` to skip webhook
+  creation even when a callback URL is present (TS uses `?? Boolean(webhook_callback_url)`;
+  Py defaults to `bool(webhook_callback_url)`).
+- `webhook_event_types`: optional `string[]` of event types for the created
+  subscription. When omitted the subscription defaults to
+  `direct_payment.confirmed` and `direct_payment.spent`.
+- `webhook_description`: optional description for the created subscription;
+  defaults to `"<merchant> Direct Request Payment"`.
 
 Returns:
 
@@ -291,7 +426,7 @@ Calls:
 GET /v1/sdrp/direct-payments/checkout-sessions/{session_id}
 ```
 
-Returns a session status object with:
+Returns a `HostedCheckoutSession` status object with:
 
 - `session_id`
 - `merchant`
@@ -301,12 +436,18 @@ Returns a session status object with:
 - `status`: one of `open`, `authenticated`, `paid`, `expired`, `cancelled`,
   `failed`
 - `challenge_hash`
-- `requirement_id`
+- `requirement_id` (nullable until a requirement is created)
 - `success_url`
 - `cancel_url`
-- `expires_at`
-- `paid_at`
+- `expires_at` (nullable)
+- `authenticated_at` (nullable; set when the shopper signs into Siglume)
+- `paid_at` (nullable; set when the payment confirms)
+- `cancelled_at` (nullable; set when the shopper cancels)
+- `created_at` (nullable)
 - `metadata_jsonb`
+
+The TS `HostedCheckoutSession` interface also carries an index signature, so the
+server may include additional pass-through fields.
 
 ### `getMerchant(merchant)` / `get_merchant(merchant)`
 
@@ -401,6 +542,61 @@ Input:
 - `allowance_amount_minor`: optional positive integer
 - `metadata`: optional JSON object
 
+### `getPaymentRequirement(requirement_id)` / `get_payment_requirement(requirement_id)`
+
+Calls:
+
+```text
+GET /v1/sdrp/direct-payments/requirements/{requirement_id}
+```
+
+Fetches the current state of a payment requirement (status, `transaction_request`,
+`approve_transaction_request`, `chain_receipt_id`, etc.) by id. The
+`requirement_id` argument is positional in both languages. Returns the same
+requirement object shape as `createPaymentRequirement`.
+
+```ts
+const requirement = await siglume.getPaymentRequirement(requirementId);
+```
+
+```py
+requirement = siglume.get_payment_requirement(requirement_id)
+```
+
+### `executePreparedTransaction(payload)` / `execute_prepared_transaction(payload)`
+
+Calls:
+
+```text
+POST /v1/market/web3/transactions/execute-prepared
+```
+
+The raw prepared-transaction executor. It posts a prepared-transaction payload
+(`transaction_request`, `receipt_kind`, `reference_type`, `reference_id`,
+`metadata`, `await_finality`) to the marketplace web3 route and returns the
+execution result (`{ receipt?, finalization?, ... }`). The `payload` argument is
+positional in both languages.
+
+`executePaymentTransaction` / `execute_payment_transaction` and
+`executeAllowanceTransaction` / `execute_allowance_transaction` are convenience
+wrappers over this method: they build the payload from the requirement (via
+[`buildPaymentExecutionPayload`](#payload-builders) /
+[`buildAllowanceExecutionPayload`](#payload-builders)) and call
+`executePreparedTransaction` for you. Call `executePreparedTransaction` directly
+only when you build the payload yourself.
+
+```ts
+const result = await siglume.executePreparedTransaction(
+  buildPaymentExecutionPayload(requirement, { await_finality: true }),
+);
+```
+
+```py
+result = siglume.execute_prepared_transaction(
+    build_payment_execution_payload(requirement, await_finality=True),
+)
+```
+
 ### `executeAllowanceTransaction(requirement)` / `execute_allowance_transaction(...)`
 
 Executes `requirement.approve_transaction_request` through:
@@ -433,19 +629,139 @@ Input may include:
 - `await_timeout_seconds`
 - `await_poll_seconds`
 
+## Payload Builders
+
+These pure functions build the `execute-prepared` payload from a payment
+requirement, for callers who execute the transaction themselves (rather than via
+the `executePaymentTransaction` / `executeAllowanceTransaction` wrappers). They
+make no network calls.
+
+### `buildPaymentExecutionPayload(requirement, options)` / `build_payment_execution_payload(...)`
+
+Builds the payment-transaction payload from `requirement.transaction_request`
+with `receipt_kind = "sdrp_direct_payment"`.
+
+In TypeScript `options` is an optional object `{ await_finality?, metadata? }`.
+In Python the options are keyword-only:
+`build_payment_execution_payload(requirement, *, await_finality=False, metadata=None)`.
+Returns the prepared-transaction payload object.
+
+### `buildAllowanceExecutionPayload(requirement, options)` / `build_allowance_execution_payload(...)`
+
+Builds the allowance/approval-transaction payload from
+`requirement.approve_transaction_request` with
+`receipt_kind = "sdrp_direct_payment_allowance"`. Throws
+`SiglumeDirectRequestPaymentError` (TS) / `DirectRequestPaymentError` (Py) when
+the requirement carries no allowance approval transaction. Same options shape as
+`buildPaymentExecutionPayload`.
+
+### `buildPreparedTransactionExecutionPayload(requirement, transaction_request, options)` / `build_prepared_transaction_execution_payload(...)`
+
+The lower-level builder both of the above call. It merges
+`transaction_request.metadata_jsonb` with any `options.metadata`, and sets
+`reference_type = "sdrp_direct_payment_requirement"` and `reference_id =
+requirement.requirement_id`.
+
+In TypeScript `options` is required and must include `receipt_kind`:
+`{ receipt_kind, await_finality?, metadata? }`. In Python the third argument is
+the `transaction_request` and the rest are keyword-only:
+`build_prepared_transaction_execution_payload(requirement, transaction_request, *, receipt_kind, await_finality=False, metadata=None)`.
+Returns the prepared-transaction payload object.
+
 ## Webhook Helpers
 
-- `buildWebhookSignatureHeader(secret, body)` for tests
-- `verifyWebhookSignature(secret, body, header)`
-- `verifyDirectRequestPaymentWebhook(secret, body, header)`
-- `parseDirectRequestPaymentWebhookEvent(payload)`
-- Python equivalents use snake_case:
-  `build_webhook_signature_header`, `verify_webhook_signature`,
-  `verify_direct_request_payment_webhook`, and
-  `parse_direct_request_payment_webhook_event`.
+### `computeWebhookSignature(secret, body, options)` / `compute_webhook_signature(secret, body, *, timestamp)`
 
-`verifyDirectRequestPaymentWebhook` verifies the signature and parses the event
-in one call.
+Returns the bare HMAC-SHA256 hex digest over `"<timestamp>.<body>"`. This is the
+primitive `buildWebhookSignatureHeader` / `verifyWebhookSignature` use. In
+TypeScript `options` is `{ timestamp: number }`; in Python `timestamp` is a
+keyword-only `int`. `body` may be raw bytes, a string, or a JSON object.
+
+### `buildWebhookSignatureHeader(secret, body, options)` / `build_webhook_signature_header(secret, body, *, timestamp=None)`
+
+Returns a `t=<timestamp>,v1=<signature>` header string. Mainly for tests /
+mocking inbound webhooks. In TypeScript `options` is an optional
+`{ timestamp?: number }` (defaults to now); in Python `timestamp` is a
+keyword-only optional `int`.
+
+### `verifyWebhookSignature(secret, body, signature_header, options)` / `verify_webhook_signature(secret, body, signature_header, *, tolerance_seconds=300, now=None)`
+
+Verifies the `Siglume-Signature` header against the raw `body`. Throws
+`SiglumeWebhookSignatureError` (TS) / `SiglumeWebhookSignatureError` (Py) when
+the timestamp is outside tolerance or the signature does not match. In TypeScript
+`options` is `{ tolerance_seconds?, now? }`; in Python those are keyword-only
+(`tolerance_seconds` defaults to `DEFAULT_WEBHOOK_TOLERANCE_SECONDS` = 300).
+Returns `{ timestamp, signature }`.
+
+### `parseDirectRequestPaymentWebhookEvent(payload)` / `parse_direct_request_payment_webhook_event(payload)`
+
+Validates and normalizes a parsed webhook event object (requires `id`, `type`,
+`api_version`, `occurred_at`, and an object `data`). Throws
+`SiglumeWebhookPayloadError` on a malformed event, or when a
+`direct_payment.confirmed` event does not carry `data.mode = "external_402"`. The
+`payload` argument is positional in both languages.
+
+### `verifyDirectRequestPaymentWebhook(secret, body, signature_header, options)` / `verify_direct_request_payment_webhook(secret, body, signature_header, *, tolerance_seconds=300, now=None)`
+
+Verifies the signature and parses the event in one call. Returns
+`{ event, verification }` (TS) / `{"event": ..., "verification": ...}` (Py). Same
+options shape as `verifyWebhookSignature` (keyword-only in Python).
+
+Webhook-verification trio (typical inbound webhook handler):
+
+```ts
+import { verifyDirectRequestPaymentWebhook } from "@siglume/direct-request-payment";
+
+const { event, verification } = await verifyDirectRequestPaymentWebhook(
+  process.env.SIGLUME_WEBHOOK_SECRET!,
+  rawRequestBody,                       // the RAW body bytes/string, not re-stringified JSON
+  request.headers["siglume-signature"],
+);
+// event.type === "direct_payment.confirmed" -> fulfill once; verification.timestamp is the signed time
+```
+
+```py
+from siglume_direct_request_payment import verify_direct_request_payment_webhook
+
+verified = verify_direct_request_payment_webhook(
+    os.environ["SIGLUME_WEBHOOK_SECRET"],
+    raw_request_body,                     # the RAW body bytes/string
+    siglume_signature_header,
+)
+event = verified["event"]
+# event["type"] == "direct_payment.confirmed" -> fulfill once
+```
+
+## Exported Constants
+
+Both packages export these importable constants:
+
+| Constant | Value |
+| --- | --- |
+| `DEFAULT_SIGLUME_API_BASE` | `https://siglume.com/v1` |
+| `DIRECT_REQUEST_PAYMENT_CHALLENGE_SCHEME` | `siglume-external-402-v1` |
+| `DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME` | `siglume-external-402-recurring-v1` |
+| `DIRECT_REQUEST_PAYMENT_MODE` | `external_402` |
+| `DIRECT_REQUEST_PAYMENT_RECEIPT_KIND` | `sdrp_direct_payment` |
+| `DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND` | `sdrp_direct_payment_allowance` |
+| `DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE` | `sdrp_direct_payment_requirement` |
+| `DEFAULT_WEBHOOK_TOLERANCE_SECONDS` | `300` |
+
+The `external_402` / `siglume-external-402-*` values are legacy wire-compat
+identifiers, not public product names (see the README "Compatibility Notes").
+
+## Aliases
+
+For legacy wire-compat naming, the following exported names are aliases of the
+preferred `DirectRequestPayment*` functions. They are identical functions; new
+code should prefer the `DirectRequestPayment*` names.
+
+| Alias (TS) | Alias (Py) | Preferred function |
+| --- | --- | --- |
+| `createExternal402Challenge` | `create_external_402_challenge` | `createDirectRequestPaymentChallenge` / `create_direct_request_payment_challenge` |
+| `verifyExternal402Challenge` | `verify_external_402_challenge` | `verifyDirectRequestPaymentChallenge` / `verify_direct_request_payment_challenge` |
+| `createExternal402RecurringChallenge` | `create_external_402_recurring_challenge` | `createDirectRequestPaymentRecurringChallenge` / `create_direct_request_payment_recurring_challenge` |
+| `verifyExternal402RecurringChallenge` | `verify_external_402_recurring_challenge` | `verifyDirectRequestPaymentRecurringChallenge` / `verify_direct_request_payment_recurring_challenge` |
 
 ## Errors
 

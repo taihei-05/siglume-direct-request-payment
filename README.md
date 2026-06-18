@@ -103,6 +103,38 @@ redirect(session.checkout_url); // -> https://siglume.com/pay/<session_id>
 //    you also want to show status in your own UI.
 ```
 
+```py
+import os
+
+from siglume_direct_request_payment import DirectRequestPaymentMerchantClient
+
+merchant = DirectRequestPaymentMerchantClient(auth_token=os.environ["SIGLUME_MERCHANT_AUTH_TOKEN"])
+
+# 1. Register the return-URL origins once (open-redirect defense). The origin of
+#    your webhook_callback_url is auto-allowed in addition to these.
+merchant.setup_merchant(
+    merchant="your_merchant_key",
+    webhook_callback_url="https://api.your-shop.com/webhooks/siglume",
+    checkout_allowed_origins=["https://www.your-shop.com"],
+)
+
+# 2. Per order: create a session and redirect the shopper to checkout_url.
+session = merchant.create_checkout_session(
+    merchant="your_merchant_key",
+    amount_minor=500,            # server-fixed; the browser cannot change it
+    currency="JPY",
+    nonce=order["id"],           # unique per order
+    success_url="https://www.your-shop.com/thanks",
+    cancel_url="https://www.your-shop.com/cart",
+    metadata={"order_id": order["id"]},
+)
+redirect(session["checkout_url"])  # -> https://siglume.com/pay/<session_id>
+
+# 3. Fulfill when the signed direct_payment.confirmed webhook arrives (the
+#    source of truth). Poll merchant.get_checkout_session(session["session_id"])
+#    if you also want to show status in your own UI.
+```
+
 Siglume fixes the amount, currency, challenge, and return URLs **server-side** at
 session creation, so the browser cannot tamper with the price or the redirect
 target. The shopper's Siglume credentials are never shared with your store.
@@ -117,6 +149,18 @@ target. The shopper's Siglume credentials are never shared with your store.
   amount band.
 - **Buyer** — needs a Siglume wallet funded in **JPYC / USDC**. **Not a card
   payment.**
+
+**Optional status poll.** The webhook is the source of truth for fulfillment, but
+you can read a session's status (`open` / `authenticated` / `paid` / `expired` /
+`cancelled` / `failed`) to drive your own UI:
+
+```ts
+const status = (await merchant.getCheckoutSession(session.session_id)).status;
+```
+
+```py
+status = merchant.get_checkout_session(session["session_id"])["status"]
+```
 
 ## Amount-Based Pricing and Settlement
 
