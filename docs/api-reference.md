@@ -4,6 +4,32 @@ The TypeScript package is `@siglume/direct-request-payment`. The Python package
 is `siglume-direct-request-payment` and imports as
 `siglume_direct_request_payment`.
 
+## Two Buyer Systems
+
+SDRP serves two kinds of buyer, and you integrate each differently. In both
+cases the buyer pays from a Siglume wallet (JPYC for JPY, USDC for USD) — not a
+card — and the merchant SDK never authenticates the buyer.
+
+- **Human web shopper → Hosted Checkout.** Call
+  [`createCheckoutSession`](#createcheckoutsessioninput--create_checkout_session)
+  on `DirectRequestPaymentMerchantClient` and redirect the shopper to the
+  returned `checkout_url`. The shopper signs into Siglume on the hosted page,
+  approves, and pays from their own wallet.
+- **AI agent / agent-to-agent (AtoA) → direct API / tools.** An autonomous
+  buyer agent pays through `DirectRequestPaymentClient` (your app holds the
+  buyer's Siglume JWT) or through the Siglume marketplace tool
+  `market_confirm_direct_payment_and_execute` (MCP). Agent payment assumes the
+  buyer agent is **already connected to Siglume before the payment**: an AI
+  client (Claude / ChatGPT / Cursor) connects through the Siglume MCP server
+  (OAuth authorization with a consent screen), or a custom app holds the buyer's
+  Siglume bearer token. The merchant SDK does not log the buyer in. Unattended
+  runs are bounded by Siglume's approval gates / spending budgets (per-run /
+  daily / monthly auto-pay budgets, or Works approval).
+
+In both systems the merchant fulfills on the same signed
+`direct_payment.confirmed` webhook. Hosted Checkout adds no new money movement
+and no new webhook.
+
 ## Environment Variables
 
 | Name | Used by | Purpose |
@@ -158,6 +184,12 @@ Input:
 - `billing_currency`: `JPY`; `USD` requires agreed USD/USDC billing terms
 - `webhook_callback_url`: HTTPS callback URL for signed payment events
 - `max_amount_minor`: optional billing mandate cap
+- `checkout_allowed_origins`: optional `string[]` return-URL origin allowlist for
+  Hosted Checkout (open-redirect defense). A Hosted Checkout `success_url` /
+  `cancel_url` must be on a registered origin; the origin of
+  `webhook_callback_url` is auto-allowed in addition. Each entry must be an
+  absolute origin such as `https://shop.example.com`; entries are normalized to
+  bare, lowercased origins and deduped.
 
 Returns:
 
@@ -178,6 +210,97 @@ POST /v1/sdrp/direct-payments/merchants
 ```
 
 Creates or updates the merchant account for the authenticated merchant user.
+Accepts the optional `checkout_allowed_origins: string[]` return-URL origin
+allowlist described under `setupCheckout` above; the same normalization and
+webhook-origin auto-allow apply.
+
+### `createCheckoutSession(input)` / `create_checkout_session(...)`
+
+Creates a single-use, expiring Hosted Checkout session for a human web shopper
+and returns the URL to redirect them to. Requires the merchant's Siglume bearer
+token. The server authors the challenge from the merchant's challenge secret —
+the browser never sees or supplies it.
+
+Calls:
+
+```text
+POST /v1/sdrp/direct-payments/checkout-sessions
+```
+
+```ts
+const session = await merchant.createCheckoutSession({
+  merchant: "example_merchant",
+  amount_minor: 500,
+  currency: "JPY",
+  nonce: order.id,
+  success_url: "https://www.your-shop.com/thanks",
+  cancel_url: "https://www.your-shop.com/cart",
+  metadata: { order_id: order.id },
+});
+```
+
+```py
+session = merchant.create_checkout_session(
+    merchant="example_merchant",
+    amount_minor=500,
+    currency="JPY",
+    nonce=order["id"],
+    success_url="https://www.your-shop.com/thanks",
+    cancel_url="https://www.your-shop.com/cart",
+    metadata={"order_id": order["id"]},
+)
+```
+
+Input:
+
+- `merchant`: Siglume merchant key
+- `amount_minor`: positive integer in minor currency units (server-fixed; the
+  browser cannot change it)
+- `currency`: `JPY`, or `USD` when enabled for the merchant account
+- `nonce`: unique per order; must not contain `:`
+- `success_url`: return URL after a completed payment; must be on a registered
+  `checkout_allowed_origins` origin (or the webhook origin)
+- `cancel_url`: return URL after the shopper cancels; same origin rule
+- `metadata`: optional JSON object
+
+Returns:
+
+- `checkout_url`: hosted page to redirect the shopper to
+  (`https://siglume.com/pay/<session_id>`)
+- `session_id`
+- `challenge_hash`: store this on the order to map the later webhook back
+- `status`
+- `expires_at`: the session is single-use and expires (~30 minutes)
+
+### `getCheckoutSession(session_id)` / `get_checkout_session(session_id)`
+
+Returns the current status of a Hosted Checkout session. Useful if you want to
+show progress in your own UI; the signed `direct_payment.confirmed` webhook
+remains the source of truth for fulfillment. Never exposes the raw challenge or
+buyer PII.
+
+Calls:
+
+```text
+GET /v1/sdrp/direct-payments/checkout-sessions/{session_id}
+```
+
+Returns a session status object with:
+
+- `session_id`
+- `merchant`
+- `currency`
+- `token_symbol`
+- `amount_minor`
+- `status`: one of `open`, `authenticated`, `paid`, `expired`, `cancelled`,
+  `failed`
+- `challenge_hash`
+- `requirement_id`
+- `success_url`
+- `cancel_url`
+- `expires_at`
+- `paid_at`
+- `metadata_jsonb`
 
 ### `getMerchant(merchant)` / `get_merchant(merchant)`
 

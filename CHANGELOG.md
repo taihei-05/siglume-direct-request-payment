@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.0 - 2026-06-18
+
+Hosted Checkout for human web shoppers ("Pay with Siglume"). The two buyer
+systems are now both first-class: AI agents pay through the API/tools (unchanged)
+and humans pay through a Siglume-hosted checkout page.
+
+- **`DirectRequestPaymentMerchantClient.createCheckoutSession(...)`** (TS + Py):
+  create a single-use, expiring Hosted Checkout session. Siglume authors the
+  challenge server-side and returns a `checkout_url`; redirect the shopper there.
+  The shopper logs into Siglume, approves, and pays from their own Siglume wallet
+  (JPYC / USDC), then returns to your `success_url`. Fulfill on the existing
+  `direct_payment.confirmed` webhook — the source of truth — exactly as with the
+  agent flow. The merchant SDK still does not authenticate the buyer.
+- **`getCheckoutSession(session_id)`** (TS + Py): read a session's status
+  (`open` / `authenticated` / `paid` / `expired` / `cancelled` / `failed`).
+- **`checkout_allowed_origins`** added to `setupMerchant` / `setupCheckout`: a
+  return-URL origin allowlist (open-redirect defense). `success_url` /
+  `cancel_url` must be on a registered origin; the `webhook_callback_url` origin
+  is auto-allowed.
+- Docs: documented the **two buyer systems** (human Web = Hosted Checkout; AI
+  agent / AtoA = direct API / tools), the AtoA **prerequisite** that the buyer
+  agent is pre-connected to Siglume (MCP/OAuth, or a custom app holding the
+  buyer's Siglume JWT), and the merchant / Siglume / buyer **boundaries** —
+  including that the buyer needs a Siglume wallet and this is **not** a card
+  payment.
+
+No wire-format changes to existing challenges, requirements, or webhooks; 0.3.x
+clients interoperate unchanged. Hosted Checkout is gated server-side and is a
+purely additive surface.
+
 ## 0.3.6 - 2026-06-18
 
 Documentation and public-surface cleanup release. No wire-format or API changes;

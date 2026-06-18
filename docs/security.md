@@ -49,6 +49,23 @@ autopay approval tag; it does not itself limit occurrences to once per day.
 Scheduled autopay execution is bounded by the buyer-approved per-run, daily, and
 monthly auto-pay budget.
 
+## Hosted Checkout Return URLs
+
+Hosted Checkout adds a return-URL origin allowlist as open-redirect defense.
+Register your allowed origins once via `checkout_allowed_origins` on
+`setupCheckout` / `setupMerchant`. A checkout session's `success_url` and
+`cancel_url` must be on a registered origin; the origin of your
+`webhook_callback_url` is auto-allowed in addition. Each entry must be an
+absolute origin such as `https://shop.example.com`; entries are normalized to
+bare, lowercased origins and deduped. A return URL that is not on an allowed
+origin is rejected, so an attacker cannot point a session at an arbitrary
+redirect target.
+
+For a Hosted Checkout session, Siglume authors the amount, currency, challenge,
+and return URLs server-side at session creation. The browser cannot tamper with
+the price or the redirect target, and the raw challenge is never exposed to the
+browser or returned by `getCheckoutSession`.
+
 ## Do Not Trust Browser Amounts
 
 The merchant server owns:

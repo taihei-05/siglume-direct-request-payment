@@ -9,6 +9,7 @@ import time
 import uuid
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -56,7 +57,7 @@ class DirectRequestPaymentClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.3.6",
+        user_agent: str = "siglume-direct-request-payment/0.4.0",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -197,7 +198,7 @@ class DirectRequestPaymentMerchantClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.3.6",
+        user_agent: str = "siglume-direct-request-payment/0.4.0",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_MERCHANT_AUTH_TOKEN") or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -222,6 +223,7 @@ class DirectRequestPaymentMerchantClient:
         webhook_callback_url: str | None = None,
         billing_mandate_cap_minor: int | None = None,
         max_amount_minor: int | None = None,
+        checkout_allowed_origins: list[str] | tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "merchant": _normalize_self_service_merchant(merchant),
@@ -238,7 +240,48 @@ class DirectRequestPaymentMerchantClient:
             payload["billing_mandate_cap_minor"] = _positive_int(billing_mandate_cap_minor, "billing_mandate_cap_minor")
         if max_amount_minor is not None:
             payload["max_amount_minor"] = _positive_int(max_amount_minor, "max_amount_minor")
+        if checkout_allowed_origins is not None:
+            payload["checkout_allowed_origins"] = _normalize_origin_list(checkout_allowed_origins)
         return self._request("POST", "/sdrp/direct-payments/merchants", json_body=payload)
+
+    def create_checkout_session(
+        self,
+        *,
+        merchant: str,
+        amount_minor: int,
+        currency: str,
+        nonce: str,
+        success_url: str,
+        cancel_url: str,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a Hosted Checkout session (Stripe-Checkout-equivalent for human
+        web shoppers). Siglume authors the challenge server-side, persists a
+        single-use expiring session, and returns ``checkout_url``. Redirect the
+        shopper there; they log into Siglume, approve, and pay from their own
+        wallet, then return to ``success_url``. Fulfill on the
+        ``direct_payment.confirmed`` webhook (the source of truth).
+
+        ``success_url``/``cancel_url`` must be on an origin you registered via
+        ``checkout_allowed_origins`` (or your ``webhook_callback_url`` origin).
+        """
+        payload: dict[str, Any] = {
+            "merchant": _normalize_self_service_merchant(merchant),
+            "amount_minor": _positive_int(amount_minor, "amount_minor"),
+            "currency": _normalize_currency(currency),
+            "nonce": _require_non_empty(nonce, "nonce"),
+            "success_url": _require_non_empty(success_url, "success_url"),
+            "cancel_url": _require_non_empty(cancel_url, "cancel_url"),
+        }
+        if metadata is not None:
+            payload["metadata"] = _clone_json_object(metadata, "metadata")
+        return self._request("POST", "/sdrp/direct-payments/checkout-sessions", json_body=payload)
+
+    def get_checkout_session(self, session_id: str) -> dict[str, Any]:
+        """Read a Hosted Checkout session's status (open / authenticated / paid /
+        expired / cancelled / failed)."""
+        sid = _require_non_empty(session_id, "session_id")
+        return self._request("GET", f"/sdrp/direct-payments/checkout-sessions/{quote(sid, safe='')}")
 
     def get_merchant(self, merchant: str) -> dict[str, Any]:
         merchant_key = _normalize_self_service_merchant(merchant)
@@ -302,6 +345,7 @@ class DirectRequestPaymentMerchantClient:
         webhook_callback_url: str | None = None,
         billing_mandate_cap_minor: int | None = None,
         max_amount_minor: int | None = None,
+        checkout_allowed_origins: list[str] | tuple[str, ...] | None = None,
         create_webhook_subscription: bool | None = None,
         prepare_billing_mandate: bool = True,
         webhook_event_types: list[str] | tuple[str, ...] | None = None,
@@ -316,6 +360,7 @@ class DirectRequestPaymentMerchantClient:
             webhook_callback_url=webhook_callback_url,
             billing_mandate_cap_minor=billing_mandate_cap_minor,
             max_amount_minor=max_amount_minor,
+            checkout_allowed_origins=checkout_allowed_origins,
         )
         merchant_key = str((merchant_setup.get("merchant_account") or {}).get("merchant") or merchant)
         billing = None
@@ -774,6 +819,24 @@ def _require_non_empty(value: Any, name: str) -> str:
     if not text:
         raise DirectRequestPaymentError(f"{name} is required.")
     return text
+
+
+def _normalize_origin_list(value: list[str] | tuple[str, ...]) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        raise DirectRequestPaymentError("checkout_allowed_origins must be a list of origin URLs.")
+    origins: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        parts = urlsplit(str(item or "").strip())
+        if not parts.scheme or not parts.netloc:
+            raise DirectRequestPaymentError(
+                "each checkout_allowed_origins entry must be an absolute origin such as https://shop.example.com."
+            )
+        origin = f"{parts.scheme.lower()}://{parts.netloc.lower()}"
+        if origin not in seen:
+            seen.add(origin)
+            origins.append(origin)
+    return origins
 
 
 def _normalize_challenge_nonce(value: str) -> str:

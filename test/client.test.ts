@@ -214,4 +214,113 @@ describe("DirectRequestPaymentMerchantClient", () => {
       SIGLUME_WEBHOOK_SECRET: "whsec_test",
     });
   });
+
+  it("registers checkout_allowed_origins (normalized) on setupMerchant", async () => {
+    const calls: Array<{ url: string; body: any }> = [];
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      calls.push({ url: String(input), body: init.body ? JSON.parse(String(init.body)) : null });
+      return new Response(JSON.stringify(envelope({ merchant_account: { merchant: "m" } })), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const client = new DirectRequestPaymentMerchantClient({
+      auth_token: "merchant_jwt",
+      base_url: "https://siglume.example/v1",
+      fetch: fetchImpl,
+    });
+    await client.setupMerchant({
+      merchant: "Shop",
+      checkout_allowed_origins: [
+        "https://Shop.Example.com/checkout",
+        "https://shop.example.com",
+        "https://other.example.com:8443",
+      ],
+    });
+    expect(calls[0]?.body.checkout_allowed_origins).toEqual([
+      "https://shop.example.com",
+      "https://other.example.com:8443",
+    ]);
+  });
+
+  it("creates and reads a Hosted Checkout session", async () => {
+    const calls: Array<{ url: string; method: string; body: any; auth?: string }> = [];
+    const responses = [
+      envelope({
+        checkout_url: "https://siglume.example/pay/chk_abc",
+        session_id: "chk_abc",
+        challenge_hash: "sha256:deadbeef",
+        status: "open",
+        expires_at: "2026-06-18T01:00:00Z",
+      }),
+      envelope({
+        session_id: "chk_abc",
+        merchant: "shop",
+        currency: "JPY",
+        token_symbol: "JPYC",
+        amount_minor: 500,
+        status: "paid",
+        challenge_hash: "sha256:deadbeef",
+        success_url: "https://shop.example.com/thanks",
+        cancel_url: "https://shop.example.com/cart",
+      }),
+    ];
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      calls.push({
+        url: String(input),
+        method: String(init.method || "GET"),
+        body: init.body ? JSON.parse(String(init.body)) : null,
+        auth: (init.headers as Record<string, string> | undefined)?.Authorization,
+      });
+      return new Response(JSON.stringify(responses.shift()), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const client = new DirectRequestPaymentMerchantClient({
+      auth_token: "merchant_jwt",
+      base_url: "https://siglume.example/v1",
+      fetch: fetchImpl,
+    });
+
+    const created = await client.createCheckoutSession({
+      merchant: "Shop",
+      amount_minor: 500,
+      currency: "jpy",
+      nonce: "order-1",
+      success_url: "https://shop.example.com/thanks",
+      cancel_url: "https://shop.example.com/cart",
+      metadata: { order_id: "order-1" },
+    });
+    expect(created.checkout_url).toBe("https://siglume.example/pay/chk_abc");
+    expect(created.session_id).toBe("chk_abc");
+    expect(created.challenge_hash).toBe("sha256:deadbeef");
+    expect(calls[0]?.url).toBe("https://siglume.example/v1/sdrp/direct-payments/checkout-sessions");
+    expect(calls[0]?.method).toBe("POST");
+    expect(calls[0]?.auth).toBe("Bearer merchant_jwt");
+    expect(calls[0]?.body).toMatchObject({
+      merchant: "shop",
+      amount_minor: 500,
+      currency: "JPY",
+      nonce: "order-1",
+      success_url: "https://shop.example.com/thanks",
+      cancel_url: "https://shop.example.com/cart",
+      metadata: { order_id: "order-1" },
+    });
+
+    const session = await client.getCheckoutSession("chk_abc");
+    expect(session.status).toBe("paid");
+    expect(calls[1]?.url).toBe("https://siglume.example/v1/sdrp/direct-payments/checkout-sessions/chk_abc");
+    expect(calls[1]?.method).toBe("GET");
+  });
+
+  it("rejects a non-absolute checkout_allowed_origins entry", async () => {
+    const client = new DirectRequestPaymentMerchantClient({
+      auth_token: "merchant_jwt",
+      fetch: (async () => new Response("{}")) as typeof fetch,
+    });
+    await expect(
+      client.setupMerchant({ merchant: "shop", checkout_allowed_origins: ["not-a-url"] }),
+    ).rejects.toThrow(/absolute origin/);
+  });
 });

@@ -25,6 +25,93 @@ token for setup. `DirectRequestPaymentClient` requires the buyer's Siglume
 bearer token for payment requirements. Do not use a Developer Portal `cli_` API
 key with this package.
 
+## Two Kinds of Buyer
+
+SDRP serves two kinds of buyer, and you integrate each differently. In both
+cases the buyer pays from a **Siglume wallet** (JPYC for JPY, USDC for USD) — it
+is **not** a card payment — and your **merchant SDK never authenticates the
+buyer**.
+
+1. **Human web shopper → Hosted Checkout.** When a person clicks "Pay with
+   Siglume" on your site, call
+   [`createCheckoutSession(...)`](#hosted-checkout-human-web-shoppers) and
+   redirect them to the returned `checkout_url`. They sign into Siglume (passkey
+   or email code — the login *is* the wallet), review the amount, approve once,
+   and pay from their own wallet, then return to your `success_url`. This is the
+   Stripe-Checkout-equivalent path.
+
+2. **AI agent / agent-to-agent (AtoA) → direct API / tools.** An autonomous
+   buyer agent pays through `DirectRequestPaymentClient` (your app holds the
+   buyer's Siglume JWT) or through the Siglume marketplace tool
+   `market_confirm_direct_payment_and_execute` (MCP).
+
+   **Prerequisite (important):** agent payment assumes the buyer agent is
+   **already connected to Siglume before the payment**. An AI client
+   (Claude / ChatGPT / Cursor, …) connects through the **Siglume MCP server
+   (OAuth authorization, with a consent screen)**; a custom app holds the
+   buyer's **Siglume bearer token (JWT)**. Either way a Siglume authentication
+   context must be established before paying — the merchant SDK does not log the
+   buyer in. Unattended runs are bounded by Siglume's **approval gates / spending
+   budgets** (per-run / daily / monthly auto-pay budgets, or Works approval), not
+   by the merchant.
+
+Honest framing: the part that integrates quickly is the **merchant plumbing**
+(challenge or checkout session + webhook). Human web payment still requires the
+shopper to have — or create — a Siglume wallet and pay from it; it is not a
+card-style "instant" checkout for first-time buyers.
+
+## Hosted Checkout (Human Web Shoppers)
+
+Hosted Checkout is a Siglume-hosted page that turns a "Pay with Siglume" button
+into a completed wallet payment, then returns the shopper to your store. It
+orchestrates the same rails as the agent flow — there is no new money movement
+and the merchant fulfills on the same `direct_payment.confirmed` webhook.
+
+```ts
+import { DirectRequestPaymentMerchantClient } from "@siglume/direct-request-payment";
+
+const merchant = new DirectRequestPaymentMerchantClient({ auth_token: process.env.SIGLUME_MERCHANT_AUTH_TOKEN });
+
+// 1. Register the return-URL origins once (open-redirect defense). The origin of
+//    your webhook_callback_url is auto-allowed in addition to these.
+await merchant.setupMerchant({
+  merchant: "your_merchant_key",
+  webhook_callback_url: "https://api.your-shop.com/webhooks/siglume",
+  checkout_allowed_origins: ["https://www.your-shop.com"],
+});
+
+// 2. Per order: create a session and redirect the shopper to checkout_url.
+const session = await merchant.createCheckoutSession({
+  merchant: "your_merchant_key",
+  amount_minor: 500,            // server-fixed; the browser cannot change it
+  currency: "JPY",
+  nonce: order.id,              // unique per order
+  success_url: "https://www.your-shop.com/thanks",
+  cancel_url: "https://www.your-shop.com/cart",
+  metadata: { order_id: order.id },
+});
+redirect(session.checkout_url); // -> https://siglume.com/pay/<session_id>
+
+// 3. Fulfill when the signed direct_payment.confirmed webhook arrives (the
+//    source of truth). Poll merchant.getCheckoutSession(session.session_id) if
+//    you also want to show status in your own UI.
+```
+
+Siglume fixes the amount, currency, challenge, and return URLs **server-side** at
+session creation, so the browser cannot tamper with the price or the redirect
+target. The shopper's Siglume credentials are never shared with your store.
+
+**Who does what.**
+
+- **Merchant** — confirms the order; signs the challenge (agent flow) or creates
+  a checkout session (web flow); verifies the webhook signature; fulfills
+  idempotently. Never sees the buyer's Siglume credentials.
+- **Siglume** — provides the wallet and login, executes the wallet payment,
+  applies the fee, settles on-chain, and routes Micro / Nano automatically by
+  amount band.
+- **Buyer** — needs a Siglume wallet funded in **JPYC / USDC**. **Not a card
+  payment.**
+
 ## Amount-Based Pricing and Settlement
 
 Pricing has one structure: you choose a **Standard Payment** plan once during

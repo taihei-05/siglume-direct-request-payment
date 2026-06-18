@@ -168,3 +168,82 @@ def test_merchant_client_sets_up_checkout() -> None:
         "SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET": "edrp_secret",
         "SIGLUME_WEBHOOK_SECRET": "whsec_test",
     }
+
+
+@respx.mock
+def test_merchant_client_registers_checkout_allowed_origins() -> None:
+    route = respx.post("https://siglume.test/v1/sdrp/direct-payments/merchants").mock(
+        return_value=httpx.Response(201, json={"data": {"merchant_account": {"merchant": "shop"}}})
+    )
+    client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
+    client.setup_merchant(
+        merchant="Shop",
+        checkout_allowed_origins=[
+            "https://Shop.Example.com/checkout",
+            "https://shop.example.com",
+            "https://other.example.com:8443",
+        ],
+    )
+    body = json.loads(route.calls.last.request.content)
+    assert body["checkout_allowed_origins"] == [
+        "https://shop.example.com",
+        "https://other.example.com:8443",
+    ]
+
+
+@respx.mock
+def test_merchant_client_creates_and_reads_checkout_session() -> None:
+    create_route = respx.post("https://siglume.test/v1/sdrp/direct-payments/checkout-sessions").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "data": {
+                    "checkout_url": "https://siglume.test/pay/chk_abc",
+                    "session_id": "chk_abc",
+                    "challenge_hash": "sha256:deadbeef",
+                    "status": "open",
+                    "expires_at": "2026-06-18T01:00:00Z",
+                }
+            },
+        )
+    )
+    get_route = respx.get("https://siglume.test/v1/sdrp/direct-payments/checkout-sessions/chk_abc").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": {"session_id": "chk_abc", "status": "paid", "merchant": "shop"}},
+        )
+    )
+    client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
+
+    created = client.create_checkout_session(
+        merchant="Shop",
+        amount_minor=500,
+        currency="jpy",
+        nonce="order-1",
+        success_url="https://shop.example.com/thanks",
+        cancel_url="https://shop.example.com/cart",
+        metadata={"order_id": "order-1"},
+    )
+    assert created["checkout_url"] == "https://siglume.test/pay/chk_abc"
+    assert created["session_id"] == "chk_abc"
+    assert create_route.calls.last.request.headers["authorization"] == "Bearer merchant_jwt"
+    assert json.loads(create_route.calls.last.request.content) == {
+        "merchant": "shop",
+        "amount_minor": 500,
+        "currency": "JPY",
+        "nonce": "order-1",
+        "success_url": "https://shop.example.com/thanks",
+        "cancel_url": "https://shop.example.com/cart",
+        "metadata": {"order_id": "order-1"},
+    }
+
+    session = client.get_checkout_session("chk_abc")
+    assert session["status"] == "paid"
+    assert get_route.called
+
+
+@respx.mock
+def test_merchant_client_rejects_non_absolute_origin() -> None:
+    client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
+    with pytest.raises(DirectRequestPaymentError):
+        client.setup_merchant(merchant="shop", checkout_allowed_origins=["not-a-url"])

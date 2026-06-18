@@ -20,6 +20,124 @@ a weekly / monthly cadence (see [Pricing](./pricing.md#settlement-schedule)); th
 are not browser checkout requirements you create with this SDK. Their provider
 revenue remains unsettled until the later on-chain settlement succeeds.
 
+## Two Buyer Systems
+
+There are two ways a buyer reaches you, and you integrate each differently:
+
+- **Human web shopper → Hosted Checkout.** Create a checkout session and
+  redirect the shopper to the Siglume-hosted page (the
+  [section below](#hosted-checkout-human-web-shoppers)). This is the path that
+  resembles a Stripe-style hosted checkout.
+- **AI agent / agent-to-agent (AtoA) → direct API / tools.** An autonomous
+  buyer pays through `DirectRequestPaymentClient` or the marketplace tool
+  `market_confirm_direct_payment_and_execute`, as in sections 2-4 below.
+
+In both cases the buyer pays from a Siglume wallet (JPYC / USDC, not a card),
+the merchant SDK never authenticates the buyer, and you fulfill on the same
+`direct_payment.confirmed` webhook.
+
+## Hosted Checkout (Human Web Shoppers)
+
+When a person clicks "Pay with Siglume" on your site, create a session and
+redirect them to the returned `checkout_url`. They sign into Siglume on the
+hosted page, approve, and pay from their own wallet, then return to your
+`success_url`. Siglume fixes the amount, currency, challenge, and return URLs
+server-side, so the browser cannot tamper with the price or the redirect target.
+
+Register your return-URL origins once (open-redirect defense). The origin of
+your `webhook_callback_url` is auto-allowed in addition to these.
+
+TypeScript:
+
+```ts
+import { DirectRequestPaymentMerchantClient } from "@siglume/direct-request-payment";
+
+const merchant = new DirectRequestPaymentMerchantClient({
+  auth_token: process.env.SIGLUME_MERCHANT_AUTH_TOKEN!,
+});
+
+// Once, at setup: register the return-URL origin allowlist.
+await merchant.setupCheckout({
+  merchant: "example_merchant",
+  display_name: "Example Merchant",
+  billing_plan: "launch",
+  billing_currency: "JPY",
+  webhook_callback_url: "https://merchant.example/siglume/webhook",
+  checkout_allowed_origins: ["https://www.example.com"],
+});
+
+// Per order: create a session and redirect the shopper to checkout_url.
+const session = await merchant.createCheckoutSession({
+  merchant: "example_merchant",
+  amount_minor: 500,            // server-fixed; the browser cannot change it
+  currency: "JPY",
+  nonce: order.id,              // unique per order
+  success_url: "https://www.example.com/thanks",
+  cancel_url: "https://www.example.com/cart",
+  metadata: { order_id: order.id },
+});
+
+await orders.update(order.id, {
+  siglume_challenge_hash: session.challenge_hash,
+  siglume_payment_status: "pending",
+});
+
+redirect(session.checkout_url); // -> https://siglume.com/pay/<session_id>
+```
+
+Python:
+
+```py
+import os
+
+from siglume_direct_request_payment import DirectRequestPaymentMerchantClient
+
+merchant = DirectRequestPaymentMerchantClient(
+    auth_token=os.environ["SIGLUME_MERCHANT_AUTH_TOKEN"],
+)
+
+# Once, at setup: register the return-URL origin allowlist.
+merchant.setup_checkout(
+    merchant="example_merchant",
+    display_name="Example Merchant",
+    billing_plan="launch",
+    billing_currency="JPY",
+    webhook_callback_url="https://merchant.example/siglume/webhook",
+    checkout_allowed_origins=["https://www.example.com"],
+)
+
+# Per order: create a session and redirect the shopper to checkout_url.
+session = merchant.create_checkout_session(
+    merchant="example_merchant",
+    amount_minor=500,            # server-fixed; the browser cannot change it
+    currency="JPY",
+    nonce=order["id"],           # unique per order
+    success_url="https://www.example.com/thanks",
+    cancel_url="https://www.example.com/cart",
+    metadata={"order_id": order["id"]},
+)
+
+orders.update(
+    order["id"],
+    {
+        "siglume_challenge_hash": session["challenge_hash"],
+        "siglume_payment_status": "pending",
+    },
+)
+
+# Redirect the shopper to session["checkout_url"]
+# -> https://siglume.com/pay/<session_id>
+```
+
+Fulfill exactly as in [section 4](#4-fulfill-from-webhook): on the signed
+`direct_payment.confirmed` webhook, look up the order by `challenge_hash` and
+mark it paid once. The session is single-use and expires (~30 minutes); you can
+poll `getCheckoutSession` / `get_checkout_session` if you also want to show
+status in your own UI, but the webhook is the source of truth. Honest framing:
+the merchant plumbing integrates quickly, but human web payment still requires
+the shopper to have — or create — a Siglume wallet and pay from it; it is not a
+card-style "instant" checkout for first-time buyers.
+
 ## 1. Run Merchant Setup
 
 Run setup from the merchant server, CI, or an integration agent with the
@@ -161,6 +279,18 @@ Never calculate `amount_minor` from browser input.
 The nonce must be unique per order payment attempt and must not contain `:`.
 
 ## 3. Buyer Creates and Pays the Requirement
+
+This is the AI agent / AtoA path: the buyer pays directly through
+`DirectRequestPaymentClient` (or the marketplace tool
+`market_confirm_direct_payment_and_execute`), rather than through Hosted
+Checkout. It assumes the buyer agent is **already connected to Siglume before
+the payment**: an AI client (Claude / ChatGPT / Cursor) connects through the
+Siglume MCP server (OAuth authorization with a consent screen), or a custom app
+holds the buyer's Siglume bearer token (JWT). Either way a Siglume
+authentication context is established first — the merchant SDK does not log the
+buyer in. Unattended runs are bounded by Siglume's approval gates / spending
+budgets (per-run / daily / monthly auto-pay budgets, or Works approval), not by
+the merchant.
 
 After the buyer authenticates with Siglume, create the payment requirement with
 the buyer's Siglume bearer token. Do not use a Developer Portal `cli_` API key
