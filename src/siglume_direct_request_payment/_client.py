@@ -41,6 +41,14 @@ class SiglumeApiError(DirectRequestPaymentError):
         self.data = data
 
 
+class HostedCheckoutNotAvailableError(SiglumeApiError):
+    def __init__(
+        self,
+        message: str = "Hosted Checkout is not enabled for this account yet (server rollout in progress).",
+    ) -> None:
+        super().__init__(message, status=409, code="HOSTED_CHECKOUT_NOT_ENABLED")
+
+
 class SiglumeWebhookSignatureError(DirectRequestPaymentError):
     pass
 
@@ -57,7 +65,7 @@ class DirectRequestPaymentClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.4.0",
+        user_agent: str = "siglume-direct-request-payment/0.4.1",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -189,7 +197,6 @@ class DirectRequestPaymentClient:
             return data if isinstance(data, dict) else {"data": data}
         return parsed if isinstance(parsed, dict) else {"data": parsed}
 
-
 class DirectRequestPaymentMerchantClient:
     def __init__(
         self,
@@ -198,7 +205,7 @@ class DirectRequestPaymentMerchantClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.4.0",
+        user_agent: str = "siglume-direct-request-payment/0.4.1",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_MERCHANT_AUTH_TOKEN") or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -275,13 +282,13 @@ class DirectRequestPaymentMerchantClient:
         }
         if metadata is not None:
             payload["metadata"] = _clone_json_object(metadata, "metadata")
-        return self._request("POST", "/sdrp/direct-payments/checkout-sessions", json_body=payload)
+        return self._request_hosted_checkout("POST", "/sdrp/direct-payments/checkout-sessions", json_body=payload)
 
     def get_checkout_session(self, session_id: str) -> dict[str, Any]:
         """Read a Hosted Checkout session's status (open / authenticated / paid /
         expired / cancelled / failed)."""
         sid = _require_non_empty(session_id, "session_id")
-        return self._request("GET", f"/sdrp/direct-payments/checkout-sessions/{quote(sid, safe='')}")
+        return self._request_hosted_checkout("GET", f"/sdrp/direct-payments/checkout-sessions/{quote(sid, safe='')}")
 
     def get_merchant(self, merchant: str) -> dict[str, Any]:
         merchant_key = _normalize_self_service_merchant(merchant)
@@ -434,6 +441,14 @@ class DirectRequestPaymentMerchantClient:
             data = parsed["data"]
             return data if isinstance(data, dict) else {"data": data}
         return parsed if isinstance(parsed, dict) else {"data": parsed}
+
+    def _request_hosted_checkout(self, method: str, path: str, *, json_body: Any | None = None) -> dict[str, Any]:
+        try:
+            return self._request(method, path, json_body=json_body)
+        except SiglumeApiError as exc:
+            if _is_hosted_checkout_unavailable(exc):
+                raise HostedCheckoutNotAvailableError() from exc
+            raise
 
 
 def create_direct_request_payment_challenge(
@@ -819,6 +834,13 @@ def _require_non_empty(value: Any, name: str) -> str:
     if not text:
         raise DirectRequestPaymentError(f"{name} is required.")
     return text
+
+
+def _is_hosted_checkout_unavailable(exc: SiglumeApiError) -> bool:
+    code = str(exc.code or "").upper()
+    if exc.status == 409 and code in {"HOSTED_CHECKOUT_NOT_ENABLED", "FEATURE_DISABLED"}:
+        return True
+    return exc.status == 404 and code in {"HTTP_404", "NOT_FOUND", "ROUTE_NOT_FOUND", "FEATURE_DISABLED"}
 
 
 def _normalize_origin_list(value: list[str] | tuple[str, ...]) -> list[str]:

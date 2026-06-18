@@ -6,6 +6,7 @@ import {
   DirectRequestPaymentClient,
   DirectRequestPaymentMerchantClient,
   type DirectPaymentRequirement,
+  HostedCheckoutNotAvailableError,
   SiglumeApiError,
 } from "../src/index";
 
@@ -339,5 +340,53 @@ describe("DirectRequestPaymentMerchantClient", () => {
         cancel_url: "https://shop.example.com/cart",
       }),
     ).rejects.toThrow(/nonce must not contain/);
+  });
+
+  it("maps hosted checkout rollout errors to an explicit availability error", async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "HOSTED_CHECKOUT_NOT_ENABLED",
+            message: "Hosted Checkout is not enabled for this account yet.",
+          },
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      );
+    const client = new DirectRequestPaymentMerchantClient({
+      auth_token: "merchant_jwt",
+      base_url: "https://siglume.example/v1",
+      fetch: fetchImpl,
+    });
+
+    await expect(
+      client.createCheckoutSession({
+        merchant: "shop",
+        amount_minor: 500,
+        currency: "JPY",
+        nonce: "order-1",
+        success_url: "https://shop.example.com/thanks",
+        cancel_url: "https://shop.example.com/cart",
+      }),
+    ).rejects.toBeInstanceOf(HostedCheckoutNotAvailableError);
+  });
+
+  it("maps a missing hosted checkout route to an explicit availability error", async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response(JSON.stringify({ error: { code: "HTTP_404", message: "Not Found" } }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    const client = new DirectRequestPaymentMerchantClient({
+      auth_token: "merchant_jwt",
+      base_url: "https://siglume.example/v1",
+      fetch: fetchImpl,
+    });
+
+    await expect(client.getCheckoutSession("chk_missing_backend")).rejects.toMatchObject({
+      name: "HostedCheckoutNotAvailableError",
+      code: "HOSTED_CHECKOUT_NOT_ENABLED",
+      status: 409,
+    });
   });
 });

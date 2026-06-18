@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.1 - 2026-06-18
+
+Hosted Checkout rollout correction release.
+
+- Marked Hosted Checkout as Beta / server rollout in the README and API docs so
+  merchants do not treat the 0.4.0 surface as universally GA while accounts are
+  still being enabled.
+- Added `HostedCheckoutNotAvailableError` (TS + Py). `createCheckoutSession` /
+  `create_checkout_session` and `getCheckoutSession` / `get_checkout_session`
+  now map rollout 404/409 responses to this explicit error instead of exposing a
+  raw missing-route response.
+- Bumped default SDK user agents to 0.4.1.
+
 ## 0.4.0 - 2026-06-18
 
 Hosted Checkout for human web shoppers ("Pay with Siglume"). The two buyer

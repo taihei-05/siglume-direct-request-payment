@@ -24,7 +24,7 @@ revenue remains unsettled until the later on-chain settlement succeeds.
 
 There are two ways a buyer reaches you, and you integrate each differently:
 
-- **Human web shopper → Hosted Checkout.** Create a checkout session and
+- **Human web shopper → Hosted Checkout (Beta; server rollout in progress).** Create a checkout session and
   redirect the shopper to the Siglume-hosted page (the
   [section below](#hosted-checkout-human-web-shoppers)). This is the path that
   resembles a Stripe-style hosted checkout.
@@ -37,6 +37,10 @@ the merchant SDK never authenticates the buyer, and you fulfill on the same
 `direct_payment.confirmed` webhook.
 
 ## Hosted Checkout (Human Web Shoppers)
+
+**Beta / server rollout:** Hosted Checkout is rolling out account by account.
+Some merchant accounts may not have the server endpoint enabled yet. The SDK
+raises `HostedCheckoutNotAvailableError` for rollout 404/409 responses.
 
 When a person clicks "Pay with Siglume" on your site, create a session and
 redirect them to the returned `checkout_url`. They sign into Siglume on the

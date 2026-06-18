@@ -9,6 +9,7 @@ from siglume_direct_request_payment import (
     DirectRequestPaymentClient,
     DirectRequestPaymentMerchantClient,
     DirectRequestPaymentError,
+    HostedCheckoutNotAvailableError,
     build_allowance_execution_payload,
     build_payment_execution_payload,
 )
@@ -260,3 +261,43 @@ def test_merchant_client_rejects_checkout_nonce_separator() -> None:
             success_url="https://shop.example.com/thanks",
             cancel_url="https://shop.example.com/cart",
         )
+
+
+@respx.mock
+def test_merchant_client_maps_hosted_checkout_rollout_error() -> None:
+    respx.post("https://siglume.test/v1/sdrp/direct-payments/checkout-sessions").mock(
+        return_value=httpx.Response(
+            409,
+            json={
+                "error": {
+                    "code": "HOSTED_CHECKOUT_NOT_ENABLED",
+                    "message": "Hosted Checkout is not enabled for this account yet.",
+                }
+            },
+        )
+    )
+    client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
+
+    with pytest.raises(HostedCheckoutNotAvailableError) as excinfo:
+        client.create_checkout_session(
+            merchant="shop",
+            amount_minor=500,
+            currency="JPY",
+            nonce="order-1",
+            success_url="https://shop.example.com/thanks",
+            cancel_url="https://shop.example.com/cart",
+        )
+
+    assert excinfo.value.status == 409
+    assert excinfo.value.code == "HOSTED_CHECKOUT_NOT_ENABLED"
+
+
+@respx.mock
+def test_merchant_client_maps_missing_hosted_checkout_route() -> None:
+    respx.get("https://siglume.test/v1/sdrp/direct-payments/checkout-sessions/chk_missing_backend").mock(
+        return_value=httpx.Response(404, json={"error": {"code": "HTTP_404", "message": "Not Found"}})
+    )
+    client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
+
+    with pytest.raises(HostedCheckoutNotAvailableError):
+        client.get_checkout_session("chk_missing_backend")

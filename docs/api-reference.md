@@ -10,7 +10,7 @@ SDRP serves two kinds of buyer, and you integrate each differently. In both
 cases the buyer pays from a Siglume wallet (JPYC for JPY, USDC for USD) — not a
 card — and the merchant SDK never authenticates the buyer.
 
-- **Human web shopper → Hosted Checkout.** Call
+- **Human web shopper → Hosted Checkout (Beta; server rollout in progress).** Call
   [`createCheckoutSession`](#createcheckoutsessioninput--create_checkout_session)
   on `DirectRequestPaymentMerchantClient` and redirect the shopper to the
   returned `checkout_url`. The shopper signs into Siglume on the hosted page,
@@ -215,6 +215,12 @@ allowlist described under `setupCheckout` above; the same normalization and
 webhook-origin auto-allow apply.
 
 ### `createCheckoutSession(input)` / `create_checkout_session(...)`
+
+Beta / server rollout: Hosted Checkout is rolling out account by account. If the
+server endpoint is not enabled for the merchant yet, the SDK raises
+`HostedCheckoutNotAvailableError` (TS + Py) rather than leaking a raw rollout
+404/409. Fulfillment must still key off the signed `direct_payment.confirmed`
+webhook.
 
 Creates a single-use, expiring Hosted Checkout session for a human web shopper
 and returns the URL to redirect them to. Requires the merchant's Siglume bearer
@@ -447,6 +453,7 @@ TypeScript exports:
 
 - `SiglumeDirectRequestPaymentError`
 - `SiglumeApiError`
+- `HostedCheckoutNotAvailableError`
 - `SiglumeWebhookSignatureError`
 - `SiglumeWebhookPayloadError`
 
@@ -454,8 +461,11 @@ Python exports:
 
 - `DirectRequestPaymentError`
 - `SiglumeApiError`
+- `HostedCheckoutNotAvailableError`
 - `SiglumeWebhookSignatureError`
 - `SiglumeWebhookPayloadError`
 
 `SiglumeApiError` includes the HTTP status, platform error code, and parsed
 response data where available.
+`HostedCheckoutNotAvailableError` is raised when the Hosted Checkout server
+surface is not enabled for the account yet during the rollout.

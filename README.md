@@ -32,7 +32,7 @@ cases the buyer pays from a **Siglume wallet** (JPYC for JPY, USDC for USD) — 
 is **not** a card payment — and your **merchant SDK never authenticates the
 buyer**.
 
-1. **Human web shopper → Hosted Checkout.** When a person clicks "Pay with
+1. **Human web shopper → Hosted Checkout (Beta; server rollout in progress).** When a person clicks "Pay with
    Siglume" on your site, call
    [`createCheckoutSession(...)`](#hosted-checkout-human-web-shoppers) and
    redirect them to the returned `checkout_url`. They sign into Siglume (passkey
@@ -61,6 +61,12 @@ shopper to have — or create — a Siglume wallet and pay from it; it is not a
 card-style "instant" checkout for first-time buyers.
 
 ## Hosted Checkout (Human Web Shoppers)
+
+**Beta / server rollout:** Hosted Checkout is rolling out account by account.
+Some merchant accounts may not have the server endpoint enabled yet. In that
+case `createCheckoutSession(...)` / `getCheckoutSession(...)` raises
+`HostedCheckoutNotAvailableError` instead of exposing the raw rollout 404/409.
+Keep fulfilling only from the signed `direct_payment.confirmed` webhook.
 
 Hosted Checkout is a Siglume-hosted page that turns a "Pay with Siglume" button
 into a completed wallet payment, then returns the shopper to your store. It
