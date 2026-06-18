@@ -229,8 +229,9 @@ Use it with the authenticated buyer's Siglume bearer token. Developer Portal
 `cli_` API keys are not accepted by these buyer-authenticated routes.
 
 This client creates SDRP Standard Payment requirements for external merchant
-checkout flows. Micro Payment and Nano Payment use the SDRP meter gate and are
-not created through this merchant checkout client.
+checkout flows. Micro Payment and Nano Payment are applied automatically by
+amount and settled on a weekly / monthly cadence; they are not created explicitly
+through this client.
 
 Payment requirements include `fee_bps` from the Siglume platform. The SDK does
 not calculate merchant plan fees locally; see [Pricing](./pricing.md).
@@ -257,7 +258,9 @@ Calls:
 POST /v1/sdrp/direct-payments/requirements
 ```
 
-The SDK sends `mode="external_402"` internally.
+The SDK sets the platform-required mode value for you; you do not pass it. (For
+wire compatibility this is still the legacy `external_402` value — see the
+README "Compatibility Notes".)
 
 Input:
 

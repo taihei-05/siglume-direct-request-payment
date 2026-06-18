@@ -35,11 +35,11 @@ publish command is needed for normal releases.
 ```powershell
 npm run typecheck
 npm test
-D:\Users\taihei2\AppData\Local\Programs\Python\Python311\python.exe -m pytest python_tests
+py -3.11 -m pytest python_tests
 npm publish --dry-run --access public
 if (Test-Path dist) { Remove-Item -Recurse -Force dist }
-D:\Users\taihei2\AppData\Local\Programs\Python\Python311\python.exe -m build
-D:\Users\taihei2\AppData\Local\Programs\Python\Python311\python.exe -m twine check dist\*.whl dist\*.tar.gz
+py -3.11 -m build
+py -3.11 -m twine check dist\*.whl dist\*.tar.gz
 ```
 
 `npm publish --dry-run` rebuilds the TypeScript `dist` directory. Rebuild Python
@@ -76,7 +76,7 @@ exact package version before publishing; PyPI uses `skip-existing`.
 
 ```powershell
 npm view @siglume/direct-request-payment version repository --json
-D:\Users\taihei2\AppData\Local\Programs\Python\Python311\python.exe -m pip index versions siglume-direct-request-payment
+py -3.11 -m pip index versions siglume-direct-request-payment
 ```
 
 Both registries should show the tag version as latest.

@@ -14,4 +14,12 @@ const setup = await merchant.setupCheckout({
   create_webhook_subscription: Boolean(process.env.SIGLUME_DIRECT_PAYMENT_WEBHOOK_URL),
 });
 
-console.log(JSON.stringify(setup, null, 2));
+// setup.env contains the merchant key PLUS the challenge and webhook secrets.
+// Store these in your server-side secret manager. Never log the secret values —
+// log only non-secret confirmation.
+const env = setup.env ?? {};
+console.log("Merchant configured:", {
+  merchant: env.SIGLUME_DIRECT_PAYMENT_MERCHANT,
+  challenge_secret: env.SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET ? "****" : undefined,
+  webhook_secret: env.SIGLUME_WEBHOOK_SECRET ? "****" : undefined,
+});

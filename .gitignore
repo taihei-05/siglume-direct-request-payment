@@ -1,7 +1,21 @@
 dist/
+build/
 node_modules/
 *.tgz
-build/
 *.egg-info/
 __pycache__/
 .pytest_cache/
+.venv/
+venv/
+coverage/
+.coverage
+htmlcov/
+
+# Secrets — never commit
+.env
+.env.*
+.npmrc
+.pypirc
+
+# OS / editor noise
+.DS_Store

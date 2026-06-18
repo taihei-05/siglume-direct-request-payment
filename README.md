@@ -5,24 +5,15 @@
 
 ## Protocol Overview
 
-Siglume Direct Request Payment is an SDRP payment protocol for products that
-want to accept Siglume wallet payments. The merchant fixes the order, amount,
-and currency on its server; the buyer pays with a Siglume wallet; Siglume
-applies the correct pricing and settlement path from the payment amount and
-execution conditions.
-
-During merchant setup, only the **Standard Payment plan** is selected. Micro
-Payment and Nano Payment are not separate choices for the merchant or buyer.
-They are applied automatically by amount.
+Siglume Direct Request Payment (SDRP) is a wallet payment protocol for products
+that want to accept Siglume wallet payments. The merchant fixes the order,
+amount, and currency on its server; the buyer pays with a Siglume wallet;
+Siglume applies the correct pricing and settlement path from the payment amount.
 
 Use this package when an external EC site, booking service, membership service,
 or paid API wants to accept Siglume wallet payments without taking custody of
-customer funds. This SDK is for external merchants integrating Siglume Direct
-Request Payment into their own checkout. It is not the server contract for SDRP
-Micro Payment or Nano Payment.
-
-The current platform payload still uses the internal mode name `external_402`;
-this SDK sets that value for you when creating a payment requirement.
+customer funds. The SDK creates and verifies one-time and recurring wallet
+payments; it does not hold customer funds or wallets.
 
 Payment requirement creation must run in the authenticated buyer's Siglume
 context. Your merchant server must not use a merchant secret or API key to
@@ -34,7 +25,27 @@ token for setup. `DirectRequestPaymentClient` requires the buyer's Siglume
 bearer token for payment requirements. Do not use a Developer Portal `cli_` API
 key with this package.
 
-The canonical HTTP endpoints live under `/v1/sdrp/direct-payments/...`.
+## Amount-Based Pricing and Settlement
+
+Pricing has one structure: you choose a **Standard Payment** plan once during
+setup, and after that the applied fee and the settlement timing follow the
+**payment amount** automatically. There is nothing else to choose.
+
+- **Standard Payment** — most payments. Your selected plan's percentage fee,
+  settled on-chain immediately after each payment confirms.
+- **Micro Payment** — small payments, applied automatically by amount. A flat
+  per-transaction protocol fee, **settled weekly**.
+- **Nano Payment** — very small payments, applied automatically by amount. A
+  flat per-usage protocol fee, **settled monthly**.
+
+Micro Payment and Nano Payment are not separate products you opt into; they are
+amount bands Siglume applies on your behalf. Your integration code is the same
+regardless of which band a payment falls into. The full fee table and the exact
+weekly / monthly settlement schedule are in [docs/pricing.md](./docs/pricing.md).
+Provider revenue in the Micro and Nano bands is not settled revenue until the
+weekly or monthly on-chain settlement succeeds. Siglume keeps outstanding failed
+settlements for retry under the published policy, but does not advance or
+guarantee provider revenue before settlement succeeds.
 
 ## What This SDK Covers
 
@@ -78,15 +89,15 @@ amounts differ.
 
 | Payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
-| Over JPY 500 / over USD 3.00, or whenever immediate finality is required | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Immediate on-chain split through DirectPaymentHub after payment confirmation |
-| JPY 50-500 / about USD 0.30-3.00 | Micro Payment | No selection. Applied automatically by amount. | USD 0.01 / Tx, about JPY 2 | Meter gate before provider execution; weekly delayed settlement |
-| Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | Nano Payment | No selection. Applied automatically by amount. | USD 0.001 / usage, about JPY 0.2 | Meter gate before provider execution; monthly delayed settlement |
+| Over JPY 500 / over USD 3.00, or whenever immediate finality is required | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
+| JPY 50-500 / about USD 0.30-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Weekly settlement — see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
+| Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Monthly settlement — see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
 
 A merchant billing mandate is required before accepting payments, even on the
-Launch plan. The API and merchant registry may still expose the internal plan key
-`free` for the Launch tier; treat it as a compatibility key, not a public plan
-name. `fee_bps` returned on a payment requirement is the authoritative fee rate
-for that payment in the merchant's settlement currency.
+Launch plan. `fee_bps` returned on a payment requirement is the authoritative
+fee rate for that payment in the merchant's settlement currency. The full fee
+table and the weekly / monthly settlement schedule live in
+[docs/pricing.md](./docs/pricing.md).
 
 ## Merchant Setup: One SDK Call
 
@@ -110,12 +121,12 @@ const setup = await merchant.setupCheckout({
   max_amount_minor: 100000,
 });
 
-console.log(setup.env);
-// {
-//   SIGLUME_DIRECT_PAYMENT_MERCHANT: "example_merchant",
-//   SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET: "edrp_...",
-//   SIGLUME_WEBHOOK_SECRET: "whsec_..."
-// }
+// setup.env holds the merchant key plus the challenge and webhook secrets:
+//   SIGLUME_DIRECT_PAYMENT_MERCHANT       (not secret)
+//   SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET  (secret)
+//   SIGLUME_WEBHOOK_SECRET                   (secret)
+// Write these to your server-side secret store. Do NOT log the secret values.
+console.log(`Configured merchant: ${setup.env.SIGLUME_DIRECT_PAYMENT_MERCHANT}`);
 ```
 
 ```py
@@ -136,7 +147,9 @@ setup = merchant.setup_checkout(
     max_amount_minor=100000,
 )
 
-print(setup["env"])
+# setup["env"] holds the merchant key plus the challenge and webhook secrets.
+# Persist them to your server-side secret store; do not log the secret values.
+print("Configured merchant:", setup["env"]["SIGLUME_DIRECT_PAYMENT_MERCHANT"])
 ```
 
 Store returned secrets on the merchant server. `challenge_secret` and
@@ -289,7 +302,8 @@ const recurring = await createDirectRequestPaymentRecurringChallenge({
 //   POST /v1/sdrp/direct-payments/subscriptions
 //   { merchant, amount_minor, currency, cadence: "monthly", challenge }
 // For scheduled autopay, the buyer instead creates a scheduled auto-pay
-// authorization (mode: "external_402") and gives you the schedule_token.
+// authorization and hands you the schedule_token; your scheduler triggers
+// each occurrence with that token.
 ```
 
 ```py
@@ -382,6 +396,16 @@ Read [docs/security.md](./docs/security.md) before going live.
 - Persist `challenge_hash`, `requirement_id`, and fulfillment state per order.
 - Fulfill orders only from verified webhook data, with idempotency.
 - Treat `fee_bps` returned by Siglume as the runtime fee source of truth.
+
+## Compatibility Notes
+
+- The Direct Request Payment HTTP endpoints live under
+  `/v1/sdrp/direct-payments/...`; the SDK targets them for you.
+- For wire compatibility the platform still tags these payments with the legacy
+  mode value `external_402`, and the merchant registry may still expose the
+  legacy billing-plan key `free` for the Launch tier. The SDK sets and reads
+  these values for you — treat them as compatibility identifiers, not public
+  product names.
 
 ## Documentation
 

@@ -106,9 +106,14 @@ Direct Request Payment is not:
 - escrow
 - a platform balance
 - a card payment fallback
-- the Micro Payment or Nano Payment meter
 
-It is a Standard Payment wallet gate backed by an on-chain receipt. Micro
-Payment and Nano Payment are SDRP amount bands with internal-meter,
-delayed-settlement behavior; they must fail closed before provider API
-execution when the buyer's metered budget, scope, or amount band is invalid.
+Each payment is an individual wallet payment backed by an on-chain receipt. Small
+payments in the Micro and Nano amount bands are aggregated and settled on a
+weekly / monthly cadence instead of one transaction at a time (see the
+[pricing guide](./pricing.md#settlement-schedule)), but they are still wallet
+payments, not a stored balance. Before a small payment is fulfilled, Siglume
+checks the buyer's wallet budget and fails closed when it is invalid, so a
+rejected request is never charged. Provider revenue for Micro and Nano remains
+unsettled until the weekly or monthly on-chain settlement succeeds; Siglume does
+not advance or guarantee revenue when a buyer's balance, allowance, BudgetVault
+authorization, cap, or on-chain transaction fails.

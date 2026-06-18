@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.3.6 - 2026-06-18
+
+Documentation and public-surface cleanup release. No wire-format or API changes;
+challenges and clients from 0.3.x interoperate unchanged.
+
+- Documented the Micro / Nano **settlement schedule** in the README and the
+  pricing guide: Micro settles weekly, Nano settles monthly, with the closing
+  period, timezone, revenue-recognition point, retry / carry-over, and
+  rejected / no-charge behavior spelled out. The exact close time, default
+  timezone, and settlement lag are marked platform-managed — the platform
+  response is the source of truth.
+- Clarified that Micro / Nano provider revenue stays unsettled until the weekly /
+  monthly on-chain settlement succeeds, that failed settlements are retried and
+  may go past due, and that Siglume does not advance, guarantee, or insure unpaid
+  amounts.
+- Reframed the docs as a standalone SDRP payment SDK. Internal implementation
+  language was removed from the public surface: the legacy `external_402` mode
+  value and the `free` Launch-tier key are now isolated in a single
+  "Compatibility Notes" section, and internal batch / ledger terms were dropped.
+- Hardened the examples: they no longer print returned secrets (`setup.env`) and
+  no longer return raw `error.message` to the client.
+- Removed `external-402` from the npm / PyPI keywords; added `sdrp`,
+  `direct-request-payment`, `micropayments`, `metered-billing`, `jpyc`, `usdc`.
+- Hardened `.gitignore` (`.env`, `.env.*`, `.npmrc`, `.pypirc`, `.venv/`,
+  `coverage/`) and removed a developer-specific path from `RELEASING.md`.
+
+## 0.3.5 - 2026-06-18
+
+- Docs: protocol-first README framing for the SDRP Direct Request Payment SDK.
+
+## 0.3.4 - 2026-06-18
+
+- Docs: clarified the SDRP pricing structure — a Standard plan is selected, and
+  Micro / Nano are applied automatically by amount — across the README and
+  pricing guide.
+
+## 0.3.3 - 2026-06-18
+
+- Docs: SDRP direct-payment framing across the README, API reference, merchant
+  quickstart, pricing, and security guides.
+
+## 0.3.2 - 2026-06-18
+
+- Docs: documented the SDRP Micro / Nano amount-band boundaries.
+
 ## 0.3.1 - 2026-06-12
 
 - Docs: scheduled autopay (`cadence: "daily"`) is documented as an approval
