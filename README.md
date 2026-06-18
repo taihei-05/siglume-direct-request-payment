@@ -9,11 +9,9 @@ Use this package when an external EC site, booking service, membership service,
 or paid API wants to accept Siglume wallet payments without taking custody of
 customer funds.
 
-This SDK is intentionally separate from `@siglume/api-sdk`:
-
-- `@siglume/api-sdk` is for publishing agent-facing APIs to the Siglume API Store.
-- `@siglume/direct-request-payment` is for external merchants integrating
-  Siglume Direct Request Payment into their own checkout.
+This SDK is for external merchants integrating Siglume Direct Request Payment
+into their own checkout. It is not the server contract for SDRP Micro Payment or
+Nano Payment.
 
 ## What This SDK Covers
 
@@ -60,9 +58,7 @@ token for setup. `DirectRequestPaymentClient` requires the buyer's Siglume
 bearer token for payment requirements. Do not use a Developer Portal `cli_` API
 key with this package.
 
-Current HTTP endpoints live under Siglume's market/API Store route namespace for
-compatibility with the existing platform contract. That does not make this SDK an
-API Store publishing SDK.
+The canonical HTTP endpoints live under `/v1/sdrp/direct-payments/...`.
 
 ## SDRP Payment Menu Boundary
 
@@ -70,13 +66,13 @@ SDRP is the overall protocol name. This SDK covers **Standard Payment** for
 external merchants: checkout, subscription, and scheduled-autopay flows that
 settle through the ordinary DirectPaymentHub wallet-payment rail.
 
-The new API Store small-payment menus are separate from this SDK:
+The small-payment menus are separate from this SDK:
 
 | SDRP menu | Amount band | Settlement behavior | SDK boundary |
 | --- | --- | --- | --- |
 | Standard Payment | Over JPY 500 / over USD 3.00, or immediate finality required | Buyer confirms payment; DirectPaymentHub settles on-chain immediately | Covered by `@siglume/direct-request-payment` |
-| Micro Payment | JPY 50-500 / about USD 0.30-3.00 | API Store meter gate before provider execution; weekly delayed settlement | Use the API Store flow, not this merchant checkout SDK |
-| Nano Payment | Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | API Store meter gate before provider execution; monthly delayed settlement | Use the API Store flow, not this merchant checkout SDK |
+| Micro Payment | JPY 50-500 / about USD 0.30-3.00 | SDRP meter gate before provider execution; weekly delayed settlement | Use the SDRP metered-payment server flow, not this merchant checkout SDK |
+| Nano Payment | Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | SDRP meter gate before provider execution; monthly delayed settlement | Use the SDRP metered-payment server flow, not this merchant checkout SDK |
 
 Micro Payment and Nano Payment do not execute an on-chain payment during the
 provider API call. If the buyer has no valid metered budget, scope, or remaining
@@ -311,7 +307,7 @@ const recurring = await createDirectRequestPaymentRecurringChallenge({
 
 // Hand recurring.challenge to the buyer-facing page. The buyer creates the
 // subscription with their Siglume token:
-//   POST /v1/market/api-store/direct-payments/subscriptions
+//   POST /v1/sdrp/direct-payments/subscriptions
 //   { merchant, amount_minor, currency, cadence: "monthly", challenge }
 // For scheduled autopay, the buyer instead creates a scheduled auto-pay
 // authorization (mode: "external_402") and gives you the schedule_token.

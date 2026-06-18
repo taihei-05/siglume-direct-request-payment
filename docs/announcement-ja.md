@@ -30,10 +30,10 @@ SDRP は全体プロトコル名です。このSDKは外部merchant向けの Sta
 | SDRPメニュー | 金額帯 | 精算 |
 | --- | --- | --- |
 | Standard Payment / 通常決済 | JPY 500超 / USD 3.00超、または即時finalityが必要な決済 | DirectPaymentHubで即時オンチェーン分配 |
-| Micro Payment / マイクロペイメント | JPY 50-500 / 約USD 0.30-3.00 | API Storeのmeter gate後、週次後精算 |
-| Nano Payment / ナノペイメント | JPY 1未満-49 / USD 0.01未満-約USD 0.30 | API Storeのmeter gate後、月次後精算 |
+| Micro Payment / マイクロペイメント | JPY 50-500 / 約USD 0.30-3.00 | SDRPのmeter gate後、週次後精算 |
+| Nano Payment / ナノペイメント | JPY 1未満-49 / USD 0.01未満-約USD 0.30 | SDRPのmeter gate後、月次後精算 |
 
-Micro Payment / Nano Payment はこのMerchant SDKのcheckout flowではありません。API実行前にAPI Store側のmeter gateを通し、予算やscopeに失敗した場合は `rejected_no_charge` として記録され、provider APIは呼ばれません。
+Micro Payment / Nano Payment はこのMerchant SDKのcheckout flowではありません。API実行前にSDRPのmeter gateを通し、予算やscopeに失敗した場合は `rejected_no_charge` として記録され、provider APIは呼ばれません。
 
 ## 最短導入
 

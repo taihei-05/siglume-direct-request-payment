@@ -14,11 +14,10 @@ external merchant.
 The merchant server must not create charges with a customer wallet. It signs the
 order challenge; the buyer-facing Siglume payment flow pays it.
 
-This quickstart is for SDRP Standard Payment in an external merchant product. If
-you are publishing a Siglume API Store listing that should use Micro Payment or
-Nano Payment, use the API Store flow instead. Micro/Nano run a server-side meter
-gate before provider execution and settle later; they are not browser checkout
-requirements created by this merchant SDK.
+This quickstart is for SDRP Standard Payment in an external merchant product.
+Micro Payment and Nano Payment use the SDRP metered-payment server flow instead.
+Micro/Nano run a server-side meter gate before provider execution and settle
+later; they are not browser checkout requirements created by this merchant SDK.
 
 ## 1. Run Merchant Setup
 

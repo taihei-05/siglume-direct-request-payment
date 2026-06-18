@@ -82,7 +82,7 @@ describe("DirectRequestPaymentClient", () => {
     });
 
     expect(result.requirement_id).toBe("dpr_test");
-    expect(requests[0]?.url).toBe("https://siglume.example/v1/market/api-store/direct-payments/requirements");
+    expect(requests[0]?.url).toBe("https://siglume.example/v1/sdrp/direct-payments/requirements");
     expect(requests[0]?.init.method).toBe("POST");
     expect((requests[0]?.init.headers as Record<string, string>).Authorization).toBe("Bearer buyer_token");
     expect(requests[0]?.body).toMatchObject({
@@ -100,8 +100,8 @@ describe("DirectRequestPaymentClient", () => {
 
     expect(buildPaymentExecutionPayload(requirement, { await_finality: true })).toMatchObject({
       transaction_request: requirement.transaction_request,
-      receipt_kind: "api_store_direct_payment",
-      reference_type: "api_store_direct_payment_requirement",
+      receipt_kind: "sdrp_direct_payment",
+      reference_type: "sdrp_direct_payment_requirement",
       reference_id: "dpr_test",
       await_finality: true,
       metadata: {
@@ -111,8 +111,8 @@ describe("DirectRequestPaymentClient", () => {
     });
     expect(buildAllowanceExecutionPayload(requirement)).toMatchObject({
       transaction_request: requirement.approve_transaction_request,
-      receipt_kind: "api_store_direct_payment_allowance",
-      reference_type: "api_store_direct_payment_requirement",
+      receipt_kind: "sdrp_direct_payment_allowance",
+      reference_type: "sdrp_direct_payment_requirement",
       reference_id: "dpr_test",
     });
   });
@@ -190,8 +190,8 @@ describe("DirectRequestPaymentMerchantClient", () => {
     });
 
     expect(calls.map((call) => call.url)).toEqual([
-      "https://siglume.example/v1/market/api-store/direct-payments/merchants",
-      "https://siglume.example/v1/market/api-store/direct-payments/merchants/example_merchant/billing-mandate",
+      "https://siglume.example/v1/sdrp/direct-payments/merchants",
+      "https://siglume.example/v1/sdrp/direct-payments/merchants/example_merchant/billing-mandate",
       "https://siglume.example/v1/market/webhooks/subscriptions",
     ]);
     expect((calls[0]?.init.headers as Record<string, string>).Authorization).toBe("Bearer merchant_jwt");

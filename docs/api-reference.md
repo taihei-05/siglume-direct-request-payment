@@ -174,7 +174,7 @@ replayed by `getMerchant` / `get_merchant`.
 Calls:
 
 ```text
-POST /v1/market/api-store/direct-payments/merchants
+POST /v1/sdrp/direct-payments/merchants
 ```
 
 Creates or updates the merchant account for the authenticated merchant user.
@@ -184,7 +184,7 @@ Creates or updates the merchant account for the authenticated merchant user.
 Calls:
 
 ```text
-GET /v1/market/api-store/direct-payments/merchants/{merchant}
+GET /v1/sdrp/direct-payments/merchants/{merchant}
 ```
 
 Returns setup and billing status without returning the challenge secret.
@@ -194,7 +194,7 @@ Returns setup and billing status without returning the challenge secret.
 Calls:
 
 ```text
-POST /v1/market/api-store/direct-payments/merchants/{merchant}/challenge-secret/rotate
+POST /v1/sdrp/direct-payments/merchants/{merchant}/challenge-secret/rotate
 ```
 
 Returns the new challenge secret once.
@@ -204,7 +204,7 @@ Returns the new challenge secret once.
 Calls:
 
 ```text
-POST /v1/market/api-store/direct-payments/merchants/{merchant}/billing-mandate
+POST /v1/sdrp/direct-payments/merchants/{merchant}/billing-mandate
 ```
 
 Creates or reuses the merchant billing mandate. If the returned mandate requires
@@ -229,8 +229,8 @@ Use it with the authenticated buyer's Siglume bearer token. Developer Portal
 `cli_` API keys are not accepted by these buyer-authenticated routes.
 
 This client creates SDRP Standard Payment requirements for external merchant
-checkout flows. API Store Micro Payment and Nano Payment use the API Store meter
-gate and are not created through this merchant checkout client.
+checkout flows. Micro Payment and Nano Payment use the SDRP meter gate and are
+not created through this merchant checkout client.
 
 Payment requirements include `fee_bps` from the Siglume platform. The SDK does
 not calculate merchant plan fees locally; see [Pricing](./pricing.md).
@@ -254,7 +254,7 @@ siglume = DirectRequestPaymentClient(
 Calls:
 
 ```text
-POST /v1/market/api-store/direct-payments/requirements
+POST /v1/sdrp/direct-payments/requirements
 ```
 
 The SDK sends `mode="external_402"` internally.
@@ -289,7 +289,7 @@ route.
 Calls:
 
 ```text
-POST /v1/market/api-store/direct-payments/requirements/{requirement_id}/verify
+POST /v1/sdrp/direct-payments/requirements/{requirement_id}/verify
 ```
 
 Input may include:

@@ -1,13 +1,13 @@
-﻿export const DEFAULT_SIGLUME_API_BASE = "https://siglume.com/v1";
+export const DEFAULT_SIGLUME_API_BASE = "https://siglume.com/v1";
 export const DIRECT_REQUEST_PAYMENT_CHALLENGE_SCHEME = "siglume-external-402-v1";
 // Recurring (subscription / scheduled autopay) approval uses a DISTINCT scheme
 // with cadence bound into the HMAC, so a one-time checkout challenge can never
 // be replayed as a recurring authorization and vice versa.
 export const DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME = "siglume-external-402-recurring-v1";
 export const DIRECT_REQUEST_PAYMENT_MODE = "external_402";
-export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "api_store_direct_payment";
-export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "api_store_direct_payment_allowance";
-export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "api_store_direct_payment_requirement";
+export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
+export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
+export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
 
 export type DirectRequestPaymentCurrency = "JPY" | "USD";
@@ -319,7 +319,7 @@ export class DirectRequestPaymentClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.1";
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.3";
     this.fetch_impl = fetchImpl;
   }
 
@@ -340,13 +340,13 @@ export class DirectRequestPaymentClient {
     if (input.metadata !== undefined) {
       payload.metadata = cloneJsonObject(input.metadata, "metadata");
     }
-    return this.request<DirectPaymentRequirement>("POST", "/market/api-store/direct-payments/requirements", payload);
+    return this.request<DirectPaymentRequirement>("POST", "/sdrp/direct-payments/requirements", payload);
   }
 
   async getPaymentRequirement(requirement_id: string): Promise<DirectPaymentRequirement> {
     return this.request<DirectPaymentRequirement>(
       "GET",
-      `/market/api-store/direct-payments/requirements/${encodeURIComponent(requireNonEmpty(requirement_id, "requirement_id"))}`,
+      `/sdrp/direct-payments/requirements/${encodeURIComponent(requireNonEmpty(requirement_id, "requirement_id"))}`,
     );
   }
 
@@ -356,7 +356,7 @@ export class DirectRequestPaymentClient {
   ): Promise<DirectPaymentRequirement> {
     return this.request<DirectPaymentRequirement>(
       "POST",
-      `/market/api-store/direct-payments/requirements/${encodeURIComponent(requireNonEmpty(requirement_id, "requirement_id"))}/verify`,
+      `/sdrp/direct-payments/requirements/${encodeURIComponent(requireNonEmpty(requirement_id, "requirement_id"))}/verify`,
       input,
     );
   }
@@ -444,7 +444,7 @@ export class DirectRequestPaymentMerchantClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.1";
+    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.3.3";
     this.fetch_impl = fetchImpl;
   }
 
@@ -469,20 +469,20 @@ export class DirectRequestPaymentMerchantClient {
     if (input.max_amount_minor !== undefined) {
       payload.max_amount_minor = positiveInteger(input.max_amount_minor, "max_amount_minor");
     }
-    return this.request<DirectRequestPaymentMerchantResponse>("POST", "/market/api-store/direct-payments/merchants", payload);
+    return this.request<DirectRequestPaymentMerchantResponse>("POST", "/sdrp/direct-payments/merchants", payload);
   }
 
   async getMerchant(merchant: string): Promise<DirectRequestPaymentMerchantResponse> {
     return this.request<DirectRequestPaymentMerchantResponse>(
       "GET",
-      `/market/api-store/direct-payments/merchants/${encodeURIComponent(normalizeSelfServiceMerchant(merchant))}`,
+      `/sdrp/direct-payments/merchants/${encodeURIComponent(normalizeSelfServiceMerchant(merchant))}`,
     );
   }
 
   async rotateChallengeSecret(merchant: string): Promise<DirectRequestPaymentMerchantResponse> {
     return this.request<DirectRequestPaymentMerchantResponse>(
       "POST",
-      `/market/api-store/direct-payments/merchants/${encodeURIComponent(normalizeSelfServiceMerchant(merchant))}/challenge-secret/rotate`,
+      `/sdrp/direct-payments/merchants/${encodeURIComponent(normalizeSelfServiceMerchant(merchant))}/challenge-secret/rotate`,
     );
   }
 
@@ -502,7 +502,7 @@ export class DirectRequestPaymentMerchantClient {
     }
     return this.request<DirectRequestPaymentMerchantResponse>(
       "POST",
-      `/market/api-store/direct-payments/merchants/${encodeURIComponent(normalizeSelfServiceMerchant(merchant))}/billing-mandate`,
+      `/sdrp/direct-payments/merchants/${encodeURIComponent(normalizeSelfServiceMerchant(merchant))}/billing-mandate`,
       payload,
     );
   }

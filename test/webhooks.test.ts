@@ -57,7 +57,7 @@ describe("Direct Request Payment webhooks", () => {
       type: "direct_payment.confirmed",
       api_version: "2026-06-11",
       occurred_at: "2026-06-11T00:00:00Z",
-      data: { mode: "api_store" },
+      data: { mode: "wrong_mode" },
     });
     const header = await buildWebhookSignatureHeader("whsec_test", rawBody, { timestamp: 1800000000 });
 

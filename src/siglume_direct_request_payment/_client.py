@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import hmac
@@ -20,9 +20,9 @@ DIRECT_REQUEST_PAYMENT_CHALLENGE_SCHEME = "siglume-external-402-v1"
 # be replayed as a recurring authorization and vice versa.
 DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME = "siglume-external-402-recurring-v1"
 DIRECT_REQUEST_PAYMENT_MODE = "external_402"
-DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "api_store_direct_payment"
-DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "api_store_direct_payment_allowance"
-DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "api_store_direct_payment_requirement"
+DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
+DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
+DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
 
 _MERCHANT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,95}$")
@@ -56,7 +56,7 @@ class DirectRequestPaymentClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.3.1",
+        user_agent: str = "siglume-direct-request-payment/0.3.3",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -94,11 +94,11 @@ class DirectRequestPaymentClient:
             payload["allowance_amount_minor"] = _positive_int(allowance_amount_minor, "allowance_amount_minor")
         if metadata is not None:
             payload["metadata"] = _clone_json_object(metadata, "metadata")
-        return self._request("POST", "/market/api-store/direct-payments/requirements", json_body=payload)
+        return self._request("POST", "/sdrp/direct-payments/requirements", json_body=payload)
 
     def get_payment_requirement(self, requirement_id: str) -> dict[str, Any]:
         requirement_id = _require_non_empty(requirement_id, "requirement_id")
-        return self._request("GET", f"/market/api-store/direct-payments/requirements/{requirement_id}")
+        return self._request("GET", f"/sdrp/direct-payments/requirements/{requirement_id}")
 
     def verify_payment_requirement(
         self,
@@ -121,7 +121,7 @@ class DirectRequestPaymentClient:
         }
         body = {key: value for key, value in payload.items() if value is not None}
         requirement_id = _require_non_empty(requirement_id, "requirement_id")
-        return self._request("POST", f"/market/api-store/direct-payments/requirements/{requirement_id}/verify", json_body=body)
+        return self._request("POST", f"/sdrp/direct-payments/requirements/{requirement_id}/verify", json_body=body)
 
     def execute_prepared_transaction(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/market/web3/transactions/execute-prepared", json_body=dict(payload))
@@ -197,7 +197,7 @@ class DirectRequestPaymentMerchantClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.3.1",
+        user_agent: str = "siglume-direct-request-payment/0.3.3",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_MERCHANT_AUTH_TOKEN") or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -238,15 +238,15 @@ class DirectRequestPaymentMerchantClient:
             payload["billing_mandate_cap_minor"] = _positive_int(billing_mandate_cap_minor, "billing_mandate_cap_minor")
         if max_amount_minor is not None:
             payload["max_amount_minor"] = _positive_int(max_amount_minor, "max_amount_minor")
-        return self._request("POST", "/market/api-store/direct-payments/merchants", json_body=payload)
+        return self._request("POST", "/sdrp/direct-payments/merchants", json_body=payload)
 
     def get_merchant(self, merchant: str) -> dict[str, Any]:
         merchant_key = _normalize_self_service_merchant(merchant)
-        return self._request("GET", f"/market/api-store/direct-payments/merchants/{merchant_key}")
+        return self._request("GET", f"/sdrp/direct-payments/merchants/{merchant_key}")
 
     def rotate_challenge_secret(self, merchant: str) -> dict[str, Any]:
         merchant_key = _normalize_self_service_merchant(merchant)
-        return self._request("POST", f"/market/api-store/direct-payments/merchants/{merchant_key}/challenge-secret/rotate")
+        return self._request("POST", f"/sdrp/direct-payments/merchants/{merchant_key}/challenge-secret/rotate")
 
     def prepare_billing_mandate(
         self,
@@ -266,7 +266,7 @@ class DirectRequestPaymentMerchantClient:
         merchant_key = _normalize_self_service_merchant(merchant)
         return self._request(
             "POST",
-            f"/market/api-store/direct-payments/merchants/{merchant_key}/billing-mandate",
+            f"/sdrp/direct-payments/merchants/{merchant_key}/billing-mandate",
             json_body=payload,
         )
 

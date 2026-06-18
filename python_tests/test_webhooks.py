@@ -59,7 +59,7 @@ def test_rejects_direct_payment_events_with_wrong_mode() -> None:
             "type": "direct_payment.confirmed",
             "api_version": "2026-06-11",
             "occurred_at": "2026-06-11T00:00:00Z",
-            "data": {"mode": "api_store"},
+            "data": {"mode": "wrong_mode"},
         },
         separators=(",", ":"),
     )

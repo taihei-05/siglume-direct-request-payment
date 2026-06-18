@@ -106,9 +106,9 @@ Direct Request Payment is not:
 - escrow
 - a platform balance
 - a card payment fallback
-- the API Store Micro Payment or Nano Payment meter
+- the Micro Payment or Nano Payment meter
 
-It is a Standard Payment wallet gate backed by an on-chain receipt. API Store
-Micro Payment and Nano Payment are separate internal-meter, delayed-settlement
+It is a Standard Payment wallet gate backed by an on-chain receipt. Micro
+Payment and Nano Payment are separate SDRP internal-meter, delayed-settlement
 menus; they must fail closed before provider API execution when the buyer's
 metered budget, scope, or amount band is invalid.

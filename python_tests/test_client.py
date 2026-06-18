@@ -47,7 +47,7 @@ def test_requires_buyer_bearer_token(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @respx.mock
 def test_creates_external_402_payment_requirement() -> None:
-    route = respx.post("https://siglume.test/v1/market/api-store/direct-payments/requirements").mock(
+    route = respx.post("https://siglume.test/v1/sdrp/direct-payments/requirements").mock(
         return_value=httpx.Response(200, json={"data": requirement_payload()})
     )
     client = DirectRequestPaymentClient(auth_token="buyer_jwt", base_url="https://siglume.test/v1")
@@ -73,11 +73,11 @@ def test_builds_prepared_transaction_payloads() -> None:
     payment = build_payment_execution_payload(requirement, await_finality=True, metadata={"order_id": "order_123"})
     allowance = build_allowance_execution_payload(requirement)
 
-    assert payment["receipt_kind"] == "api_store_direct_payment"
+    assert payment["receipt_kind"] == "sdrp_direct_payment"
     assert payment["reference_id"] == "dpr_test"
     assert payment["metadata"] == {"source": "test", "order_id": "order_123"}
     assert payment["await_finality"] is True
-    assert allowance["receipt_kind"] == "api_store_direct_payment_allowance"
+    assert allowance["receipt_kind"] == "sdrp_direct_payment_allowance"
 
 
 @respx.mock
@@ -92,7 +92,7 @@ def test_merchant_client_sets_up_checkout() -> None:
         "billing_status": "setup_required",
         "metadata_jsonb": {"self_service": True},
     }
-    setup_route = respx.post("https://siglume.test/v1/market/api-store/direct-payments/merchants").mock(
+    setup_route = respx.post("https://siglume.test/v1/sdrp/direct-payments/merchants").mock(
         return_value=httpx.Response(
             201,
             json={
@@ -107,7 +107,7 @@ def test_merchant_client_sets_up_checkout() -> None:
         )
     )
     billing_route = respx.post(
-        "https://siglume.test/v1/market/api-store/direct-payments/merchants/example_merchant/billing-mandate"
+        "https://siglume.test/v1/sdrp/direct-payments/merchants/example_merchant/billing-mandate"
     ).mock(
         return_value=httpx.Response(
             201,
