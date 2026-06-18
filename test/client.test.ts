@@ -323,4 +323,21 @@ describe("DirectRequestPaymentMerchantClient", () => {
       client.setupMerchant({ merchant: "shop", checkout_allowed_origins: ["not-a-url"] }),
     ).rejects.toThrow(/absolute origin/);
   });
+
+  it("rejects a hosted checkout nonce containing the challenge separator", async () => {
+    const client = new DirectRequestPaymentMerchantClient({
+      auth_token: "merchant_jwt",
+      fetch: (async () => new Response("{}")) as typeof fetch,
+    });
+    await expect(
+      client.createCheckoutSession({
+        merchant: "shop",
+        amount_minor: 500,
+        currency: "JPY",
+        nonce: "order:1",
+        success_url: "https://shop.example.com/thanks",
+        cancel_url: "https://shop.example.com/cart",
+      }),
+    ).rejects.toThrow(/nonce must not contain/);
+  });
 });

@@ -533,7 +533,7 @@ export class DirectRequestPaymentMerchantClient {
       merchant: normalizeSelfServiceMerchant(input.merchant),
       amount_minor: positiveInteger(input.amount_minor, "amount_minor"),
       currency: normalizeCurrency(input.currency),
-      nonce: requireNonEmpty(input.nonce, "nonce"),
+      nonce: normalizeChallengeNonce(input.nonce),
       success_url: requireNonEmpty(input.success_url, "success_url"),
       cancel_url: requireNonEmpty(input.cancel_url, "cancel_url"),
     };

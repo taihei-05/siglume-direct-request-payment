@@ -59,34 +59,38 @@ confirmed payment turns into money in your settlement wallet.
 | Band | Cadence | Period | You are paid |
 | --- | --- | --- | --- |
 | Standard Payment | Per payment | n/a | On-chain, immediately after each payment confirms |
-| Micro Payment | Weekly | Buyer settlement timezone Monday 00:00 to the next Monday 00:00; default timezone is UTC | After the week closes, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
-| Nano Payment | Monthly | Buyer settlement timezone 1st 00:00 to the 1st of the next month 00:00; default timezone is UTC | After the month closes, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
+| Micro Payment | Weekly | Fixed weekly slot assigned per account | After the period closes, after the final notice and an approximately 3-day pre-debit notice site, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
+| Nano Payment | Monthly | Fixed monthly slot assigned per account | After the period closes, after the final notice and an approximately 3-day pre-debit notice site, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
 
 ### Micro weekly settlement
 
-- **Closing period.** Micro-band payments accrue across one calendar week:
-  Monday 00:00 to the following Monday 00:00 in the buyer settlement timezone.
+- **Closing period.** Micro-band payments accrue across one weekly period. The
+  specific closing weekday and time are assigned as a fixed slot per account to
+  spread settlement load.
 - **Timezone.** Period boundaries are evaluated in the buyer's configured
-  settlement timezone, defaulting to UTC, so different buyers can close on
-  slightly different local boundaries.
+  settlement timezone, defaulting to UTC. Assigned slots are persisted and are
+  not recalculated on the fly.
 - **Settlement.** After the week closes, Siglume aggregates that week's Micro
   payments — grouped per buyer, payee, token, and period — into on-chain
-  settlement(s). Aggregation and payment run automatically on the next settlement
-  pass after the period closes; there is a short, platform-managed lag between
-  the close and the on-chain transaction.
+  settlement(s). Siglume sends the final debit notice first; the on-chain debit
+  is not attempted until the scheduled attempt time after an approximately
+  3-day pre-debit notice site (`not_before_attempt_at`).
 - **Revenue recognition.** A Micro payment is final only once its weekly
   settlement confirms on-chain. Until then it is accrued, not settled.
 
 ### Nano monthly settlement
 
-- **Closing period.** Nano-band payments accrue across one calendar month:
-  the 1st at 00:00 to the 1st of the next month at 00:00 in the buyer
-  settlement timezone.
+- **Closing period.** Nano-band payments accrue across one monthly period. The
+  specific closing day and time are assigned as a fixed slot per account to
+  spread settlement load.
 - **Timezone.** As with Micro, period boundaries use the buyer's configured
-  settlement timezone, defaulting to UTC.
+  settlement timezone, defaulting to UTC. Assigned slots are persisted and are
+  not recalculated on the fly.
 - **Settlement.** After the month closes, Siglume aggregates that month's Nano
   payments — grouped per buyer, payee, token, and period — into on-chain
-  settlement(s), on the next settlement pass after the period closes.
+  settlement(s). Siglume sends the final debit notice first; the on-chain debit
+  is not attempted until the scheduled attempt time after an approximately
+  3-day pre-debit notice site (`not_before_attempt_at`).
 - **Revenue recognition.** A Nano payment is final only once its monthly
   settlement confirms on-chain.
 

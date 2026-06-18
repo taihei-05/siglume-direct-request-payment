@@ -247,3 +247,16 @@ def test_merchant_client_rejects_non_absolute_origin() -> None:
     client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
     with pytest.raises(DirectRequestPaymentError):
         client.setup_merchant(merchant="shop", checkout_allowed_origins=["not-a-url"])
+
+
+def test_merchant_client_rejects_checkout_nonce_separator() -> None:
+    client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
+    with pytest.raises(DirectRequestPaymentError, match="nonce must not contain"):
+        client.create_checkout_session(
+            merchant="shop",
+            amount_minor=500,
+            currency="JPY",
+            nonce="order:1",
+            success_url="https://shop.example.com/thanks",
+            cancel_url="https://shop.example.com/cart",
+        )

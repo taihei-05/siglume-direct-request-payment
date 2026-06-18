@@ -269,7 +269,7 @@ class DirectRequestPaymentMerchantClient:
             "merchant": _normalize_self_service_merchant(merchant),
             "amount_minor": _positive_int(amount_minor, "amount_minor"),
             "currency": _normalize_currency(currency),
-            "nonce": _require_non_empty(nonce, "nonce"),
+            "nonce": _normalize_challenge_nonce(nonce),
             "success_url": _require_non_empty(success_url, "success_url"),
             "cancel_url": _require_non_empty(cancel_url, "cancel_url"),
         }
