@@ -64,11 +64,29 @@ Current HTTP endpoints live under Siglume's market/API Store route namespace for
 compatibility with the existing platform contract. That does not make this SDK an
 API Store publishing SDK.
 
-## Trial Pricing
+## SDRP Payment Menu Boundary
+
+SDRP is the overall protocol name. This SDK covers **Standard Payment** for
+external merchants: checkout, subscription, and scheduled-autopay flows that
+settle through the ordinary DirectPaymentHub wallet-payment rail.
+
+The new API Store small-payment menus are separate from this SDK:
+
+| SDRP menu | Amount band | Settlement behavior | SDK boundary |
+| --- | --- | --- | --- |
+| Standard Payment | Over JPY 500 / over USD 3.00, or immediate finality required | Buyer confirms payment; DirectPaymentHub settles on-chain immediately | Covered by `@siglume/direct-request-payment` |
+| Micro Payment | JPY 50-500 / about USD 0.30-3.00 | API Store meter gate before provider execution; weekly delayed settlement | Use the API Store flow, not this merchant checkout SDK |
+| Nano Payment | Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | API Store meter gate before provider execution; monthly delayed settlement | Use the API Store flow, not this merchant checkout SDK |
+
+Micro Payment and Nano Payment do not execute an on-chain payment during the
+provider API call. If the buyer has no valid metered budget, scope, or remaining
+limit, Siglume records `rejected_no_charge` and does not call the provider API.
+
+## Standard Payment Merchant Pricing
 
 Siglume Direct Request Payment is currently offered with trial-phase merchant
 pricing designed for small EC sites, booking services, membership services, paid
-APIs, and agent-to-agent payment experiments.
+APIs, and external scheduled-payment experiments.
 
 Both launch settlement currencies are first-class: JPY settled in JPYC, and USD
 settled in USDC. A merchant settles in one currency, chosen at onboarding. The

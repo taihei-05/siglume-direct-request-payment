@@ -1,6 +1,6 @@
 {
   "name": "@siglume/direct-request-payment",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Merchant SDK for Siglume Direct Request Payment checkout integrations",
   "keywords": [
     "siglume",

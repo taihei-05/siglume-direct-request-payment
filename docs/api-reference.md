@@ -228,6 +228,10 @@ Thin wrapper around the current Siglume Direct Request Payment HTTP contract.
 Use it with the authenticated buyer's Siglume bearer token. Developer Portal
 `cli_` API keys are not accepted by these buyer-authenticated routes.
 
+This client creates SDRP Standard Payment requirements for external merchant
+checkout flows. API Store Micro Payment and Nano Payment use the API Store meter
+gate and are not created through this merchant checkout client.
+
 Payment requirements include `fee_bps` from the Siglume platform. The SDK does
 not calculate merchant plan fees locally; see [Pricing](./pricing.md).
 

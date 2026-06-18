@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "siglume-direct-request-payment"
-version = "0.3.1"
+version = "0.3.2"
 description = "Python SDK for Siglume Direct Request Payment checkout integrations"
 readme = "README.md"
 license = "MIT"

@@ -1,9 +1,13 @@
 # Pricing
 
 This page documents the trial-phase merchant pricing for Siglume Direct Request
-Payment as of 2026-06-12. Pricing can change by agreement or future product
+Payment as of 2026-06-18. Pricing can change by agreement or future product
 release; the Siglume platform response is the source of truth for per-payment
 fee data returned at runtime.
+
+These prices apply to **SDRP Standard Payment** through the external merchant
+Direct Request Payment SDK. They do not apply to API Store Micro Payment or Nano
+Payment usage events.
 
 ## Settlement Currencies
 
@@ -17,6 +21,22 @@ A merchant settles in a single currency, chosen at onboarding. The settlement fe
 percentage (the payment fee column below) is identical in both currencies. Only
 the flat amounts — the monthly base fee and the per-payment minimum fee — are
 quoted per currency.
+
+## SDRP Menu Boundary
+
+SDRP is the protocol family. This SDK is for external-merchant Standard Payment:
+one buyer-approved payment, subscription charge, or scheduled-autopay occurrence
+settles through DirectPaymentHub.
+
+| SDRP menu | Amount band | Fee model | Settlement cadence |
+| --- | --- | --- | --- |
+| Standard Payment | Over JPY 500 / over USD 3.00, or immediate finality required | Merchant plan percentage with JPY 30 / USD 0.20 minimum | Immediate ordinary wallet settlement |
+| Micro Payment | JPY 50-500 / about USD 0.30-3.00 | USD 0.01 / accepted Tx, about JPY 2 | API Store internal meter, weekly delayed settlement |
+| Nano Payment | Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | USD 0.001 / accepted usage, about JPY 0.2 | API Store internal meter, monthly delayed settlement |
+
+For Micro Payment and Nano Payment, the API Store meter gate runs before provider
+execution. Budget or scope failures are recorded as `rejected_no_charge`; the
+provider API is not called and no pending provider revenue is created.
 
 ## Trial Plans
 
@@ -70,4 +90,4 @@ The trial pricing is intended for:
 - Booking and reservation services
 - Membership services
 - Paid API access
-- Agent-to-agent payment experiments
+- Scheduled autopay for external merchant workflows
