@@ -9,7 +9,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.6";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.7";
 const DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = new Set([DIRECT_REQUEST_PAYMENT_MODE, "metered_settlement_batch"]);
 
 export type DirectRequestPaymentCurrency = "JPY" | "USD";

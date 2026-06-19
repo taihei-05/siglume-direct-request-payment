@@ -7,7 +7,9 @@ fee data returned at runtime.
 
 Pricing has one structure: a merchant selects the Standard Payment plan during
 setup, then Siglume applies the fee for each payment by amount. Micro Payment
-and Nano Payment are automatic amount bands, not separate choices.
+and Nano Payment are automatic amount bands, not separate choices. Merchant
+setup and the billing mandate terms assume the merchant accepts Micro / Nano
+delayed aggregated settlement whenever they offer amounts in those bands.
 
 ## Settlement Currencies
 
@@ -36,15 +38,17 @@ aggregated and settled in account-assigned weekly / monthly slots - see
 pre-debit notice window elapses, when revenue becomes settled, and how rejected
 requests behave.
 
-The current public API chooses the band from `amount_minor`; it does not expose
-`settlement_mode: "immediate"` or `require_immediate_finality: true`. If a
-merchant needs immediate on-chain finality, the payment amount must be in the
-Standard band or the merchant must have a separately agreed platform contract.
-For public one-time Direct Payment / Hosted Checkout, `amount_minor` is a
-positive integer in minor currency units. That means the smallest public
-one-time checkout amount is JPY 1 or USD 0.01. Nano Payment on this public path
-therefore means JPY 1-49 or USD 0.01-0.30. Sub-minor Nano protocol fees are
-settlement-accounting amounts, not externally submitted one-time item prices.
+The current public API chooses the band from `amount_minor`; JPY 500-and-under /
+USD 3-and-under payments are routed to Micro / Nano delayed aggregated
+settlement. If a merchant needs immediate on-chain finality, the payment amount
+must be in the Standard band. In practice, do not offer JPY 500-and-under or
+USD 3-and-under items for a product that cannot accept Micro / Nano delayed
+aggregated settlement. For public one-time Direct Payment / Hosted Checkout,
+`amount_minor` is a positive integer in minor currency units. That means the
+smallest public one-time checkout amount is JPY 1 or USD 0.01. Nano Payment on
+this public path therefore means JPY 1-49 or USD 0.01-0.30. Sub-minor Nano
+protocol fees are settlement-accounting amounts, not externally submitted
+one-time item prices.
 
 For the operational statement APIs, CSV export, buyer past-due blocks, and the
 field-by-field meaning of `scheduled_debit_at`, `not_before_attempt_at`,

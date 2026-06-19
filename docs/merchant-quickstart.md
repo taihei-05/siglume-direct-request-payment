@@ -16,11 +16,15 @@ order challenge; the buyer-facing Siglume payment flow pays it.
 
 This quickstart uses Standard-band example amounts. Micro Payment and Nano
 Payment are applied automatically by amount through the same Hosted Checkout or
-agent/API flow; you do not create a separate Micro/Nano object or pass a
-"force Standard" flag. Micro/Nano are settled on account-assigned weekly /
+agent/API flow; you do not create a separate Micro/Nano object or manually
+select the amount band. Micro/Nano are settled on account-assigned weekly /
 monthly slots after the final notice and close-plus-3-day window (see
 [Pricing](./pricing.md#settlement-schedule)), and provider revenue remains
-unsettled until the later on-chain settlement succeeds.
+unsettled until the later on-chain settlement succeeds. Completing merchant
+setup and the billing mandate means accepting this Micro/Nano delayed aggregated
+settlement model for low-price items. If your product requires immediate
+on-chain settlement, keep its price above the Micro/Nano thresholds instead of
+offering JPY 500-and-under or USD 3-and-under amounts.
 
 ## Two Buyer Systems
 

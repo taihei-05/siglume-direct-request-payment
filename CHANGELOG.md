@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.7 - 2026-06-19
+
+Documentation-only patch release.
+
+- Clarified that SDRP merchant setup and billing mandate terms assume acceptance
+  of automatic Micro / Nano delayed aggregated settlement for low-price bands.
+- Replaced merchant-specific override wording with the operational rule that
+  products requiring immediate settlement should be priced in the Standard band.
+
 ## 0.4.6 - 2026-06-19
 
 Patch release for the external webhook-state re-review.

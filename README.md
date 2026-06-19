@@ -193,10 +193,12 @@ weekly / monthly settlement schedule are in [docs/pricing.md](./docs/pricing.md)
 Provider revenue in the Micro and Nano bands is not settled revenue until the
 weekly or monthly on-chain settlement succeeds. Siglume keeps outstanding failed
 settlements for retry under the published policy, but does not advance or
-guarantee provider revenue before settlement succeeds.
-If your product cannot fulfill before provider revenue is settled, keep the
-price in the Standard band or agree a merchant-specific contract with Siglume
-before launch.
+guarantee provider revenue before settlement succeeds. Merchant setup and the
+billing mandate terms assume the merchant accepts this Micro / Nano delayed
+aggregated settlement model whenever they offer amounts in these bands. If a
+product cannot fulfill before provider revenue is settled, keep the price in the
+Standard band; in practice, do not offer JPY 500-and-under or USD 3-and-under
+items for that product.
 Micro / Nano budget checks reserve spending capacity only; they do not lock,
 escrow, or guarantee the buyer's wallet balance, allowance, or settlement funds.
 Sub-minor-unit Nano fees are accumulated with decimal precision and rounded only
@@ -260,16 +262,19 @@ amounts differ.
 | Under JPY 50 / up to USD 0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Monthly settlement - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
 
 A merchant billing mandate is required before accepting payments, even on the
-Launch plan. The current public API does not expose a flag that forces a
-JPY 500-and-under / USD 3-and-under payment into Standard immediate settlement.
-If immediate on-chain settlement is a hard requirement, price the item in the
-Standard band or confirm a merchant-specific contract with Siglume before
-launch. Public Direct Payment / Hosted Checkout `amount_minor` is a positive
-integer in minor currency units, so public one-time Nano amounts start at JPY 1
-or USD 0.01. For Standard Payment, `fee_bps` returned on a payment requirement
-is the authoritative fee rate for that payment in the merchant's settlement
-currency. For Micro / Nano, the statement APIs expose `protocol_fee_minor`,
-`gross_buyer_debit_minor`, `buyer_debit_minor`, and `rounding_delta_minor`.
+Launch plan. The current public API chooses the payment band from
+`amount_minor`; JPY 500-and-under / USD 3-and-under payments are routed to
+Micro / Nano delayed aggregated settlement. Accepting the SDRP merchant terms
+means accepting automatic Micro / Nano delayed aggregated settlement for those
+low-price bands. If immediate on-chain settlement is a hard requirement, price
+the item in the Standard band; in practice, do not offer JPY 500-and-under or
+USD 3-and-under items for that product. Public Direct Payment / Hosted Checkout
+`amount_minor` is a positive integer in minor currency units, so public one-time
+Nano amounts start at JPY 1 or USD 0.01. For Standard Payment, `fee_bps`
+returned on a payment requirement is the authoritative fee rate for that payment
+in the merchant's settlement currency. For Micro / Nano, the statement APIs
+expose `protocol_fee_minor`, `gross_buyer_debit_minor`, `buyer_debit_minor`, and
+`rounding_delta_minor`.
 The full fee table and the weekly / monthly settlement schedule live in
 [docs/pricing.md](./docs/pricing.md). Statement APIs for "how much was used,
 when will it close, when can it debit, and what is settled" are documented in

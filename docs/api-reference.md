@@ -975,9 +975,9 @@ Recommended branch:
 - `pricing_band === "standard"`, `finality === "per_payment_onchain"`, and
   `settlement_status === "settled"`: mark the mapped order paid once.
 - `pricing_band === "micro" || pricing_band === "nano"`: treat the usage as
-  accepted but unsettled. Fulfill only if your business accepts delayed
-  settlement risk, and reconcile final revenue from statement APIs / settlement
-  batches.
+  accepted but unsettled. SDRP merchant setup and terms assume the merchant
+  accepts this delayed aggregated settlement model for Micro / Nano amount
+  bands; reconcile final revenue from statement APIs / settlement batches.
 - Missing machine fields: do not mark paid from the event type alone; fetch the
   requirement or route the event to manual review.
 
