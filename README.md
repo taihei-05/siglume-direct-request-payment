@@ -183,6 +183,9 @@ Provider revenue in the Micro and Nano bands is not settled revenue until the
 weekly or monthly on-chain settlement succeeds. Siglume keeps outstanding failed
 settlements for retry under the published policy, but does not advance or
 guarantee provider revenue before settlement succeeds.
+For operational reconciliation, expected revenue, settled revenue, retry state,
+and CSV exports, see
+[docs/metered-statements.md](./docs/metered-statements.md).
 
 ## What This SDK Covers
 
@@ -194,6 +197,7 @@ guarantee provider revenue before settlement succeeds.
 - buyer-authenticated payment requirement creation
 - prepared wallet transaction execution payloads
 - payment requirement verification
+- authenticated TypeScript JSON requests to Micro / Nano statement APIs
 - signed webhook verification
 
 It does not custody funds or manage customer wallets. Merchant setup runs through
@@ -227,14 +231,16 @@ amounts differ.
 | Payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
 | Over JPY 500 / over USD 3.00, or whenever immediate finality is required | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
-| JPY 50-500 / about USD 0.30-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Weekly settlement — see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
-| Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Monthly settlement — see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
+| JPY 50-500 / over USD 0.30 and up to USD 3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Weekly settlement - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
+| Under JPY 50 / up to USD 0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Monthly settlement - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
 
 A merchant billing mandate is required before accepting payments, even on the
 Launch plan. `fee_bps` returned on a payment requirement is the authoritative
 fee rate for that payment in the merchant's settlement currency. The full fee
 table and the weekly / monthly settlement schedule live in
-[docs/pricing.md](./docs/pricing.md).
+[docs/pricing.md](./docs/pricing.md). Statement APIs for "how much was used,
+when will it close, when can it debit, and what is settled" are documented in
+[docs/metered-statements.md](./docs/metered-statements.md).
 
 ## Merchant Setup: One SDK Call
 
@@ -549,6 +555,7 @@ Read [docs/security.md](./docs/security.md) before going live.
 - [Merchant quickstart](./docs/merchant-quickstart.md)
 - [API reference](./docs/api-reference.md)
 - [Pricing](./docs/pricing.md)
+- [Micro / Nano statements and notices](./docs/metered-statements.md)
 - [Security guide](./docs/security.md)
 - [Merchant setup example](./examples/setup-merchant.ts)
 - [Express checkout example](./examples/express-checkout.ts)

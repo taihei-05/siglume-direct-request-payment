@@ -27,13 +27,19 @@ quoted per currency.
 | Payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
 | Over JPY 500 / over USD 3.00, or whenever immediate finality is required | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
-| JPY 50-500 / about USD 0.30-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Aggregated and settled **weekly** (see [Settlement schedule](#settlement-schedule)) |
-| Under JPY 1 to JPY 49 / under USD 0.01 to about USD 0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Aggregated and settled **monthly** (see [Settlement schedule](#settlement-schedule)) |
+| JPY 50-500 / over USD 0.30 and up to USD 3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Aggregated and settled **weekly** (see [Settlement schedule](#settlement-schedule)) |
+| Under JPY 50 / up to USD 0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Aggregated and settled **monthly** (see [Settlement schedule](#settlement-schedule)) |
 
 Standard Payment settles per payment. Micro Payment and Nano Payment are
-aggregated and settled on a fixed weekly / monthly cadence — see
-[Settlement schedule](#settlement-schedule) for exactly when each band closes,
-when revenue becomes settled, and how rejected requests behave.
+aggregated and settled in account-assigned weekly / monthly slots - see
+[Settlement schedule](#settlement-schedule) for how each band closes, when the
+pre-debit notice site elapses, when revenue becomes settled, and how rejected
+requests behave.
+
+For the operational statement APIs, CSV export, buyer past-due blocks, and the
+field-by-field meaning of `scheduled_debit_at`, `not_before_attempt_at`,
+`execution_status`, and `buyer_period_ref`, see
+[Micro / Nano Statements and Notices](./metered-statements.md).
 
 USD pricing is the JPY tier converted at roughly 160 JPY/USD and rounded to
 clean price points that keep the same 1:3:10 tier ratio.
@@ -59,8 +65,8 @@ confirmed payment turns into money in your settlement wallet.
 | Band | Cadence | Period | You are paid |
 | --- | --- | --- | --- |
 | Standard Payment | Per payment | n/a | On-chain, immediately after each payment confirms |
-| Micro Payment | Weekly | Fixed weekly slot assigned per account | After the period closes, after the final notice and an approximately 3-day pre-debit notice site, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
-| Nano Payment | Monthly | Fixed monthly slot assigned per account | After the period closes, after the final notice and an approximately 3-day pre-debit notice site, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
+| Micro Payment | Weekly | Account-assigned fixed weekly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs | After the period closes and the roughly 3-day pre-debit notice site has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
+| Nano Payment | Monthly | Account-assigned fixed monthly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs | After the period closes and the roughly 3-day pre-debit notice site has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
 
 ### Micro weekly settlement
 
@@ -122,18 +128,33 @@ Micro and Nano run a budget check before the buyer's paid request is fulfilled:
   accrued, and nothing is added to a settlement. A buyer near their budget
   ceiling can have a request rejected even though earlier requests in the same
   period succeeded.
-- Treat Siglume's settled status and webhooks as the source of truth for what has
-  actually been paid.
+- Treat Siglume's statement status, `settled_at`, and `chain_receipt_id` as the
+  source of truth for Micro / Nano provider revenue. Webhooks are still required
+  for fulfillment, but they are not the complete Micro / Nano settlement ledger.
 
 ### What is fixed vs platform-managed
 
 The cadence is fixed: **Micro settles weekly, Nano settles monthly**, and a
-payment is final only after its on-chain settlement confirms. The buyer-timezone
-period boundaries and the current retry policy above are the public behavior as
-of 2026-06-18. The scheduler lag between a period close and the on-chain
-transaction is platform-managed; treat the platform's settlement status and
-`fee_bps` response as authoritative rather than hard-coding local revenue
-recognition.
+payment is final only after its on-chain settlement confirms. Micro and Nano are
+automatic amount bands, not customer-selected options. The account-assigned
+period boundaries, roughly 3-day pre-debit notice site, and current retry policy
+above are the public behavior as of 2026-06-18. Treat the platform's statement
+status, `not_before_attempt_at`, and `fee_bps` response as authoritative rather
+than hard-coding local revenue recognition.
+
+## Statement APIs and Notices
+
+Micro and Nano require operational reconciliation after usage is accepted. The
+payment requirement response tells you the immediate payment requirement state,
+but it does not replace the Micro / Nano statement APIs.
+
+Use [Micro / Nano Statements and Notices](./metered-statements.md) to integrate:
+
+- provider summary of open, settled, unsettled, and past-due revenue,
+- provider usage-event CSV export,
+- buyer summaries for open-period estimated debit and past-due blocks,
+- sanitized public failure reasons and support references,
+- the fixed final notice plus close-plus-3-day debit site.
 
 ## SDK Behavior
 

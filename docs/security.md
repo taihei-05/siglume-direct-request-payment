@@ -114,6 +114,31 @@ Fulfill exactly once per order. Store at least:
 Duplicate webhook deliveries and manual redelivery can occur. A duplicate
 webhook with the same requirement id must not ship the order twice.
 
+## Micro / Nano Statement Privacy
+
+Micro Payment and Nano Payment introduce operational statement APIs and CSV
+exports because revenue is settled later in aggregated on-chain batches.
+
+Provider-facing statement APIs intentionally do not expose raw `buyer_user_id`,
+buyer email, buyer wallet address, relayer id, nonce, gas data, raw RPC errors,
+or raw platform failure messages. Use `buyer_period_ref` for provider-side
+reconciliation within a statement period, and show only the sanitized public
+failure fields:
+
+- `failure_reason_code`
+- `failure_reason_label`
+- `failure_reason_help`
+- `support_reference`
+
+Buyer-facing APIs may include past-due block reasons and balance / allowance /
+BudgetVault sufficiency indicators for the buyer's own account. Do not forward
+those buyer-account details to providers.
+
+Webhooks remain required for fulfillment, but webhooks alone are not a complete
+Micro / Nano revenue ledger. Use the statement APIs or CSV in
+[Micro / Nano Statements and Notices](./metered-statements.md) to separate
+settled, unsettled, and past-due provider amounts.
+
 ## What Direct Request Payment Is Not
 
 Direct Request Payment is not:
@@ -125,12 +150,12 @@ Direct Request Payment is not:
 - a card payment fallback
 
 Each payment is an individual wallet payment backed by an on-chain receipt. Small
-payments in the Micro and Nano amount bands are aggregated and settled on a
-weekly / monthly cadence instead of one transaction at a time (see the
-[pricing guide](./pricing.md#settlement-schedule)), but they are still wallet
-payments, not a stored balance. Before a small payment is fulfilled, Siglume
-checks the buyer's wallet budget and fails closed when it is invalid, so a
-rejected request is never charged. Provider revenue for Micro and Nano remains
-unsettled until the weekly or monthly on-chain settlement succeeds; Siglume does
-not advance or guarantee revenue when a buyer's balance, allowance, BudgetVault
+payments in the Micro and Nano amount bands are aggregated and settled on
+account-assigned weekly / monthly slots instead of one transaction at a time
+(see the [pricing guide](./pricing.md#settlement-schedule)), but they are still
+wallet payments, not a stored balance. Before a small payment is fulfilled,
+Siglume checks the buyer's wallet budget and fails closed when it is invalid, so
+a rejected request is never charged. Provider revenue for Micro and Nano remains
+unsettled until the aggregated on-chain settlement succeeds; Siglume does not
+advance or guarantee revenue when a buyer's balance, allowance, BudgetVault
 authorization, cap, or on-chain transaction fails.

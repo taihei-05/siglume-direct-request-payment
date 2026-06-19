@@ -16,9 +16,10 @@ order challenge; the buyer-facing Siglume payment flow pays it.
 
 This quickstart is for SDRP Standard Payment in an external merchant product.
 Micro Payment and Nano Payment are applied automatically by amount and settled on
-a weekly / monthly cadence (see [Pricing](./pricing.md#settlement-schedule)); they
-are not browser checkout requirements you create with this SDK. Their provider
-revenue remains unsettled until the later on-chain settlement succeeds.
+account-assigned weekly / monthly slots after the final notice and close-plus-3-day
+site (see [Pricing](./pricing.md#settlement-schedule)); they are not browser
+checkout requirements you create with this SDK. Their provider revenue remains
+unsettled until the later on-chain settlement succeeds.
 
 ## Two Buyer Systems
 
@@ -430,6 +431,58 @@ if verified["event"]["type"] == "direct_payment.confirmed":
     )
 ```
 
+## Reconcile Micro / Nano Statements
+
+Standard Payment can be fulfilled from the verified
+`direct_payment.confirmed` webhook. Micro Payment and Nano Payment are different:
+they are automatic amount bands and are settled later in aggregated on-chain
+batches. Use the statement APIs to answer:
+
+- how much Micro / Nano usage is open this week or month,
+- when the buyer's assigned period closes,
+- when Siglume may first attempt the debit (`not_before_attempt_at`),
+- how much provider revenue is settled, unsettled, retrying, or past due.
+
+Provider summary:
+
+```ts
+import { DirectRequestPaymentClient } from "@siglume/direct-request-payment";
+
+const siglume = new DirectRequestPaymentClient({
+  auth_token: providerSiglumeBearerToken,
+});
+
+const summary = await siglume.request<{
+  open_periods: Array<Record<string, unknown>>;
+  periods: Array<Record<string, unknown>>;
+  totals: Record<string, string>;
+}>(
+  "GET",
+  "/sdrp/metered/provider/summary?plan_type=micro&token_symbol=JPYC",
+);
+
+console.log(summary.totals.settled_provider_receivable_minor);
+console.log(summary.totals.unsettled_provider_receivable_minor);
+console.log(summary.totals.past_due_provider_receivable_minor);
+```
+
+Line-level CSV export:
+
+```bash
+curl https://siglume.com/v1/sdrp/metered/provider/settlement-batches/<batch-id>/usage-events.csv \
+  -H "Authorization: Bearer <provider-siglume-bearer-token>" \
+  -o sdrp-metered.csv
+```
+
+Python does not expose a public generic request helper in this release. Use
+ordinary HTTPS requests with the provider's Siglume bearer token for these
+statement endpoints.
+
+Do not book Micro / Nano provider revenue as settled revenue until the batch is
+`settled` and `chain_receipt_id` is present. See
+[Micro / Nano Statements and Notices](./metered-statements.md) for the full
+manual, including buyer past-due blocks and public failure fields.
+
 ## Failure Handling
 
 - `EXTERNAL_402_CHALLENGE_REQUIRED`: the merchant server did not provide a
@@ -465,3 +518,6 @@ if verified["event"]["type"] == "direct_payment.confirmed":
 - Nonces cannot be reused for separate order attempts.
 - The order is fulfilled only after a verified webhook maps back to the stored
   `challenge_hash`.
+- Micro / Nano accounting reads statement APIs or CSV and keeps settled,
+  unsettled, and past-due revenue separate.
+- Micro / Nano provider revenue is not recognized before on-chain settlement.

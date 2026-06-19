@@ -500,8 +500,10 @@ Use it with the authenticated buyer's Siglume bearer token. Developer Portal
 
 This client creates SDRP Standard Payment requirements for external merchant
 checkout flows. Micro Payment and Nano Payment are applied automatically by
-amount and settled on a weekly / monthly cadence; they are not created explicitly
-through this client.
+amount and settled on account-assigned weekly / monthly slots; they are not
+created explicitly through this client. Use the statement APIs below to see
+open-period usage, the close time, the final-notice schedule, and settled /
+unsettled / past-due revenue.
 
 Payment requirements include `fee_bps` from the Siglume platform. The SDK does
 not calculate merchant plan fees locally; see [Pricing](./pricing.md).
@@ -628,6 +630,168 @@ Input may include:
 - `await_required_status`
 - `await_timeout_seconds`
 - `await_poll_seconds`
+
+### `request<T>(method, path, json_body?)` (TypeScript only)
+
+Calls an authenticated Siglume JSON endpoint using the same bearer token and
+base URL configured on `DirectRequestPaymentClient`.
+
+`path` is the API path after `/v1`, for example
+`/sdrp/metered/my-summary`. The helper expects a JSON response. Use raw
+`fetch`, `curl`, or your HTTP client for CSV exports.
+
+Python does not expose a public generic request helper in this release. Use
+ordinary HTTPS requests with the same Siglume bearer token for endpoints that do
+not yet have a named Python SDK method.
+
+## Metered Statement APIs
+
+Micro Payment and Nano Payment require operational reconciliation after usage is
+accepted. The immediate requirement response does not tell a merchant how much
+is settled, when the batch can first debit, or why a buyer is past due.
+
+See the full operating guide:
+[Micro / Nano Statements and Notices](./metered-statements.md).
+
+### Buyer summary
+
+```text
+GET /v1/sdrp/metered/my-summary
+```
+
+Common query parameters:
+
+- `plan_type`: `micro` or `nano`
+- `token_symbol`: `JPYC` or `USDC`
+
+TypeScript:
+
+```ts
+const summary = await siglume.request<{
+  role: "buyer";
+  open_periods: Array<Record<string, unknown>>;
+  settlement_batches: Array<Record<string, unknown>>;
+  past_due_blocks: Array<Record<string, unknown>>;
+  balance_sufficiency: Record<string, unknown>;
+}>("GET", "/sdrp/metered/my-summary?plan_type=micro&token_symbol=JPYC");
+```
+
+Use `open_periods` for current-period estimated debit,
+`settlement_batches` for closed / scheduled / settled periods, and
+`past_due_blocks` to explain `METERED_SETTLEMENT_PAST_DUE`.
+
+### Buyer usage and settlement lists
+
+```text
+GET /v1/sdrp/metered/my-usage-events
+GET /v1/sdrp/metered/my-settlement-batches
+```
+
+Buyer-facing amount names are centered on the debit:
+
+- `estimated_buyer_debit_minor`
+- `provider_usage_amount_minor`
+- `gross_buyer_debit_minor`
+- `buyer_debit_minor`
+- `protocol_fee_minor`
+
+### Provider summary
+
+```text
+GET /v1/sdrp/metered/provider/summary
+```
+
+Common query parameters:
+
+- `plan_type`: `micro` or `nano`
+- `token_symbol`: `JPYC` or `USDC`
+- `listing_id`
+- `capability_key`
+
+TypeScript:
+
+```ts
+const providerSummary = await siglume.request<{
+  role: "provider";
+  timezone: string;
+  open_periods: Array<Record<string, unknown>>;
+  periods: Array<Record<string, unknown>>;
+  totals: Record<string, string>;
+}>(
+  "GET",
+  "/sdrp/metered/provider/summary?plan_type=micro&token_symbol=JPYC",
+);
+```
+
+Use `open_periods` for current-period expected revenue, `periods` for closed
+and historical batches, and `totals` to separate settled, unsettled, and
+past-due provider amounts. Do not recognize Micro / Nano revenue until the batch
+is `settled` and has an on-chain receipt.
+
+### Provider usage and settlement detail
+
+```text
+GET /v1/sdrp/metered/provider/usage-events
+GET /v1/sdrp/metered/provider/settlement-batches
+GET /v1/sdrp/metered/provider/settlement-batches/{settlement_batch_id}
+```
+
+Provider-facing amount names:
+
+- `provider_receivable_minor`
+- `gross_buyer_debit_minor`
+- `buyer_debit_minor`
+- `protocol_fee_minor`
+- `settled_provider_receivable_minor`
+- `unsettled_provider_receivable_minor`
+- `past_due_provider_receivable_minor`
+
+Schedule and execution fields:
+
+- `period_start`, `period_end`, `close_at`
+- `expected_scheduled_debit_at`
+- `scheduled_debit_at`
+- `not_before_attempt_at`
+- `execution_status`
+- `latest_execution_attempt_status`
+- `chain_receipt_id`
+- `usage_event_digest`
+- `attempt_count`
+- `next_attempt_at`
+
+Failure fields are sanitized for public display:
+
+- `failure_reason_code`
+- `failure_reason_label`
+- `failure_reason_help`
+- `support_reference`
+
+Provider APIs do not expose raw `buyer_user_id`, buyer email, buyer wallet
+address, relayer id, nonce, gas data, raw RPC errors, or raw
+`failure_message`. Use `buyer_period_ref` for provider-side reconciliation
+within a period.
+
+### Provider CSV export
+
+```text
+GET /v1/sdrp/metered/provider/settlement-batches/{settlement_batch_id}/usage-events.csv
+```
+
+The CSV is not JSON. Fetch it with raw `fetch`, `curl`, or your HTTP client:
+
+```bash
+curl https://siglume.com/v1/sdrp/metered/provider/settlement-batches/<batch-id>/usage-events.csv \
+  -H "Authorization: Bearer <provider-siglume-bearer-token>" \
+  -o sdrp-metered.csv
+```
+
+Columns:
+
+```text
+metered_usage_id,created_at,plan_type,settlement_cadence,period_start,period_end,listing_id,capability_key,operation_key,currency,token_symbol,provider_receivable_minor,protocol_fee_minor,gross_buyer_debit_minor,rounding_delta_minor,buyer_debit_minor,status,settlement_batch_id,buyer_period_ref
+```
+
+The CSV uses `buyer_period_ref`, not raw buyer account identifiers.
 
 ## Payload Builders
 
