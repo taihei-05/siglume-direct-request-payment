@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.10 - 2026-06-19
+
+Public beta scope and metered usage hardening patch.
+
+- Required Micro / Nano usage-accepted confirmations to carry the expected
+  weekly or monthly settlement cadence before returning
+  `metered_usage_accepted`.
+- Clarified that the current public beta supports JPYC / USDC settlement on
+  Polygon PoS only and does not support multi-chain, cross-chain, or
+  multi-wallet settlement routing through the public SDK.
+- Clarified that Standard Payment fees are deducted from merchant settlement,
+  while Micro / Nano protocol fees are added to buyer debit and are not provider
+  revenue.
+
 ## 0.4.9 - 2026-06-19
 
 Classifier consistency patch release.

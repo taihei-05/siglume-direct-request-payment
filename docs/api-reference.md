@@ -4,6 +4,14 @@ The TypeScript package is `@siglume/direct-request-payment`. The Python package
 is `siglume-direct-request-payment` and imports as
 `siglume_direct_request_payment`.
 
+## Current Public Beta Scope
+
+SDRP currently settles JPYC / USDC on **Polygon PoS only**. The public SDK does
+not expose chain selection, cross-chain payment, multiple merchant settlement
+wallets, per-payment settlement-wallet overrides, or split / multi-wallet
+charging. Route each payment through the buyer's Siglume wallet and the merchant
+account's configured Siglume settlement wallet.
+
 ## Two Buyer Systems
 
 SDRP serves two kinds of buyer, and you integrate each differently. In both
@@ -28,9 +36,9 @@ card — and the merchant SDK never authenticates the buyer.
 
 In both systems the merchant handles the same signed `direct_payment.confirmed`
 webhook. Hosted Checkout adds no new money movement and no new webhook. Inspect
-`pricing_band`, `finality`, and `settlement_status`: Standard can be marked paid
-only after settled per-payment finality, while Micro / Nano usage is accepted
-before the later aggregated settlement.
+`pricing_band`, `settlement_cadence`, `finality`, and `settlement_status`:
+Standard can be marked paid only after settled per-payment finality, while Micro
+/ Nano usage is accepted before the later aggregated settlement.
 
 ## Environment Variables
 
@@ -466,8 +474,8 @@ Returns a `HostedCheckoutSession` status object with:
 - `authenticated_at` (nullable; set when the shopper signs into Siglume)
 - `paid_at` (nullable; set when Hosted Checkout has accepted the wallet
   payment flow. For Micro / Nano, this is not the same as final provider
-  settlement; use `pricing_band`, `finality`, `settlement_status`, and the
-  statement APIs.)
+  settlement; use `pricing_band`, `settlement_cadence`, `finality`,
+  `settlement_status`, and the statement APIs.)
 - `cancelled_at` (nullable; set when the shopper cancels)
 - `created_at` (nullable)
 - `metadata_jsonb`
@@ -982,6 +990,7 @@ Recommended branch: call `classifyDirectPaymentConfirmation(event)` /
   `chain_receipt_id`.
 - `metered_usage_accepted`: treat the usage as accepted but unsettled. This
   requires Micro / Nano pricing, `finality === "aggregated_onchain_settlement"`,
+  the matching settlement cadence (`micro` -> `weekly`, `nano` -> `monthly`),
   `settlement_status === "pending_settlement"`, non-empty `requirement_id`, and
   non-empty `challenge_hash`. SDRP merchant setup and terms assume the merchant
   accepts this delayed aggregated settlement model for Micro / Nano amount

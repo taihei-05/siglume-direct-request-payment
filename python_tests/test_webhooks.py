@@ -123,6 +123,7 @@ def test_classifies_metered_usage_only_when_finality_and_pending_settlement_matc
             "data": {
                 "mode": "external_402",
                 "pricing_band": "micro",
+                "settlement_cadence": "weekly",
                 "finality": "aggregated_onchain_settlement",
                 "settlement_status": DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS,
                 "requirement_id": "dpr_micro",
@@ -133,6 +134,7 @@ def test_classifies_metered_usage_only_when_finality_and_pending_settlement_matc
 
     assert result["kind"] == "metered_usage_accepted"
     assert result["pricing_band"] == "micro"
+    assert result["settlement_cadence"] == "weekly"
     assert result["requirement_id"] == "dpr_micro"
     assert result["challenge_hash"] == "sha256:micro"
 
@@ -145,6 +147,7 @@ def test_classifies_metered_usage_only_when_finality_and_pending_settlement_matc
             "data": {
                 "mode": "external_402",
                 "pricing_band": "micro",
+                "settlement_cadence": "weekly",
                 "finality": "aggregated_onchain_settlement",
                 "settlement_status": "settled",
                 "requirement_id": "dpr_micro",
@@ -155,6 +158,39 @@ def test_classifies_metered_usage_only_when_finality_and_pending_settlement_matc
 
     assert missing_status["kind"] == "unknown"
     assert missing_status["reason"] == "missing_metered_usage_fields"
+
+
+def test_requires_metered_usage_cadence_to_match_pricing_band() -> None:
+    valid_data = {
+        "mode": "external_402",
+        "pricing_band": "micro",
+        "settlement_cadence": "weekly",
+        "finality": "aggregated_onchain_settlement",
+        "settlement_status": DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS,
+        "requirement_id": "dpr_micro",
+        "challenge_hash": "sha256:micro",
+    }
+    invalid_cases = [
+        ("missing cadence", {"settlement_cadence": None}),
+        ("micro monthly cadence", {"settlement_cadence": "monthly"}),
+        ("nano weekly cadence", {"pricing_band": "nano", "settlement_cadence": "weekly"}),
+    ]
+
+    for name, override in invalid_cases:
+        data = {**valid_data, **override}
+        data = {key: value for key, value in data.items() if value is not None}
+        result = classify_direct_payment_confirmation(
+            {
+                "id": f"evt_usage_{name.replace(' ', '_')}",
+                "type": "direct_payment.confirmed",
+                "api_version": "2026-06-11",
+                "occurred_at": "2026-06-11T00:00:00Z",
+                "data": data,
+            }
+        )
+
+        assert result["kind"] == "unknown", name
+        assert result["reason"] == "missing_metered_usage_fields", name
 
 
 def test_requires_settlement_batch_identifiers_before_classifying_metered_batch_settled() -> None:

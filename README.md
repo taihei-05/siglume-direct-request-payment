@@ -15,6 +15,12 @@ or paid API wants to accept Siglume wallet payments without taking custody of
 customer funds. The SDK creates and verifies one-time and recurring wallet
 payments; it does not hold customer funds or wallets.
 
+**Current public beta scope.** SDRP currently settles JPYC / USDC on **Polygon
+PoS only**. The public SDK does not expose chain selection, cross-chain payment,
+multiple merchant settlement wallets, per-payment settlement-wallet override, or
+split / multi-wallet charging. Route each payment through the buyer's Siglume
+wallet and the merchant account's configured Siglume settlement wallet.
+
 Payment requirement creation must run in the authenticated buyer's Siglume
 context. Your merchant server must not use a merchant secret or API key to
 charge a customer wallet. The merchant server creates the signed challenge; the
@@ -275,6 +281,8 @@ returned on a payment requirement is the authoritative fee rate for that payment
 in the merchant's settlement currency. For Micro / Nano, the statement APIs
 expose `protocol_fee_minor`, `gross_buyer_debit_minor`, `buyer_debit_minor`, and
 `rounding_delta_minor`.
+Standard Payment fees are deducted from the merchant settlement amount. Micro /
+Nano protocol fees are added to the buyer debit and are not provider revenue.
 The full fee table and the weekly / monthly settlement schedule live in
 [docs/pricing.md](./docs/pricing.md). Statement APIs for "how much was used,
 when will it close, when can it debit, and what is settled" are documented in
@@ -613,7 +621,8 @@ Read [docs/security.md](./docs/security.md) before going live.
 - Store the returned `SIGLUME_WEBHOOK_SECRET` only on the merchant server.
 - Persist `challenge_hash`, `requirement_id`, and fulfillment state per order.
 - Fulfill orders only from verified webhook data, with idempotency, after
-  checking `pricing_band`, `finality`, and `settlement_status`.
+  checking `pricing_band`, `settlement_cadence`, `finality`, and
+  `settlement_status`.
 - Treat `fee_bps` returned by Siglume as the Standard Payment runtime fee source
   of truth; use statement API amount fields for Micro / Nano.
 

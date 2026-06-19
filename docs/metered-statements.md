@@ -461,8 +461,8 @@ separate from settled revenue.
 
 - Your order fulfillment is idempotent by order id and requirement id.
 - Standard Payment fulfillment still uses verified `direct_payment.confirmed`
-  only when `pricing_band`, `finality`, and `settlement_status` show settled
-  per-payment finality.
+  only when `pricing_band`, `settlement_cadence`, `finality`, and
+  `settlement_status` show settled per-payment finality.
 - Micro / Nano accounting uses statement APIs or CSV, not only webhooks.
 - Your dashboard separates settled, unsettled, and past-due provider amounts.
 - Your support UI shows sanitized failure fields and `support_reference`.

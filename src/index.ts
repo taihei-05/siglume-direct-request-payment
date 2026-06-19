@@ -9,7 +9,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.9";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.10";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain";
@@ -490,6 +490,7 @@ export interface DirectPaymentMeteredUsageAcceptedClassification {
   event: DirectRequestPaymentWebhookEvent;
   data: DirectRequestPaymentWebhookEvent["data"];
   pricing_band: DirectRequestPaymentMeteredPlanType;
+  settlement_cadence: "weekly" | "monthly";
   requirement_id: string;
   challenge_hash: string;
   request_hash_v2?: string | null;
@@ -1391,6 +1392,7 @@ export function classifyDirectPaymentConfirmation(
     if (
       finality === DIRECT_REQUEST_PAYMENT_METERED_FINALITY &&
       settlementStatus === DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS &&
+      settlementCadence === (pricingBand === "micro" ? "weekly" : "monthly") &&
       requirementId &&
       challengeHash
     ) {
@@ -1399,6 +1401,7 @@ export function classifyDirectPaymentConfirmation(
         event,
         data,
         pricing_band: pricingBand,
+        settlement_cadence: pricingBand === "micro" ? "weekly" : "monthly",
         requirement_id: requirementId,
         challenge_hash: challengeHash,
         request_hash_v2: stringOrNull(data.request_hash_v2),

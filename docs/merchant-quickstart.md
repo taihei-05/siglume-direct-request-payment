@@ -14,6 +14,12 @@ external merchant.
 The merchant server must not create charges with a customer wallet. It signs the
 order challenge; the buyer-facing Siglume payment flow pays it.
 
+**Current public beta scope.** SDRP currently settles JPYC / USDC on **Polygon
+PoS only**. The public SDK does not expose chain selection, cross-chain payment,
+multiple merchant settlement wallets, per-payment settlement-wallet override, or
+split / multi-wallet charging. Route each payment through the buyer's Siglume
+wallet and the merchant account's configured Siglume settlement wallet.
+
 This quickstart uses Standard-band example amounts. Micro Payment and Nano
 Payment are applied automatically by amount through the same Hosted Checkout or
 agent/API flow; you do not create a separate Micro/Nano object or manually

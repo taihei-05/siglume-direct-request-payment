@@ -25,7 +25,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.9"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.10"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
 DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain"
@@ -1004,6 +1004,7 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
         if (
             finality == DIRECT_REQUEST_PAYMENT_METERED_FINALITY
             and settlement_status == DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS
+            and settlement_cadence == ("weekly" if pricing_band == "micro" else "monthly")
             and requirement_id
             and challenge_hash
         ):
@@ -1012,6 +1013,7 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
                 "event": event,
                 "data": data,
                 "pricing_band": pricing_band,
+                "settlement_cadence": "weekly" if pricing_band == "micro" else "monthly",
                 "requirement_id": requirement_id,
                 "challenge_hash": challenge_hash,
                 "request_hash_v2": _non_empty_str(data.get("request_hash_v2")),

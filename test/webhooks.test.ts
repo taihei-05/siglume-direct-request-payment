@@ -123,6 +123,7 @@ describe("Direct Request Payment webhooks", () => {
       data: {
         mode: "external_402",
         pricing_band: "micro",
+        settlement_cadence: "weekly",
         finality: "aggregated_onchain_settlement",
         settlement_status: DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS,
         requirement_id: "dpr_micro",
@@ -133,6 +134,7 @@ describe("Direct Request Payment webhooks", () => {
     expect(result.kind).toBe("metered_usage_accepted");
     if (result.kind === "metered_usage_accepted") {
       expect(result.pricing_band).toBe("micro");
+      expect(result.settlement_cadence).toBe("weekly");
       expect(result.requirement_id).toBe("dpr_micro");
       expect(result.challenge_hash).toBe("sha256:micro");
     }
@@ -145,6 +147,7 @@ describe("Direct Request Payment webhooks", () => {
       data: {
         mode: "external_402",
         pricing_band: "micro",
+        settlement_cadence: "weekly",
         finality: "aggregated_onchain_settlement",
         settlement_status: "settled",
         requirement_id: "dpr_micro",
@@ -155,6 +158,44 @@ describe("Direct Request Payment webhooks", () => {
     expect(missingStatus.kind).toBe("unknown");
     if (missingStatus.kind === "unknown") {
       expect(missingStatus.reason).toBe("missing_metered_usage_fields");
+    }
+  });
+
+  it("requires metered usage cadence to match the pricing band", () => {
+    const validData = {
+      mode: "external_402",
+      pricing_band: "micro",
+      settlement_cadence: "weekly",
+      finality: "aggregated_onchain_settlement",
+      settlement_status: DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS,
+      requirement_id: "dpr_micro",
+      challenge_hash: "sha256:micro",
+    };
+    const invalidCases: Array<[string, Record<string, unknown>]> = [
+      ["missing cadence", { settlement_cadence: undefined }],
+      ["micro monthly cadence", { settlement_cadence: "monthly" }],
+      ["nano weekly cadence", { pricing_band: "nano", settlement_cadence: "weekly" }],
+    ];
+
+    for (const [name, override] of invalidCases) {
+      const data = { ...validData, ...override };
+      for (const key of Object.keys(data)) {
+        if (data[key as keyof typeof data] === undefined) {
+          delete data[key as keyof typeof data];
+        }
+      }
+      const result = classifyDirectPaymentConfirmation({
+        id: `evt_usage_${name.replace(/\s+/g, "_")}`,
+        type: "direct_payment.confirmed",
+        api_version: "2026-06-11",
+        occurred_at: "2026-06-11T00:00:00Z",
+        data,
+      });
+
+      expect(result.kind, name).toBe("unknown");
+      if (result.kind === "unknown") {
+        expect(result.reason, name).toBe("missing_metered_usage_fields");
+      }
     }
   });
 

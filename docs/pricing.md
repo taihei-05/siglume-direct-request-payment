@@ -24,6 +24,11 @@ percentage (the payment fee column below) is identical in both currencies. Only
 the flat amounts — the monthly base fee and the per-payment minimum fee — are
 quoted per currency.
 
+Current public beta settlement is on **Polygon PoS only**. The public SDK does
+not expose chain selection, cross-chain payment, multiple merchant settlement
+wallets, per-payment settlement-wallet overrides, or split / multi-wallet
+charging.
+
 ## Pricing Table
 
 | Payment amount | Applied automatically | What you select | Fee | Settlement |
@@ -62,8 +67,10 @@ If no paid plan is selected during merchant setup, the merchant account uses the
 Launch plan. A merchant billing mandate is still required before accepting
 payments so Siglume can collect the monthly base fee automatically.
 
-Per-payment fees are deducted at settlement, so the merchant receives the net
-amount for each payment. Monthly base fees are collected separately through the
+Standard Payment fees are deducted at settlement, so the merchant receives the
+net amount for each Standard payment. Micro / Nano protocol fees are different:
+they are added to the buyer debit, are reported as `protocol_fee_minor`, and are
+not provider revenue. Monthly base fees are collected separately through the
 merchant billing mandate.
 
 The same Standard Payment percentage schedule applies in JPY and USD. For
