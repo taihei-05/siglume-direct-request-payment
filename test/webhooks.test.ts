@@ -65,7 +65,7 @@ describe("Direct Request Payment webhooks", () => {
         pricing_band: "micro",
         settlement_cadence: "weekly",
         finality: "aggregated_onchain_settlement",
-        protocol_fee_minor: "1.6",
+        protocol_fee_minor: "2",
         settlement_status: "settled",
         settlement_batch_id: "msb_123",
         chain_receipt_id: "chain_123",

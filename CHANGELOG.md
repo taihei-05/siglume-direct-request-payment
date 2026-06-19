@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.14 - 2026-06-19
+
+SDRP Micro / Nano threshold and fixed-JPY fee correction.
+
+- Made JPY Micro / Nano protocol fees market-fixed at JPY 2 / JPY 0.2 per SDRP
+  Tx, matching the seller-borne examples.
+- Added public batch fields for `settlement_trigger`, `settlement_threshold_minor`,
+  `threshold_reached_at`, and `total_unsettled_exposure_minor`.
+- Documented that JPY 10,000 and USD 100.00 are fixed market thresholds, not FX
+  conversions, and that new usage pauses while unsettled exposure is at or above
+  the threshold.
+
 ## 0.4.13 - 2026-06-19
 
 Seller-borne Micro / Nano protocol fee correction.

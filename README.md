@@ -283,8 +283,8 @@ amounts differ.
 | Public one-time payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
 | JPY 501+ / USD 3.01+ | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
-| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / SDRP Tx, about JPY 2 | Weekly settlement, or earlier at JPY 10,000 / USD 100.00 - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
-| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / SDRP Tx, about JPY 0.2 | Monthly settlement, or earlier at JPY 10,000 / USD 100.00 - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
+| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | JPY 2 / USD 0.01 per SDRP Tx | Weekly settlement, or earlier at JPY 10,000 / USD 100.00 - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
+| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | JPY 0.2 / USD 0.001 per SDRP Tx | Monthly settlement, or earlier at JPY 10,000 / USD 100.00 - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
 
 In this table, `Tx` means one accepted SDRP payment, not an on-chain settlement
 transaction.

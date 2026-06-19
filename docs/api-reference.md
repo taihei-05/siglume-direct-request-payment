@@ -776,6 +776,10 @@ Buyer-facing amount names are centered on the debit:
 - `gross_buyer_debit_minor`
 - `buyer_debit_minor`
 - `protocol_fee_minor`
+- `settlement_trigger`
+- `settlement_threshold_minor`
+- `threshold_reached_at`
+- `total_unsettled_exposure_minor`
 
 ### Provider summary
 
@@ -845,6 +849,10 @@ Provider-facing amount names:
 Schedule and execution fields:
 
 - `period_start`, `period_end`, `close_at`
+- `settlement_trigger`
+- `settlement_threshold_minor`
+- `threshold_reached_at`
+- `total_unsettled_exposure_minor`
 - `expected_scheduled_debit_at`
 - `scheduled_debit_at`
 - `not_before_attempt_at`

@@ -34,8 +34,8 @@ charging.
 | Public one-time payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
 | JPY 501+ / USD 3.01+ | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
-| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / SDRP Tx, about JPY 2 | Aggregated and settled **weekly**, or earlier once the buyer/payee batch reaches JPY 10,000 / USD 100.00 (see [Settlement schedule](#settlement-schedule)) |
-| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / SDRP Tx, about JPY 0.2 | Aggregated and settled **monthly**, or earlier once the buyer/payee batch reaches JPY 10,000 / USD 100.00 (see [Settlement schedule](#settlement-schedule)) |
+| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | JPY 2 / USD 0.01 per SDRP Tx | Aggregated and settled **weekly**, or earlier once the buyer/payee batch reaches JPY 10,000 / USD 100.00 (see [Settlement schedule](#settlement-schedule)) |
+| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | JPY 0.2 / USD 0.001 per SDRP Tx | Aggregated and settled **monthly**, or earlier once the buyer/payee batch reaches JPY 10,000 / USD 100.00 (see [Settlement schedule](#settlement-schedule)) |
 
 In this table, `Tx` means one accepted SDRP payment, not an on-chain settlement
 transaction. Micro / Nano settlement batches are aggregated on-chain after the
@@ -105,7 +105,9 @@ confirmed payment turns into money in your settlement wallet.
   spread settlement load.
 - **Early threshold settlement.** If a buyer/payee/token batch reaches JPY
   10,000 or USD 100.00 before the weekly close, Siglume can close that batch
-  early and start the same final-notice and settlement flow.
+  early and start the same final-notice and settlement flow. JPY 10,000 and USD
+  100.00 are market-specific fixed thresholds, not FX conversions of one
+  another.
 - **Timezone.** Period boundaries are evaluated in the buyer's configured
   settlement timezone, defaulting to UTC. Assigned slots are persisted and are
   not recalculated on the fly.
@@ -125,7 +127,9 @@ confirmed payment turns into money in your settlement wallet.
   spread settlement load.
 - **Early threshold settlement.** If a buyer/payee/token batch reaches JPY
   10,000 or USD 100.00 before the monthly close, Siglume can close that batch
-  early and start the same final-notice and settlement flow.
+  early and start the same final-notice and settlement flow. JPY 10,000 and USD
+  100.00 are market-specific fixed thresholds, not FX conversions of one
+  another.
 - **Timezone.** As with Micro, period boundaries use the buyer's configured
   settlement timezone, defaulting to UTC. Assigned slots are persisted and are
   not recalculated on the fly.
@@ -147,9 +151,12 @@ confirmed payment turns into money in your settlement wallet.
   the affected batch is treated as past due. Siglume currently retries every 6
   hours for up to 28 automatic attempts. After that, the batch remains past due
   and requires manual resolution before another attempt.
-- While a buyer has an unresolved failed Micro/Nano settlement for the same
-  payment band and token, new Micro/Nano usage is paused with the machine-readable
-  error `METERED_SETTLEMENT_PAST_DUE`; the provider API is not called.
+- While the same buyer / provider / token has total unsettled exposure at or
+  above the fixed threshold, new Micro/Nano usage is paused with the
+  machine-readable error `METERED_SETTLEMENT_PAST_DUE`; the provider API is not
+  called. Exposure includes open usage plus `notice_pending`, `ready`,
+  `submitted`, retrying, and `past_due` batches, and remains paused while
+  settlement failure or `past_due` is unresolved.
 - Outstanding amounts remain attached to the failed settlement and are retried
   under this policy. They are not settled revenue, and Siglume does not advance,
   guarantee, or insure provider revenue before on-chain settlement succeeds.

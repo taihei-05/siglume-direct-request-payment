@@ -100,6 +100,10 @@ export interface DirectRequestPaymentSettlementBatch {
   plan_type: string;
   settlement_cadence: string;
   status: string;
+  settlement_trigger?: "amount_threshold" | "scheduled_close" | string | null;
+  settlement_threshold_minor?: DirectRequestPaymentMinorAmount | null;
+  threshold_reached_at?: string | null;
+  total_unsettled_exposure_minor?: DirectRequestPaymentMinorAmount | null;
   notice_status?: string | null;
   period_start?: string | null;
   period_end?: string | null;

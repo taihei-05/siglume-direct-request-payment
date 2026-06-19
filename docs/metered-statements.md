@@ -94,8 +94,8 @@ guarantee.
 ## Amount Rounding
 
 Micro / Nano usage rows keep provider price and protocol fee values as decimal
-minor-unit amounts. This allows Nano fees such as about JPY 0.2 per SDRP Tx to
-be accounted without rounding every accepted payment.
+minor-unit amounts. This allows Nano fees such as JPY 0.2 per SDRP Tx to be
+accounted without rounding every accepted payment.
 
 Rounding happens once when a settlement batch is created:
 
@@ -189,6 +189,18 @@ Past-due batches include:
 Buyer-triggered requeue is not part of the MVP. The buyer-facing UI should show
 the block reason, tell the buyer to repair balance / allowance / BudgetVault /
 caps, and point them to support with `support_reference`.
+
+Threshold-control fields:
+
+- `settlement_trigger`: `amount_threshold` or `scheduled_close`
+- `settlement_threshold_minor`: JPY `10000` or USD `10000` minor units
+- `threshold_reached_at`: set when the fixed amount threshold closed the batch
+- `total_unsettled_exposure_minor`: open plus `notice_pending`, `ready`,
+  `submitted`, retrying, and `past_due` provider gross exposure for the same
+  buyer / provider / token
+
+JPY 10,000 and USD 100.00 are market-specific fixed thresholds, not FX
+conversions of one another.
 
 ## Provider Statement APIs
 
@@ -301,6 +313,10 @@ Important batch fields:
 | `status` | Batch lifecycle state such as `notice_pending`, `ready`, `submitted`, `settled`, `failed`, `past_due`, or `notice_delivery_failed` |
 | `notice_status` | Final debit notice delivery status |
 | `period_start`, `period_end`, `close_at` | Statement period boundaries |
+| `settlement_trigger` | `amount_threshold` for early threshold close, or `scheduled_close` for weekly/monthly close |
+| `settlement_threshold_minor` | Fixed market threshold for early settlement: JPY `10000` or USD `10000` minor units |
+| `threshold_reached_at` | Timestamp when the fixed threshold closed the batch, otherwise null |
+| `total_unsettled_exposure_minor` | Current open plus notice/ready/submitted/retrying/past-due provider gross exposure for the same buyer / provider / token |
 | `expected_scheduled_debit_at` | Expected debit time for an open period before a batch exists |
 | `scheduled_debit_at` | Scheduled debit time after batch creation |
 | `not_before_attempt_at` | Earliest allowed debit attempt; this is the close-plus-3-day gate |
@@ -375,9 +391,10 @@ Siglume retries failed Micro / Nano settlement every 6 hours for up to 28
 automatic attempts. After that the batch remains `past_due` until operator
 requeue.
 
-New Micro / Nano usage for the same buyer, plan type, and token is paused while
-the past-due block remains. The provider API is not called for the rejected
-request, and the request is not charged.
+New Micro / Nano usage for the same buyer / provider / token is paused while
+the total unsettled exposure is at or above the fixed threshold, and while a
+failed or past-due block remains. The provider API is not called for the
+rejected request, and the request is not charged.
 
 Public failure fields are sanitized. Show `failure_reason_code`,
 `failure_reason_label`, `failure_reason_help`, and `support_reference` to users
