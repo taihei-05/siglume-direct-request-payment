@@ -18,6 +18,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: node bin/siglume-sdrp.mjs readiness --no-api --merchant example_merchant --origin https://shop.example.com --webhook-url https://api.example.com/payments/webhooks/siglume
+        env:
+          SIGLUME_MERCHANT_AUTH_TOKEN: test_merchant_token
+      - run: node bin/siglume-sdrp.mjs init express --target /tmp/siglume-sdrp-express
+      - run: node bin/siglume-sdrp.mjs init fastapi --target /tmp/siglume-sdrp-fastapi
       - run: npm install --no-package-lock
         working-directory: examples/hosted-checkout-typescript
       - run: npm run typecheck
@@ -35,6 +40,10 @@ jobs:
       - run: python -m pip install -U pip
       - run: python -m pip install -e ".[test]" build twine
       - run: pytest python_tests
+      - run: python -m siglume_direct_request_payment._cli readiness --no-api --merchant example_merchant --origin https://shop.example.com --webhook-url https://api.example.com/payments/webhooks/siglume
+        env:
+          SIGLUME_MERCHANT_AUTH_TOKEN: test_merchant_token
+      - run: python -m siglume_direct_request_payment._cli init fastapi --target /tmp/siglume-sdrp-fastapi-py
       - run: python -m py_compile examples/hosted-checkout-python/app.py examples/hosted-checkout-python/order_store.py
       - run: python -m build
       - run: python -m twine check dist/*.whl dist/*.tar.gz

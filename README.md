@@ -80,11 +80,25 @@ card-style "instant" checkout for first-time buyers.
 
 ## Fast Path
 
-If your merchant account, Hosted Checkout enablement, billing mandate, HTTPS
-webhook URL, and buyer test wallet are already ready, use
-[10-Minute First Test Payment](./docs/quickstart-10-minutes.md) to connect one
-Standard Payment test. That page is intentionally scoped to a first test
-payment, not a production launch.
+Use [10-Minute Product Integration](./docs/quickstart-10-minutes.md) to add
+Hosted Checkout routes to an existing Express or FastAPI product. The path is
+CLI-first:
+
+```bash
+npm install @siglume/direct-request-payment
+npx siglume-check readiness
+npx siglume-sdrp init express --target src/siglume
+```
+
+or:
+
+```bash
+pip install siglume-direct-request-payment
+siglume-sdrp init fastapi --target app/siglume
+```
+
+The readiness command checks account, billing, origin, webhook, and Hosted
+Checkout availability before you write checkout code.
 
 Before implementation, confirm Hosted Checkout readiness in
 [Troubleshooting](./docs/troubleshooting.md#hosted-checkout-readiness). For
@@ -103,9 +117,9 @@ fulfilling orders.
 
 ## Use-Case Fit
 
-| Use case | Recommended path | 10-minute demo? | Production work still required |
+| Use case | Recommended path | 10-minute integration path? | Production work still required |
 | --- | --- | --- | --- |
-| EC one-time Standard payment | Hosted Checkout | Yes, if prerequisites are ready | Durable order DB, webhook dedupe, refund/support process, monitoring |
+| EC one-time Standard payment | Hosted Checkout | Yes, with `siglume-check readiness` and `siglume-sdrp init` | Refund/support process and monitoring |
 | Game consumables | Hosted Checkout or agent/API | Conditional | Idempotent entitlement grants, disconnect recovery, Micro / Nano unsettled-risk handling |
 | Paid API / AtoA | Direct API or Siglume marketplace tool | Conditional | Request idempotency, buyer auth context, reconciliation |
 | SaaS subscription | Recurring challenge plus raw API | No | Renewal, cancellation, failed renewal, plan-change lifecycle |
@@ -707,7 +721,7 @@ handling and support escalation.
 ## Documentation
 
 - [Merchant quickstart](./docs/merchant-quickstart.md)
-- [10-minute first test payment](./docs/quickstart-10-minutes.md)
+- [10-minute product integration](./docs/quickstart-10-minutes.md)
 - [Payment lifecycle](./docs/payment-lifecycle.md)
 - [Troubleshooting](./docs/troubleshooting.md)
 - [API reference](./docs/api-reference.md)

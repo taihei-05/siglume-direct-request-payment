@@ -10,6 +10,14 @@ Siglume account contact.
 Hosted Checkout is enabled account by account during beta. Check this before
 building a human web checkout:
 
+```bash
+npx siglume-check readiness
+```
+
+The command validates local configuration, reads the merchant account, and
+creates one unpaid expiring checkout session to prove Hosted Checkout is
+available for this merchant account.
+
 - The merchant account exists.
 - The merchant billing mandate is active.
 - The webhook callback URL is HTTPS and reachable.

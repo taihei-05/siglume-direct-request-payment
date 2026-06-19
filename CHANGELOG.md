@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.19 - 2026-06-20
+
+Make the 10-minute integration path a real product-integration path instead of
+a separate demo.
+
+- Added npm and PyPI CLI bins `siglume-sdrp` and `siglume-check`.
+- Added `siglume-check readiness` to validate merchant token, merchant key,
+  HTTPS origin/webhook configuration, Standard-band probe amount, merchant
+  account/billing readiness, and Hosted Checkout availability through an unpaid
+  checkout-session probe.
+- Added `siglume-sdrp init express` for npm and `siglume-sdrp init fastapi` for
+  npm/PyPI to copy framework-specific checkout/webhook route files into an
+  existing product.
+- Added Express and FastAPI integration templates with order-store adapter
+  interfaces so teams can wire SDRP into their real order database instead of
+  starting from an isolated sample app.
+- Reframed the 10-minute guide around existing-product integration and moved
+  the readiness check before any coding.
+
 ## 0.4.18 - 2026-06-19
 
 Developer-onboarding cleanup for the v0.4.17 public review.

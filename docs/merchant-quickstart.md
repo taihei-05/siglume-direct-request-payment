@@ -3,12 +3,11 @@
 This guide shows the minimum safe Siglume Direct Request Payment flow for an
 external merchant.
 
-For the shortest first-test path, use
-[10-Minute First Test Payment](./quickstart-10-minutes.md). That guide covers
-only one Standard Payment test after account, Hosted Checkout, billing mandate,
-HTTPS webhook, and buyer wallet prerequisites are ready. This merchant
-quickstart is broader and includes the agent/API path plus Micro / Nano
-reconciliation notes.
+For the shortest existing-product integration path, use
+[10-Minute Product Integration](./quickstart-10-minutes.md). That guide copies
+checkout and webhook routes into an Express or FastAPI product and verifies
+Hosted Checkout readiness before coding. This merchant quickstart is broader
+and includes the agent/API path plus Micro / Nano reconciliation notes.
 
 ## Actors
 

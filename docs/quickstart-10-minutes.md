@@ -1,176 +1,145 @@
-# 10-Minute First Test Payment
+# 10-Minute Product Integration
 
-This guide is the shortest supported path to one **Standard Payment** test
-through Siglume wallet Hosted Checkout. It is not a full production launch.
+This guide is the supported 10-minute path for adding SDRP Hosted Checkout to
+an existing product. The goal is to
+add two routes to your own server:
 
-## What the 10 minutes cover
+- `POST /payments/checkout/siglume/start`
+- `POST /payments/webhooks/siglume`
 
-You can count the 10 minutes only after the prerequisites below are already
-ready. The target outcome is:
+The SDK supplies the readiness check, route files, webhook verification, payment
+classification, and the order-store adapter contract. Your app supplies the
+real order lookup and fulfillment writes.
 
-- one Standard-band order,
-- one Hosted Checkout session,
-- one signed `direct_payment.confirmed` webhook,
-- one idempotent local fulfillment decision.
+## 0. Readiness first
 
-This guide does **not** cover production monitoring, refunds, subscriptions,
-scheduled autopay, game entitlement recovery, or Micro / Nano accounting.
+Install the SDK in your product.
 
-## Prerequisites
-
-Before starting, confirm:
-
-- You have a Siglume merchant account and merchant Siglume bearer token.
-- Hosted Checkout is enabled for that merchant account.
-- The merchant billing mandate is active, including any required wallet
-  approval.
-- You have a public HTTPS webhook URL that can receive the raw request body.
-- Your checkout return URL origin is known and can be registered.
-- The buyer has a Siglume wallet funded in the settlement token for the test
-  market: JPYC for JPY, USDC for USD.
-- Your order amount is in the Standard band: JPY 501+ or USD 3.01+.
-
-If Hosted Checkout is not enabled, stop here. The SDK raises
-`HostedCheckoutNotAvailableError` for rollout 404/409 responses; contact
-Siglume support or your Siglume account contact to enable the account before
-continuing with a human web checkout.
-
-## 1. Install
-
-Runnable starter directories are available if you want a small server to edit:
-
-- [TypeScript Express starter](../examples/hosted-checkout-typescript)
-- [Python Flask starter](../examples/hosted-checkout-python)
-
-For an existing app, install the SDK directly:
+Node / Express:
 
 ```bash
 npm install @siglume/direct-request-payment
 ```
 
-or:
+Python / FastAPI:
 
 ```bash
 pip install siglume-direct-request-payment
 ```
 
-## 2. Set environment variables
+Set these environment variables in your app or `.env`:
 
 ```bash
 SIGLUME_MERCHANT_AUTH_TOKEN=<merchant Siglume bearer token>
-SIGLUME_DIRECT_PAYMENT_MERCHANT=example_merchant
-SHOP_PUBLIC_ORIGIN=https://www.example.com
-SHOP_WEBHOOK_URL=https://api.example.com/siglume/webhook
+SIGLUME_DIRECT_PAYMENT_MERCHANT=<merchant key>
+SHOP_PUBLIC_ORIGIN=https://www.your-product.example
+SHOP_WEBHOOK_URL=https://api.your-product.example/payments/webhooks/siglume
 ```
 
-Do not use a Developer Portal `cli_` API key. Merchant setup requires the
-merchant's Siglume bearer token.
+Then run:
 
-## 3. Register merchant settings
+```bash
+npx siglume-check readiness
+```
 
-Run setup once from your server, CI, or integration machine:
+The readiness check fails before you write checkout code if any required item is
+missing. It checks local config, reads the merchant account, and creates one
+unpaid expiring Hosted Checkout probe session to prove the account is enabled
+and the return origin is accepted. No buyer is charged.
+
+For CI or a preflight script:
+
+```bash
+npx siglume-check readiness --json
+```
+
+If this command fails, fix the reported item first. Do not build a human web
+checkout path until readiness passes.
+
+## 1. Copy integration files into your product
+
+For Express:
+
+```bash
+npx siglume-sdrp init express --target src/siglume
+```
+
+For FastAPI:
+
+```bash
+siglume-sdrp init fastapi --target app/siglume
+```
+
+These commands copy framework-specific route files into your codebase. The
+generated files are intentionally small and are meant to be edited.
+
+## 2. Mount the routes
+
+Express:
 
 ```ts
-import { DirectRequestPaymentMerchantClient } from "@siglume/direct-request-payment";
+import { createSiglumeSdrpRouter } from "./siglume/siglume-sdrp-routes.js";
+import { siglumeOrderStore } from "./siglume/siglume-order-store.example.js";
 
-const merchant = new DirectRequestPaymentMerchantClient({
-  auth_token: process.env.SIGLUME_MERCHANT_AUTH_TOKEN!,
-});
-
-const setup = await merchant.setupCheckout({
+app.use("/payments", createSiglumeSdrpRouter({
   merchant: process.env.SIGLUME_DIRECT_PAYMENT_MERCHANT!,
-  display_name: "Example Merchant",
-  billing_plan: "launch",
-  billing_currency: "JPY",
-  webhook_callback_url: process.env.SHOP_WEBHOOK_URL!,
-  checkout_allowed_origins: [process.env.SHOP_PUBLIC_ORIGIN!],
-});
-
-console.log(setup.env.SIGLUME_DIRECT_PAYMENT_MERCHANT);
+  merchant_auth_token: process.env.SIGLUME_MERCHANT_AUTH_TOKEN!,
+  webhook_secret: process.env.SIGLUME_WEBHOOK_SECRET!,
+  shop_public_origin: process.env.SHOP_PUBLIC_ORIGIN!,
+  order_store: siglumeOrderStore,
+}));
 ```
 
-Store the returned `SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET` and
-`SIGLUME_WEBHOOK_SECRET` in a server-side secret store. Secret values are
-returned only when created or rotated.
+FastAPI:
 
-## 4. Create a Standard checkout session
+```py
+from .siglume.siglume_order_store_example import ExampleSiglumeOrderStore
+from .siglume.siglume_sdrp_routes import create_siglume_sdrp_router
 
-For each order, create the order on your server first. Then create a Hosted
-Checkout session:
-
-```ts
-const session = await merchant.createCheckoutSession({
-  merchant: process.env.SIGLUME_DIRECT_PAYMENT_MERCHANT!,
-  amount_minor: 1200,
-  currency: "JPY",
-  nonce: "order_123-attempt_1",
-  success_url: `${process.env.SHOP_PUBLIC_ORIGIN}/thanks`,
-  cancel_url: `${process.env.SHOP_PUBLIC_ORIGIN}/cart`,
-  metadata: { order_id: "order_123" },
-});
-
-await orders.update("order_123", {
-  siglume_challenge_hash: session.challenge_hash,
-  siglume_checkout_session_id: session.session_id,
-  siglume_payment_status: "pending",
-});
-
-redirect(session.checkout_url);
+app.include_router(
+    create_siglume_sdrp_router(ExampleSiglumeOrderStore()),
+    prefix="/payments",
+)
 ```
 
-The browser must never choose the amount, currency, nonce, or return URL. The
-session is single-use and expires.
+## 3. Replace the order-store example
 
-## 5. Fulfill from the signed webhook
+Replace the example store with your product's order database. The adapter must:
 
-The browser return path is not the source of truth. Use the signed webhook and
-classify the confirmation:
+- load the order by your `order_id`,
+- verify the current user is allowed to pay for that order,
+- return the server-authored `amount_minor` and `currency`,
+- persist `challenge_hash` and `checkout_session_id` before redirecting,
+- record webhook event ids durably,
+- mark Standard orders paid exactly once,
+- mark Micro / Nano orders as fulfilled but unsettled exactly once,
+- route unknown classifications to manual review.
 
-```ts
-import {
-  classifyDirectPaymentConfirmation,
-  verifyDirectRequestPaymentWebhook,
-} from "@siglume/direct-request-payment";
+Do not calculate the amount from browser input.
 
-const { event } = await verifyDirectRequestPaymentWebhook(
-  process.env.SIGLUME_WEBHOOK_SECRET!,
-  rawRequestBody,
-  siglumeSignatureHeader,
-);
+## 4. Start checkout from your frontend
 
-if (event.type === "direct_payment.confirmed") {
-  const confirmation = classifyDirectPaymentConfirmation(event);
+Call your own server route:
 
-  if (confirmation.kind === "standard_settled") {
-    await orders.markPaidOnceByChallengeHash(confirmation.challenge_hash, {
-      requirement_id: confirmation.requirement_id,
-      chain_receipt_id: confirmation.chain_receipt_id,
-    });
-  } else if (confirmation.kind === "metered_usage_accepted") {
-    await orders.markFulfilledButUnsettledOnceByChallengeHash(
-      confirmation.challenge_hash,
-      { requirement_id: confirmation.requirement_id },
-    );
-  } else {
-    await orders.flagForPaymentStateReview(confirmation);
-  }
-}
+```bash
+curl -X POST https://api.your-product.example/payments/checkout/siglume/start \
+  -H "content-type: application/json" \
+  -d "{\"order_id\":\"order_123\"}"
 ```
 
-For this 10-minute guide, keep the test order in the Standard band so the
-expected successful branch is `standard_settled`.
+Redirect the shopper to the returned `checkout_url`.
 
-## Done means
+## 5. Done means
 
-You are done with the quickstart when:
+Your product is integrated when:
 
-- the checkout session is created,
-- the buyer reaches the Siglume wallet hosted checkout page,
+- `npx siglume-check readiness` passes,
+- your product has mounted checkout and webhook routes,
+- your order database stores `challenge_hash` for the order,
 - the signed webhook verifies against the raw body,
-- `classifyDirectPaymentConfirmation(event)` returns `standard_settled`,
-- your order is marked paid once, keyed by the stored `challenge_hash`.
+- `standard_settled` marks the order paid once,
+- `metered_usage_accepted` uses a separate fulfilled-but-unsettled state.
 
-Before production, complete the full checklist in
-[Merchant Quickstart](./merchant-quickstart.md#go-live-checklist), read
-[Payment lifecycle](./payment-lifecycle.md), and prepare the failure handling in
-[Troubleshooting](./troubleshooting.md).
+For Micro / Nano revenue reconciliation, read
+[Payment lifecycle](./payment-lifecycle.md) and
+[Micro / Nano Statements and Notices](./metered-statements.md).
