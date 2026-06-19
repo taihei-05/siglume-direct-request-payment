@@ -25,7 +25,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.4"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.5"
 MAX_SAFE_INTEGER = 9007199254740991
 _DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = {DIRECT_REQUEST_PAYMENT_MODE, "metered_settlement_batch"}
 
@@ -73,7 +73,7 @@ class DirectRequestPaymentClient:
         token = auth_token or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
             raise DirectRequestPaymentError(
-                "A buyer Siglume bearer token is required for Direct Request Payment API calls. "
+                "A buyer or provider Siglume user bearer token is required for Direct Request Payment API calls. "
                 "Developer Portal API keys are not accepted."
             )
         self.auth_token = token
@@ -175,6 +175,7 @@ class DirectRequestPaymentClient:
         plan_type: str | None = None,
         token_symbol: str | None = None,
         status: str | None = None,
+        cursor: str | None = None,
         limit: int | None = None,
     ) -> dict[str, Any]:
         return self._request(
@@ -184,6 +185,7 @@ class DirectRequestPaymentClient:
                 plan_type=plan_type,
                 token_symbol=token_symbol,
                 status=status,
+                cursor=cursor,
                 limit=limit,
             ),
         )
@@ -194,6 +196,7 @@ class DirectRequestPaymentClient:
         plan_type: str | None = None,
         token_symbol: str | None = None,
         status: str | None = None,
+        cursor: str | None = None,
         limit: int | None = None,
     ) -> dict[str, Any]:
         return self._request(
@@ -203,6 +206,7 @@ class DirectRequestPaymentClient:
                 plan_type=plan_type,
                 token_symbol=token_symbol,
                 status=status,
+                cursor=cursor,
                 limit=limit,
             ),
         )
@@ -234,6 +238,7 @@ class DirectRequestPaymentClient:
         status: str | None = None,
         listing_id: str | None = None,
         capability_key: str | None = None,
+        cursor: str | None = None,
         limit: int | None = None,
     ) -> dict[str, Any]:
         return self._request(
@@ -245,6 +250,7 @@ class DirectRequestPaymentClient:
                 status=status,
                 listing_id=listing_id,
                 capability_key=capability_key,
+                cursor=cursor,
                 limit=limit,
             ),
         )
@@ -257,6 +263,7 @@ class DirectRequestPaymentClient:
         status: str | None = None,
         listing_id: str | None = None,
         capability_key: str | None = None,
+        cursor: str | None = None,
         limit: int | None = None,
     ) -> dict[str, Any]:
         return self._request(
@@ -268,6 +275,7 @@ class DirectRequestPaymentClient:
                 status=status,
                 listing_id=listing_id,
                 capability_key=capability_key,
+                cursor=cursor,
                 limit=limit,
             ),
         )
@@ -1053,6 +1061,7 @@ def _metered_query_path(
     status: str | None = None,
     listing_id: str | None = None,
     capability_key: str | None = None,
+    cursor: str | None = None,
     limit: int | None = None,
 ) -> str:
     params: dict[str, str] = {}
@@ -1068,6 +1077,8 @@ def _metered_query_path(
         params["capability_key"] = _require_non_empty(capability_key, "capability_key")
     if limit is not None:
         params["limit"] = str(_positive_int(limit, "limit"))
+    if cursor is not None:
+        params["cursor"] = _require_non_empty(cursor, "cursor")
     query = urlencode(params)
     return f"{path}?{query}" if query else path
 

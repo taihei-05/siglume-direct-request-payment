@@ -151,6 +151,22 @@ describe("DirectRequestPaymentClient", () => {
             status: "pending_settlement",
           },
         ],
+        next_cursor: "cur_2",
+      }),
+      envelope({
+        items: [
+          {
+            metered_usage_id: "mu_2",
+            plan_type: "micro",
+            settlement_cadence: "weekly",
+            currency: "JPY",
+            token_symbol: "JPYC",
+            provider_usage_amount_minor: "100",
+            protocol_fee_minor: "2",
+            gross_buyer_debit_minor: "102",
+            status: "pending_settlement",
+          },
+        ],
         next_cursor: null,
       }),
       envelope({
@@ -169,6 +185,10 @@ describe("DirectRequestPaymentClient", () => {
       }),
       envelope({
         items: [{ settlement_batch_id: "msb_1", plan_type: "micro", settlement_cadence: "weekly", status: "ready" }],
+        next_cursor: "cur_3",
+      }),
+      envelope({
+        items: [{ settlement_batch_id: "msb_2", plan_type: "micro", settlement_cadence: "weekly", status: "ready" }],
         next_cursor: null,
       }),
       envelope({ settlement_batch_id: "msb_1", plan_type: "micro", settlement_cadence: "weekly", status: "ready" }),
@@ -193,20 +213,30 @@ describe("DirectRequestPaymentClient", () => {
       status: "pending_settlement",
       limit: 10,
     });
+    const buyerEventsNext = await client.listBuyerUsageEvents({ cursor: buyerEvents.next_cursor ?? undefined, limit: 10 });
     const buyerBatches = await client.listBuyerSettlementBatches({ status: "ready", limit: 5 });
     await client.getProviderMeteredSummary({ plan_type: "micro", listing_id: "listing_1", capability_key: "capability.alpha" });
     const providerBatches = await client.listProviderSettlementBatches({ token_symbol: "USDC", limit: 2 });
+    const providerBatchesNext = await client.listProviderSettlementBatches({
+      token_symbol: "USDC",
+      cursor: providerBatches.next_cursor ?? undefined,
+      limit: 2,
+    });
     await client.getProviderSettlementBatch("msb_1", { listing_id: "listing_1" });
 
     expect(buyerEvents.items[0]?.metered_usage_id).toBe("mu_1");
+    expect(buyerEventsNext.items[0]?.metered_usage_id).toBe("mu_2");
     expect(buyerBatches.items[0]?.settlement_batch_id).toBe("msb_1");
     expect(providerBatches.items[0]?.settlement_batch_id).toBe("msb_1");
+    expect(providerBatchesNext.items[0]?.settlement_batch_id).toBe("msb_2");
     expect(calls.map((call) => call.url)).toEqual([
       "https://siglume.example/v1/sdrp/metered/my-summary?plan_type=micro&token_symbol=JPYC",
       "https://siglume.example/v1/sdrp/metered/my-usage-events?plan_type=micro&token_symbol=JPYC&status=pending_settlement&limit=10",
+      "https://siglume.example/v1/sdrp/metered/my-usage-events?limit=10&cursor=cur_2",
       "https://siglume.example/v1/sdrp/metered/my-settlement-batches?status=ready&limit=5",
       "https://siglume.example/v1/sdrp/metered/provider/summary?plan_type=micro&listing_id=listing_1&capability_key=capability.alpha",
       "https://siglume.example/v1/sdrp/metered/provider/settlement-batches?token_symbol=USDC&limit=2",
+      "https://siglume.example/v1/sdrp/metered/provider/settlement-batches?token_symbol=USDC&limit=2&cursor=cur_3",
       "https://siglume.example/v1/sdrp/metered/provider/settlement-batches/msb_1?listing_id=listing_1",
     ]);
   });

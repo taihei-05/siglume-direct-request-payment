@@ -36,7 +36,7 @@ and no new webhook.
 | --- | --- | --- |
 | `SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET` | merchant server | HMAC secret for order challenges |
 | `SIGLUME_MERCHANT_AUTH_TOKEN` | merchant setup helper | merchant Siglume bearer token for self-service setup |
-| `SIGLUME_AUTH_TOKEN` | buyer payment helper | buyer Siglume bearer token for API calls |
+| `SIGLUME_AUTH_TOKEN` | user-authenticated helper | buyer Siglume bearer token for payment / buyer statements, or provider Siglume bearer token for provider statements |
 | `SIGLUME_API_BASE` | optional | API base URL override; defaults to `https://siglume.com/v1` |
 | `SIGLUME_WEBHOOK_SECRET` | merchant server | webhook signing secret returned as `whsec_...` |
 
@@ -505,8 +505,10 @@ or rotation.
 ## `DirectRequestPaymentClient`
 
 Thin wrapper around the current Siglume Direct Request Payment HTTP contract.
-Use it with the authenticated buyer's Siglume bearer token. Developer Portal
-`cli_` API keys are not accepted by these buyer-authenticated routes.
+Use it with the authenticated Siglume user bearer token for the route you call:
+buyer tokens for buyer payment and buyer statement routes, provider / merchant
+tokens for provider statement routes. Developer Portal `cli_` API keys are not
+accepted by these user-authenticated routes.
 
 This client creates SDRP Standard Payment requirements for external merchant
 checkout flows. Micro Payment and Nano Payment are applied automatically by
@@ -522,14 +524,14 @@ statement API amount fields (`protocol_fee_minor`, `gross_buyer_debit_minor`,
 
 ```ts
 const siglume = new DirectRequestPaymentClient({
-  auth_token: buyerSiglumeBearerToken,
+  auth_token: buyerOrProviderSiglumeBearerToken,
   base_url: "https://siglume.com/v1",
 });
 ```
 
 ```py
 siglume = DirectRequestPaymentClient(
-    auth_token=buyer_siglume_bearer_token,
+    auth_token=buyer_or_provider_siglume_bearer_token,
     base_url="https://siglume.com/v1",
 )
 ```
@@ -555,6 +557,13 @@ Input:
 - `token_symbol`: optional `JPYC` or `USDC` when enabled for the merchant account
 - `allowance_amount_minor`: optional positive integer
 - `metadata`: optional JSON object
+
+There is no public `idempotency_key` field on this requirement-create request.
+For one-time external checkout, idempotency is the merchant-signed challenge
+nonce: derive `nonce` from a durable order payment attempt, store the returned
+`challenge_hash`, and use `request_hash_v2` when you need a canonical machine
+hash for the same payment request. Do not retry the same order by minting a new
+nonce unless you intentionally want a new payment attempt.
 
 The returned requirement includes both compatibility and machine-readable
 settlement fields:
@@ -723,8 +732,9 @@ SDK methods:
 - TypeScript: `listBuyerUsageEvents(...)`, `listBuyerSettlementBatches(...)`
 - Python: `list_buyer_usage_events(...)`, `list_buyer_settlement_batches(...)`
 
-Each accepts `plan_type`, `token_symbol`, `status`, and `limit`, and returns
-`{items, next_cursor}`.
+Each accepts `plan_type`, `token_symbol`, `status`, `limit`, and `cursor`, and
+returns `{items, next_cursor}`. When `next_cursor` is non-null, pass it back as
+`cursor` to fetch the next page.
 
 Buyer-facing amount names are centered on the debit:
 
@@ -783,9 +793,10 @@ SDK methods:
   `list_provider_settlement_batches(...)`, `get_provider_settlement_batch(...)`
 
 Provider list methods accept `plan_type`, `token_symbol`, `status`,
-`listing_id`, `capability_key`, and `limit`. Detail accepts
+`listing_id`, `capability_key`, `limit`, and `cursor`. Detail accepts
 `settlement_batch_id`, plus optional `listing_id` and `capability_key`. List
-methods return `{items, next_cursor}`.
+methods return `{items, next_cursor}`. When `next_cursor` is non-null, pass it
+back as `cursor` to fetch the next page.
 
 Provider-facing amount names:
 
@@ -843,6 +854,13 @@ metered_usage_id,created_at,plan_type,settlement_cadence,period_start,period_end
 ```
 
 The CSV uses `buyer_period_ref`, not raw buyer account identifiers.
+The CSV keeps the `rounding_delta_minor` column for schema stability, but usage
+rows report `0`; the authoritative rounding adjustment is the settlement batch
+field `rounding_delta_minor`.
+
+Micro / Nano amount fields are decimal minor-unit strings. In JavaScript, do
+not aggregate them with `number`; parse them with a decimal library. In Python,
+use `Decimal` for accounting and reconciliation.
 
 ## Payload Builders
 

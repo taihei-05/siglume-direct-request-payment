@@ -22,8 +22,9 @@ buyer-facing Siglume payment flow creates and pays the requirement.
 
 `DirectRequestPaymentMerchantClient` requires the merchant's Siglume bearer
 token for setup. `DirectRequestPaymentClient` requires the buyer's Siglume
-bearer token for payment requirements. Do not use a Developer Portal `cli_` API
-key with this package.
+bearer token for payment requirements and buyer statements, or the provider /
+merchant user's Siglume bearer token for provider statements. Do not use a
+Developer Portal `cli_` API key with this package.
 
 ## Two Kinds of Buyer
 
@@ -188,6 +189,11 @@ escrow, or guarantee the buyer's wallet balance, allowance, or settlement funds.
 Sub-minor-unit Nano fees are accumulated with decimal precision and rounded only
 when a settlement batch is created; see [Pricing](./docs/pricing.md) for the
 rounding formula and `rounding_delta_minor` semantics.
+For low-count Nano batches, integer-token settlement can make the effective
+buyer burden per usage higher than the headline USD 0.001 protocol fee; the
+difference is reported as batch `rounding_delta_minor`. Treat Micro / Nano
+minor amounts as decimal strings and use a decimal library or `Decimal` for
+accounting.
 For operational reconciliation, expected revenue, settled revenue, retry state,
 and CSV exports, see
 [docs/metered-statements.md](./docs/metered-statements.md).
@@ -358,7 +364,7 @@ The nonce must not contain `:` because the current platform challenge format is
 
 ## Buyer Payment Flow
 
-Use `DirectRequestPaymentClient` only with the authenticated buyer's Siglume
+Use `DirectRequestPaymentClient` here with the authenticated buyer's Siglume
 bearer token. `SIGLUME_AUTH_TOKEN` may be used in server-side payment-confirmation
 helpers; `SIGLUME_API_KEY` and Developer Portal `cli_` keys are not accepted.
 

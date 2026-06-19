@@ -9,13 +9,13 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.4";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.5";
 const DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = new Set([DIRECT_REQUEST_PAYMENT_MODE, "metered_settlement_batch"]);
 
 export type DirectRequestPaymentCurrency = "JPY" | "USD";
 export type DirectRequestPaymentToken = "JPYC" | "USDC";
 export type DirectRequestPaymentMeteredPlanType = "micro" | "nano";
-export type DirectRequestPaymentMinorAmount = string | number;
+export type DirectRequestPaymentMinorAmount = string;
 
 export interface DirectRequestPaymentBuyerMeteredQuery {
   plan_type?: DirectRequestPaymentMeteredPlanType | string;
@@ -24,6 +24,7 @@ export interface DirectRequestPaymentBuyerMeteredQuery {
 
 export interface DirectRequestPaymentMeteredListQuery extends DirectRequestPaymentBuyerMeteredQuery {
   status?: string;
+  cursor?: string;
   limit?: number;
 }
 
@@ -34,6 +35,7 @@ export interface DirectRequestPaymentProviderMeteredQuery extends DirectRequestP
 
 export interface DirectRequestPaymentProviderMeteredListQuery extends DirectRequestPaymentProviderMeteredQuery {
   status?: string;
+  cursor?: string;
   limit?: number;
 }
 
@@ -102,6 +104,8 @@ export interface DirectRequestPaymentSettlementBatch {
   not_before_attempt_at?: string | null;
   execution_status?: string | null;
   latest_execution_attempt_status?: string | null;
+  attempt_count?: number | null;
+  next_attempt_at?: string | null;
   chain_receipt_id?: string | null;
   usage_event_digest?: string | null;
   protocol_fee_minor?: DirectRequestPaymentMinorAmount;
@@ -497,7 +501,7 @@ export class DirectRequestPaymentClient {
     const authToken = options.auth_token ?? envValue("SIGLUME_AUTH_TOKEN");
     if (!authToken) {
       throw new SiglumeDirectRequestPaymentError(
-        "A buyer Siglume bearer token is required for Direct Request Payment API calls. Developer Portal API keys are not accepted.",
+        "A buyer or provider Siglume user bearer token is required for Direct Request Payment API calls. Developer Portal API keys are not accepted.",
       );
     }
     const fetchImpl = options.fetch ?? globalThis.fetch;
@@ -1367,6 +1371,9 @@ function meteredQueryPath(
   }
   if ("limit" in input && input.limit !== undefined) {
     params.set("limit", String(positiveInteger(input.limit, "limit")));
+  }
+  if ("cursor" in input && input.cursor !== undefined) {
+    params.set("cursor", requireNonEmpty(input.cursor, "cursor"));
   }
   const query = params.toString();
   return query ? `${path}?${query}` : path;

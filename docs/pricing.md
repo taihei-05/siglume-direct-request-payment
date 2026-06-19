@@ -179,6 +179,13 @@ revenue. Providers should reconcile their revenue with
 `unsettled_provider_receivable_minor`, and
 `past_due_provider_receivable_minor`, not with `buyer_debit_minor`.
 
+For low-count Nano batches, the integer ceiling can make the effective buyer
+burden per usage higher than the headline USD 0.001 / usage protocol fee. The
+decimal protocol fee remains visible as `protocol_fee_minor`; the difference
+created by integer-token settlement is visible as `rounding_delta_minor` on the
+batch. JavaScript integrations should not sum Micro / Nano minor amounts with
+`number`; use a decimal library. Python integrations should use `Decimal`.
+
 ## Statement APIs and Notices
 
 Micro and Nano require operational reconciliation after usage is accepted. The

@@ -119,6 +119,12 @@ Fulfill exactly once per order. Store at least:
 Duplicate webhook deliveries and manual redelivery can occur. A duplicate
 webhook with the same requirement id must not ship the order twice.
 
+The public requirement-create API does not accept an `idempotency_key` field.
+For one-time external checkout, the durable idempotency material is the
+merchant-authored challenge nonce plus the returned `challenge_hash` /
+`request_hash_v2`. Reuse the same order-attempt nonce when reconciling a retry;
+mint a new nonce only for a new payment attempt.
+
 ## Micro / Nano Statement Privacy
 
 Micro Payment and Nano Payment introduce operational statement APIs and CSV
@@ -154,16 +160,15 @@ Direct Request Payment is not:
 - a platform balance
 - a card payment fallback
 
-Each payment is an individual wallet payment backed by an on-chain receipt. Small
-payments in the Micro and Nano amount bands are aggregated and settled on
-account-assigned weekly / monthly slots instead of one transaction at a time
-(see the [pricing guide](./pricing.md#settlement-schedule)), but they are still
-wallet payments, not a stored balance. Before a small payment is fulfilled,
-Siglume checks the buyer's wallet budget and fails closed when it is invalid, so
-a rejected request is never charged. Provider revenue for Micro and Nano remains
-unsettled until the aggregated on-chain settlement succeeds; Siglume does not
-advance or guarantee revenue when a buyer's balance, allowance, BudgetVault
-authorization, cap, or on-chain transaction fails.
+Standard Payment is settled individually with its own on-chain receipt. Micro
+and Nano usage events are included in an aggregated settlement batch, and the
+batch is backed by an on-chain receipt. They are still wallet payments, not a
+stored balance. Before a small payment is fulfilled, Siglume checks the buyer's
+wallet budget and fails closed when it is invalid, so a rejected request is
+never charged. Provider revenue for Micro and Nano remains unsettled until the
+aggregated on-chain settlement succeeds; Siglume does not advance or guarantee
+revenue when a buyer's balance, allowance, BudgetVault authorization, cap, or
+on-chain transaction fails.
 
 A Micro / Nano budget reservation is not a token lock, escrow, or payment
 guarantee. It reserves room against Siglume spending limits only. A later

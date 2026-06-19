@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.5 - 2026-06-19
+
+Patch release for the public beta re-review.
+
+- Added `cursor` support to TypeScript and Python metered statement list
+  helpers, with tests that fetch a second page.
+- Added missing TypeScript settlement batch retry fields
+  (`attempt_count`, `next_attempt_at`) and narrowed metered minor amount fields
+  to decimal strings.
+- Clarified the public idempotency contract: one-time requirement creation uses
+  the challenge nonce / `challenge_hash` / `request_hash_v2`; the SDK does not
+  expose an unsupported requirement `idempotency_key`.
+- Clarified Micro / Nano rounding, usage CSV `rounding_delta_minor`, provider
+  statement auth roles, and Standard vs aggregated on-chain receipt wording.
+
 ## 0.4.4 - 2026-06-19
 
 Correctness and security hardening release for the SDRP Direct Request Payment

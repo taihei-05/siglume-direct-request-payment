@@ -42,7 +42,7 @@ def requirement_payload() -> dict:
 def test_requires_buyer_bearer_token(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SIGLUME_AUTH_TOKEN", raising=False)
 
-    with pytest.raises(DirectRequestPaymentError, match="buyer Siglume bearer token"):
+    with pytest.raises(DirectRequestPaymentError, match="buyer or provider Siglume user bearer token"):
         DirectRequestPaymentClient()
 
 
@@ -107,13 +107,25 @@ def test_named_metered_statement_methods() -> None:
         ).mock(
             return_value=httpx.Response(
                 200,
-                json={"data": {"items": [{"metered_usage_id": "mu_1"}], "next_cursor": None}},
+                json={"data": {"items": [{"metered_usage_id": "mu_1"}], "next_cursor": "cur_2"}},
+            )
+        ),
+        respx.get("https://siglume.test/v1/sdrp/metered/my-usage-events?limit=10&cursor=cur_2").mock(
+            return_value=httpx.Response(
+                200,
+                json={"data": {"items": [{"metered_usage_id": "mu_2"}], "next_cursor": None}},
             )
         ),
         respx.get("https://siglume.test/v1/sdrp/metered/my-settlement-batches?status=ready&limit=5").mock(
             return_value=httpx.Response(
                 200,
                 json={"data": {"items": [{"settlement_batch_id": "msb_1"}], "next_cursor": None}},
+            )
+        ),
+        respx.get("https://siglume.test/v1/sdrp/metered/provider/settlement-batches?token_symbol=USDC&limit=2&cursor=cur_3").mock(
+            return_value=httpx.Response(
+                200,
+                json={"data": {"items": [{"settlement_batch_id": "msb_2"}], "next_cursor": None}},
             )
         ),
         respx.get(
@@ -123,7 +135,7 @@ def test_named_metered_statement_methods() -> None:
         respx.get("https://siglume.test/v1/sdrp/metered/provider/settlement-batches?token_symbol=USDC&limit=2").mock(
             return_value=httpx.Response(
                 200,
-                json={"data": {"items": [{"settlement_batch_id": "msb_1"}], "next_cursor": None}},
+                json={"data": {"items": [{"settlement_batch_id": "msb_1"}], "next_cursor": "cur_3"}},
             )
         ),
         respx.get("https://siglume.test/v1/sdrp/metered/provider/settlement-batches/msb_1?listing_id=listing_1").mock(
@@ -133,12 +145,17 @@ def test_named_metered_statement_methods() -> None:
     client = DirectRequestPaymentClient(auth_token="buyer_or_provider_jwt", base_url="https://siglume.test/v1")
 
     assert client.get_buyer_metered_summary(plan_type="MICRO", token_symbol="jpyc")["role"] == "buyer"
-    assert client.list_buyer_usage_events(
+    buyer_events = client.list_buyer_usage_events(
         plan_type="micro",
         token_symbol="JPYC",
         status="pending_settlement",
         limit=10,
-    ) == {"items": [{"metered_usage_id": "mu_1"}], "next_cursor": None}
+    )
+    assert buyer_events == {"items": [{"metered_usage_id": "mu_1"}], "next_cursor": "cur_2"}
+    assert client.list_buyer_usage_events(cursor=buyer_events["next_cursor"], limit=10) == {
+        "items": [{"metered_usage_id": "mu_2"}],
+        "next_cursor": None,
+    }
     assert client.list_buyer_settlement_batches(status="ready", limit=5) == {
         "items": [{"settlement_batch_id": "msb_1"}],
         "next_cursor": None,
@@ -148,8 +165,13 @@ def test_named_metered_statement_methods() -> None:
         listing_id="listing_1",
         capability_key="capability.alpha",
     )["role"] == "provider"
-    assert client.list_provider_settlement_batches(token_symbol="USDC", limit=2) == {
+    provider_batches = client.list_provider_settlement_batches(token_symbol="USDC", limit=2)
+    assert provider_batches == {
         "items": [{"settlement_batch_id": "msb_1"}],
+        "next_cursor": "cur_3",
+    }
+    assert client.list_provider_settlement_batches(token_symbol="USDC", cursor=provider_batches["next_cursor"], limit=2) == {
+        "items": [{"settlement_batch_id": "msb_2"}],
         "next_cursor": None,
     }
     assert client.get_provider_settlement_batch("msb_1", listing_id="listing_1") == {"settlement_batch_id": "msb_1"}

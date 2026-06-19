@@ -106,11 +106,20 @@ buyer_debit_minor = ceil(gross_buyer_debit_minor)
 rounding_delta_minor = buyer_debit_minor - gross_buyer_debit_minor
 ```
 
+For low-count Nano batches, the ceiling can make the effective buyer burden per
+usage higher than the headline "USD 0.001 / usage" protocol fee. The protocol
+fee remains the decimal statement amount; the extra integer-minor-unit
+adjustment is recorded as `rounding_delta_minor` on the settlement batch.
+
 `rounding_delta_minor` belongs to the buyer debit and Siglume's rounding
 adjustment accounting for that batch. It is not provider revenue. Provider
 reports should use `provider_receivable_minor`,
 `settled_provider_receivable_minor`, `unsettled_provider_receivable_minor`, and
 `past_due_provider_receivable_minor`.
+
+Micro / Nano amount fields are decimal minor-unit strings. JavaScript
+integrations should aggregate them with a decimal library, not `number`. Python
+integrations should use `Decimal` for accounting.
 
 ### Usage Events
 
@@ -123,6 +132,7 @@ Query parameters:
 - `plan_type`: `micro` or `nano`
 - `token_symbol`: `JPYC` or `USDC`
 - `status`: for example `pending_settlement`, `settled`, `failed_chargeable`
+- `cursor`: pass the previous response's `next_cursor` to fetch the next page
 - `limit`: 1 to 500
 
 SDK methods: `listBuyerUsageEvents(...)` / `list_buyer_usage_events(...)`.
@@ -148,6 +158,7 @@ Query parameters:
 - `token_symbol`: `JPYC` or `USDC`
 - `status`: `notice_pending`, `ready`, `submitted`, `settled`, `failed`,
   `past_due`, or `notice_delivery_failed`
+- `cursor`: pass the previous response's `next_cursor` to fetch the next page
 - `limit`: 1 to 200
 
 SDK methods: `listBuyerSettlementBatches(...)` /
@@ -233,6 +244,7 @@ Query parameters:
 - `status`
 - `listing_id`
 - `capability_key`
+- `cursor`: pass the previous response's `next_cursor` to fetch the next page
 - `limit`: 1 to 500
 
 SDK methods: `listProviderUsageEvents(...)` /
@@ -266,6 +278,7 @@ Query parameters for the list endpoint:
 - `status`
 - `listing_id`
 - `capability_key`
+- `cursor`: pass the previous response's `next_cursor` to fetch the next page
 - `limit`: 1 to 200
 
 The detail endpoint also accepts `listing_id` and `capability_key`.
@@ -317,6 +330,10 @@ metered_usage_id,created_at,plan_type,settlement_cadence,period_start,period_end
 ```
 
 The CSV uses `buyer_period_ref`, not `buyer_user_id`.
+`rounding_delta_minor` is present for a stable usage-event schema, but per-row
+values are `0`. The authoritative rounding adjustment is the settlement batch
+`rounding_delta_minor`; do not allocate that adjustment to provider revenue
+from individual CSV rows.
 
 ## Notifications
 
@@ -391,6 +408,11 @@ using stable idempotency keys and provider-side completion records.
 | `submitted_reconcile_required` | A settlement submission exists but final on-chain outcome is not yet reconciled | Reconciliation may complete if a receipt is found | Required if reconciliation stalls | Do not retry payment yourself. Wait for `settled`, `failed_retryable`, or `past_due`. |
 | `past_due` | Buyer has an unresolved settlement block; provider sees past-due revenue | New Micro / Nano usage for the same buyer / plan / token is paused | Operator requeue or manual resolution only | Do not promise collection or provider payment. Ask the buyer to repair balance / allowance / BudgetVault / caps and reference `support_reference`. |
 | `failed_chargeable` | Usage is still chargeable because provider work was accepted or completed | Included in later settlement attempts | Review if the provider disputes completion | Keep fulfillment idempotent and preserve evidence keyed by idempotency key. |
+
+Future platform versions may add explicit terminal states such as
+`closed_unpaid`, `uncollectible`, or `written_off`. Treat unknown terminal
+settlement states as not settled unless `status === "settled"` and
+`chain_receipt_id` is present.
 
 ## Operational Recipes
 
