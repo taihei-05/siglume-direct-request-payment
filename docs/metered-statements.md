@@ -248,7 +248,9 @@ Use:
 - `totals.unsettled_provider_receivable_minor` for expected but not yet settled
   revenue,
 - `totals.past_due_provider_receivable_minor` for provider revenue blocked on a
-  past-due buyer settlement.
+  past-due buyer settlement,
+- `totals.terminal_provider_receivable_minor` for provider receivable that an
+  operator has marked `uncollectible` or `written_off` after past-due review.
 
 ### Usage Events
 
@@ -310,7 +312,7 @@ Important batch fields:
 
 | Field | Meaning |
 | --- | --- |
-| `status` | Batch lifecycle state such as `notice_pending`, `ready`, `submitted`, `settled`, `failed`, `past_due`, or `notice_delivery_failed` |
+| `status` | Batch lifecycle state such as `notice_pending`, `ready`, `submitted`, `settled`, `failed`, `past_due`, `uncollectible`, `written_off`, or `notice_delivery_failed` |
 | `notice_status` | Final debit notice delivery status |
 | `period_start`, `period_end`, `close_at` | Statement period boundaries |
 | `settlement_trigger` | `amount_threshold` for early threshold close, or `scheduled_close` for weekly/monthly close |
@@ -330,6 +332,10 @@ Important batch fields:
 | `settled_provider_receivable_minor` | Provider receivable that is settled on-chain |
 | `unsettled_provider_receivable_minor` | Provider receivable not yet settled |
 | `past_due_provider_receivable_minor` | Provider receivable blocked on past-due settlement |
+| `terminal_provider_receivable_minor` | Provider receivable marked terminal after operator review |
+| `uncollectible_provider_receivable_minor` | Terminal provider receivable classified as uncollectible |
+| `written_off_provider_receivable_minor` | Terminal provider receivable classified as written off |
+| `terminal_status`, `terminal_marked_at`, `terminal_reason_code` | Public terminal resolution fields, present only for terminal batches |
 | `gross_buyer_debit_minor` | Legacy alias of provider gross; protocol fee is not added |
 | `protocol_fee_minor` | Micro / Nano protocol fee deducted from provider receivable |
 | `buyer_debit_minor` | Amount scheduled for the buyer debit; equals provider gross |
@@ -472,13 +478,24 @@ settled only when `status === "settled"` and `chain_receipt_id` is present.
 
 Buyer summary `past_due_blocks` returns `METERED_SETTLEMENT_PAST_DUE` with a
 sanitized reason and support reference. The buyer must repair the listed balance
-or authorization issue. Requeue is operator-only in the MVP.
+or authorization issue. Requeue is operator-only in the MVP. If operator review
+marks a past-due batch `uncollectible` or `written_off`, new usage may resume,
+but the provider receivable moves to terminal accounting instead of settled,
+unsettled, or past-due revenue.
+
+If the same execution idempotency key is reused with a different Micro / Nano
+input payload, the platform fails closed before provider execution with
+`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD` and HTTP status `409`.
 
 ### "What should our accounting system book?"
 
 Book `settled_provider_receivable_minor` as settled revenue. Keep
 `unsettled_provider_receivable_minor` and `past_due_provider_receivable_minor`
-separate from settled revenue.
+separate from settled revenue. Keep
+`terminal_provider_receivable_minor`, `uncollectible_provider_receivable_minor`,
+and `written_off_provider_receivable_minor` outside settled, unsettled, and
+past-due revenue; they represent operator terminal resolution, not successful
+on-chain settlement.
 
 ## Go-Live Checklist
 
@@ -488,6 +505,8 @@ separate from settled revenue.
   `settlement_status` show settled per-payment finality.
 - Micro / Nano accounting uses statement APIs or CSV, not only webhooks.
 - Your dashboard separates settled, unsettled, and past-due provider amounts.
+- Your dashboard separates terminal `uncollectible` / `written_off` provider
+  amounts from settled, unsettled, and past-due revenue.
 - Your support UI shows sanitized failure fields and `support_reference`.
 - You do not store or display raw buyer IDs from provider APIs; use
   `buyer_period_ref`.

@@ -233,11 +233,16 @@ but it does not replace the Micro / Nano statement APIs.
 
 Use [Micro / Nano Statements and Notices](./metered-statements.md) to integrate:
 
-- provider summary of open, settled, unsettled, and past-due revenue,
+- provider summary of open, settled, unsettled, past-due, and terminal
+  `uncollectible` / `written_off` revenue buckets,
 - provider usage-event CSV export,
 - buyer summaries for open-period estimated debit and past-due blocks,
 - sanitized public failure reasons and support references,
 - the fixed final notice plus close-plus-3-day debit window.
+
+Reusing the same Micro / Nano execution idempotency key with a different input
+payload fails closed before provider execution with
+`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD` and HTTP status `409`.
 
 ## SDK Behavior
 

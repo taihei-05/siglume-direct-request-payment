@@ -353,6 +353,11 @@ Returns:
 - `webhook_subscription`: webhook subscription response, when created
 - `env`: server environment values to store, including returned secrets
 
+`merchant.merchant_account.metadata_jsonb.metered_risk_acceptance` records the
+merchant's Micro / Nano delayed-settlement risk acceptance receipt with
+`terms_version`, `accepted_at`, `principal_user_id`, `receipt_id`, and fixed
+market thresholds `JPY: 10000` / `USD: 10000`.
+
 Secrets are returned only when created or rotated. Existing secrets are not
 replayed by `getMerchant` / `get_merchant`.
 
@@ -852,6 +857,9 @@ Provider-facing amount names:
 - `settled_provider_receivable_minor`
 - `unsettled_provider_receivable_minor`
 - `past_due_provider_receivable_minor`
+- `terminal_provider_receivable_minor`
+- `uncollectible_provider_receivable_minor`
+- `written_off_provider_receivable_minor`
 
 Schedule and execution fields:
 
@@ -869,6 +877,9 @@ Schedule and execution fields:
 - `usage_event_digest`
 - `attempt_count`
 - `next_attempt_at`
+- `terminal_status`
+- `terminal_marked_at`
+- `terminal_reason_code`
 
 Failure fields are sanitized for public display:
 
@@ -881,6 +892,14 @@ Provider APIs do not expose raw `buyer_user_id`, buyer email, buyer wallet
 address, relayer id, nonce, gas data, raw RPC errors, or raw
 `failure_message`. Use `buyer_period_ref` for provider-side reconciliation
 within a period.
+
+Terminal statuses `uncollectible` and `written_off` are operator resolutions
+after past-due manual review. Their receivable fields are reported separately
+from settled, unsettled, and past-due revenue.
+
+If a Micro / Nano execution idempotency key is reused with a different input
+payload, execution fails closed before provider execution with
+`IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD` and HTTP status `409`.
 
 ### Provider CSV export
 

@@ -223,6 +223,10 @@ aggregated settlement model whenever they offer amounts in these bands. If a
 product cannot fulfill before provider revenue is settled, keep the price in the
 Standard band; in practice, do not offer JPY 500-and-under or USD 3-and-under
 items for that product.
+Self-service setup records this acceptance in
+`merchant_account.metadata_jsonb.metered_risk_acceptance`, including
+`terms_version`, `accepted_at`, `principal_user_id`, `receipt_id`, and fixed
+market thresholds `JPY: 10000` / `USD: 10000`.
 Micro / Nano budget checks reserve spending capacity only; they do not lock,
 escrow, or guarantee the buyer's wallet balance, allowance, or settlement funds.
 Sub-minor-unit Nano fees are accumulated with decimal precision, but they are

@@ -31,6 +31,10 @@ setup and the billing mandate means accepting this Micro/Nano delayed aggregated
 settlement model for low-price items. If your product requires immediate
 on-chain settlement, keep its price above the Micro/Nano thresholds instead of
 offering JPY 500-and-under or USD 3-and-under amounts.
+The setup response records this acceptance at
+`merchant.merchant_account.metadata_jsonb.metered_risk_acceptance` with a
+`terms_version`, `accepted_at`, `principal_user_id`, `receipt_id`, and fixed
+market thresholds `JPY: 10000` / `USD: 10000`.
 
 ## Two Buyer Systems
 

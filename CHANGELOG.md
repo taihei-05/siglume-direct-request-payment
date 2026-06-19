@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.16 - 2026-06-19
+
+SDRP Micro / Nano terminal-risk and idempotency hardening release.
+
+- Added public settlement batch fields for terminal provider accounting:
+  `terminal_provider_receivable_minor`,
+  `uncollectible_provider_receivable_minor`,
+  `written_off_provider_receivable_minor`, `terminal_status`,
+  `terminal_marked_at`, and `terminal_reason_code`.
+- Documented operator terminal states `uncollectible` and `written_off` after
+  past-due manual review. These amounts are not settled, unsettled, or past-due
+  receivable.
+- Documented merchant setup risk acceptance receipt
+  `merchant_account.metadata_jsonb.metered_risk_acceptance`.
+- Documented fail-closed idempotency behavior:
+  `IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD` for reused keys with a
+  different metered input payload.
+
 ## 0.4.15 - 2026-06-19
 
 Corrective SDRP Micro / Nano public-surface release.
