@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.3 - 2026-06-19
+
+Documentation-only release for SDRP Micro / Nano operations.
+
+- Added the Micro / Nano Statements and Notices manual, covering buyer and
+  provider statement APIs, CSV export, final debit notices, the close-plus-3-day
+  debit site, past-due blocks, sanitized failure fields, and support references.
+- Expanded API reference, merchant quickstart, security, pricing, and Japanese
+  announcement docs so integrators can reconcile settled, unsettled, retrying,
+  and past-due Micro / Nano revenue without relying on private platform fields.
+- No wire-format or runtime behavior changes.
+
 ## 0.4.2 - 2026-06-19
 
 Documentation completeness release. No wire-format or API changes; 0.4.x clients
