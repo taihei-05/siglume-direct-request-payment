@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.15 - 2026-06-19
+
+Corrective SDRP Micro / Nano public-surface release.
+
+- Fixed the TypeScript runtime SDK version constant to match package metadata.
+- Replaced old buyer-rounding formulas with the seller-borne invariant:
+  `buyer_debit_minor = provider_gross_amount_minor` and
+  `provider_receivable_minor = provider_gross_amount_minor - protocol_fee_minor`.
+- Documented `provider_gross_amount_minor` as canonical and
+  `provider_usage_amount_minor` / `gross_buyer_debit_minor` as compatibility
+  aliases.
+- Restricted webhook verification helpers to raw bytes or raw body strings;
+  JSON object body support remains only on signature-building helpers for tests.
+
 ## 0.4.14 - 2026-06-19
 
 SDRP Micro / Nano threshold and fixed-JPY fee correction.

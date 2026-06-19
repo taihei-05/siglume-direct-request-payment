@@ -151,8 +151,8 @@ confirmed payment turns into money in your settlement wallet.
   the affected batch is treated as past due. Siglume currently retries every 6
   hours for up to 28 automatic attempts. After that, the batch remains past due
   and requires manual resolution before another attempt.
-- While the same buyer / provider / token has total unsettled exposure at or
-  above the fixed threshold, new Micro/Nano usage is paused with the
+- While the same buyer / provider / token / pricing band has total unsettled
+  exposure at or above the fixed threshold, new Micro/Nano usage is paused with the
   machine-readable error `METERED_SETTLEMENT_PAST_DUE`; the provider API is not
   called. Exposure includes open usage plus `notice_pending`, `ready`,
   `submitted`, retrying, and `past_due` batches, and remains paused while
@@ -167,7 +167,7 @@ confirmed payment turns into money in your settlement wallet.
 
 Micro and Nano run a budget check before the buyer's paid request is fulfilled:
 
-- A buyer's wallet budget reservation is consumed at the **gross buyer debit
+- A buyer's wallet budget reservation is consumed at the **provider gross
   amount** (your usage price, before any provider-borne protocol fee) from
   acceptance until settlement confirms. This
   is a reservation against Siglume spending limits; it does not lock, escrow,
@@ -185,51 +185,43 @@ Micro and Nano run a budget check before the buyer's paid request is fulfilled:
 ### What is fixed vs platform-managed
 
 The cadence fields are fixed: **Micro is weekly, Nano is monthly**. In both
-bands, Siglume can close a buyer/payee/token batch early once it reaches JPY
-10,000 or USD 100.00. A payment is final only after its on-chain settlement
-confirms. Micro and Nano are automatic amount bands, not customer-selected
-options. The account-assigned period boundaries, roughly 3-day pre-debit notice
-window, early settlement threshold, and current retry policy above are the
-public behavior as of 2026-06-19. Treat the platform's statement status,
-`not_before_attempt_at`, Standard `fee_bps`, and Micro / Nano statement amount
-fields as authoritative rather than hard-coding local revenue recognition.
+bands, Siglume can close a buyer / provider / token / pricing-band batch early
+once provider gross reaches JPY 10,000 or USD 100.00. These are fixed
+market-specific thresholds, not FX conversions of one another. A payment is
+final only after its on-chain settlement confirms. Micro and Nano are automatic
+amount bands, not customer-selected options. The account-assigned period
+boundaries, roughly 3-day pre-debit notice window, early settlement threshold,
+and current retry policy above are the public behavior as of 2026-06-19. Treat
+the platform's statement status, `not_before_attempt_at`, Standard `fee_bps`,
+and Micro / Nano statement amount fields as authoritative rather than
+hard-coding local revenue recognition.
 
-## Micro / Nano Amount Rounding
+## Micro / Nano Seller-borne Amounts
 
 Micro / Nano fees are stored internally as decimal minor-unit values so
-sub-yen and sub-cent Nano fees are not silently rounded per accepted SDRP Tx. The
-current settlement rule is:
+sub-yen and sub-cent Nano fees are not silently rounded per accepted SDRP Tx.
+The buyer is charged only the provider-visible usage amount; the protocol fee is
+not added to the buyer debit:
 
 ```text
-provider_usage_amount_minor = sum(provider price minor units for accepted metered rows)
+provider_gross_amount_minor = sum(provider price minor units for accepted metered rows)
+provider_usage_amount_minor = provider_gross_amount_minor   # legacy alias
+gross_buyer_debit_minor = provider_gross_amount_minor       # legacy alias
+buyer_debit_minor = provider_gross_amount_minor
 protocol_fee_minor = sum(Micro/Nano fixed protocol fee minor units for accepted metered rows)
-provider_receivable_minor = max(provider_usage_amount_minor - protocol_fee_minor, 0)
-gross_buyer_debit_minor = provider_usage_amount_minor
-buyer_debit_minor = ceil(gross_buyer_debit_minor)
-rounding_delta_minor = buyer_debit_minor - gross_buyer_debit_minor
+provider_receivable_minor = provider_gross_amount_minor - protocol_fee_minor
+rounding_delta_minor = 0 for buyer/provider accounting
 ```
 
-Rounding happens once when the settlement batch is created, not per accepted
-SDRP Tx.
-The rounding mode is ceiling to the next integer token minor unit because
-on-chain settlement cannot debit fractional JPYC/USDC minor units. The positive
-`rounding_delta_minor` is part of the buyer debit for that batch and is retained
-as a rounding adjustment in Siglume's settlement accounting; it is not provider
-revenue. `protocol_fee_minor` is provider-borne and is deducted from provider
-receivable, not added to the buyer debit. Providers should reconcile their
-revenue with
-`provider_receivable_minor`, `settled_provider_receivable_minor`,
-`unsettled_provider_receivable_minor`, and
-`past_due_provider_receivable_minor`, not with `buyer_debit_minor`.
+Example: a JPY 100 Micro usage event has buyer debit JPY 100, protocol fee JPY
+2, and provider receivable JPY 98.
 
-For low-count Nano batches, the integer ceiling can make the effective buyer
-rounded debit per SDRP Tx higher than the decimal provider usage amount. The
-decimal protocol fee remains visible as `protocol_fee_minor` and is deducted
-from provider receivable; the difference created by integer-token settlement is
-visible as `rounding_delta_minor` on the batch. Each settlement batch can add a
-positive rounding adjustment of less than 1 token minor unit. If a buyer uses
-many providers / payees in one period, that adjustment can occur once per
-settlement batch. JavaScript integrations should not sum Micro / Nano minor
+The `rounding_delta_minor` field is retained in some schemas for compatibility.
+It is not added to `buyer_debit_minor`, not added to
+`provider_gross_amount_minor`, and not deducted again from
+`provider_receivable_minor`. If non-zero in a historical or internal record,
+treat it as a Siglume platform accounting adjustment, not buyer debit or
+provider revenue. JavaScript integrations should not sum Micro / Nano minor
 amounts with `number`; use a decimal library. Python integrations should use
 `Decimal`.
 

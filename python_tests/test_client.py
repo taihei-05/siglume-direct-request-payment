@@ -1,4 +1,6 @@
 import json
+import tomllib
+from pathlib import Path
 
 import httpx
 import pytest
@@ -6,6 +8,7 @@ import respx
 
 from siglume_direct_request_payment import (
     DIRECT_REQUEST_PAYMENT_MODE,
+    DIRECT_REQUEST_PAYMENT_SDK_VERSION,
     DirectRequestPaymentClient,
     DirectRequestPaymentMerchantClient,
     DirectRequestPaymentError,
@@ -13,6 +16,11 @@ from siglume_direct_request_payment import (
     build_allowance_execution_payload,
     build_payment_execution_payload,
 )
+
+
+def test_runtime_sdk_version_matches_package_metadata() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    assert DIRECT_REQUEST_PAYMENT_SDK_VERSION == pyproject["project"]["version"]
 
 
 def requirement_payload() -> dict:
@@ -107,7 +115,22 @@ def test_named_metered_statement_methods() -> None:
         ).mock(
             return_value=httpx.Response(
                 200,
-                json={"data": {"items": [{"metered_usage_id": "mu_1"}], "next_cursor": "cur_2"}},
+                json={
+                    "data": {
+                        "items": [
+                            {
+                                "metered_usage_id": "mu_1",
+                                "provider_gross_amount_minor": "100",
+                                "provider_usage_amount_minor": "100",
+                                "protocol_fee_minor": "2",
+                                "gross_buyer_debit_minor": "100",
+                                "buyer_debit_minor": "100",
+                                "rounding_delta_minor": "0",
+                            }
+                        ],
+                        "next_cursor": "cur_2",
+                    }
+                },
             )
         ),
         respx.get("https://siglume.test/v1/sdrp/metered/my-usage-events?limit=10&cursor=cur_2").mock(
@@ -119,7 +142,23 @@ def test_named_metered_statement_methods() -> None:
         respx.get("https://siglume.test/v1/sdrp/metered/my-settlement-batches?status=ready&limit=5").mock(
             return_value=httpx.Response(
                 200,
-                json={"data": {"items": [{"settlement_batch_id": "msb_1"}], "next_cursor": None}},
+                json={
+                    "data": {
+                        "items": [
+                            {
+                                "settlement_batch_id": "msb_1",
+                                "provider_gross_amount_minor": "100",
+                                "provider_usage_amount_minor": "100",
+                                "protocol_fee_minor": "2",
+                                "provider_receivable_minor": "98",
+                                "gross_buyer_debit_minor": "100",
+                                "buyer_debit_minor": "100",
+                                "rounding_delta_minor": "0",
+                            }
+                        ],
+                        "next_cursor": None,
+                    }
+                },
             )
         ),
         respx.get("https://siglume.test/v1/sdrp/metered/provider/settlement-batches?token_symbol=USDC&limit=2&cursor=cur_3").mock(
@@ -151,15 +190,39 @@ def test_named_metered_statement_methods() -> None:
         status="pending_settlement",
         limit=10,
     )
-    assert buyer_events == {"items": [{"metered_usage_id": "mu_1"}], "next_cursor": "cur_2"}
+    assert buyer_events["next_cursor"] == "cur_2"
+    usage = buyer_events["items"][0]
+    assert usage["metered_usage_id"] == "mu_1"
+    assert usage["provider_gross_amount_minor"] == "100"
+    assert usage["gross_buyer_debit_minor"] == "100"
+    assert usage["buyer_debit_minor"] == "100"
+    assert usage["protocol_fee_minor"] == "2"
+    assert usage["rounding_delta_minor"] == "0"
     assert client.list_buyer_usage_events(cursor=buyer_events["next_cursor"], limit=10) == {
         "items": [{"metered_usage_id": "mu_2"}],
         "next_cursor": None,
     }
-    assert client.list_buyer_settlement_batches(status="ready", limit=5) == {
-        "items": [{"settlement_batch_id": "msb_1"}],
+    buyer_batches = client.list_buyer_settlement_batches(status="ready", limit=5)
+    assert buyer_batches == {
+        "items": [
+            {
+                "settlement_batch_id": "msb_1",
+                "provider_gross_amount_minor": "100",
+                "provider_usage_amount_minor": "100",
+                "protocol_fee_minor": "2",
+                "provider_receivable_minor": "98",
+                "gross_buyer_debit_minor": "100",
+                "buyer_debit_minor": "100",
+                "rounding_delta_minor": "0",
+            }
+        ],
         "next_cursor": None,
     }
+    batch = buyer_batches["items"][0]
+    assert int(batch["provider_gross_amount_minor"]) - int(batch["protocol_fee_minor"]) == int(
+        batch["provider_receivable_minor"]
+    )
+    assert batch["buyer_debit_minor"] == batch["provider_gross_amount_minor"]
     assert client.get_provider_metered_summary(
         plan_type="micro",
         listing_id="listing_1",

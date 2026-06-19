@@ -225,15 +225,13 @@ Standard band; in practice, do not offer JPY 500-and-under or USD 3-and-under
 items for that product.
 Micro / Nano budget checks reserve spending capacity only; they do not lock,
 escrow, or guarantee the buyer's wallet balance, allowance, or settlement funds.
-Sub-minor-unit Nano fees are accumulated with decimal precision and rounded only
-when a settlement batch is created; see [Pricing](./docs/pricing.md) for the
-rounding formula and `rounding_delta_minor` semantics.
-For low-count Nano batches, integer-token settlement can make the effective
-rounded debit per SDRP Tx higher than the decimal provider usage amount; the
-difference is reported as batch `rounding_delta_minor`. Micro / Nano protocol
-fees are provider-borne and are not added to the buyer debit. Treat Micro /
-Nano minor amounts as decimal strings and use a decimal library or `Decimal`
-for accounting.
+Sub-minor-unit Nano fees are accumulated with decimal precision, but they are
+seller-borne: `buyer_debit_minor = provider_gross_amount_minor`, and the fixed
+Micro / Nano protocol fee is deducted from provider receivable. If
+`rounding_delta_minor` appears in a statement schema, treat it as a compatibility
+or internal platform accounting field; it is not added to buyer debit and is not
+provider revenue. Treat Micro / Nano minor amounts as decimal strings and use a
+decimal library or `Decimal` for accounting.
 For operational reconciliation, expected revenue, settled revenue, retry state,
 and CSV exports, see
 [docs/metered-statements.md](./docs/metered-statements.md).
@@ -302,7 +300,9 @@ Nano amounts start at JPY 1 or USD 0.01. For Standard Payment, `fee_bps`
 returned on a payment requirement is the authoritative fee rate for that payment
 in the merchant's settlement currency. For Micro / Nano, the statement APIs
 expose `protocol_fee_minor`, `gross_buyer_debit_minor`, `buyer_debit_minor`, and
-`rounding_delta_minor`.
+`rounding_delta_minor`. `provider_gross_amount_minor` is the canonical provider
+gross field; `provider_usage_amount_minor` and `gross_buyer_debit_minor` are
+legacy aliases of the same amount.
 All SDRP payment fees are seller-borne. Standard Payment fees are deducted from
 the merchant settlement amount. Micro / Nano protocol fees are deducted from
 provider receivable at aggregated settlement and are not added to the buyer

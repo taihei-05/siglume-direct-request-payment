@@ -91,38 +91,34 @@ open period. It can report `wallet_balance_checked: false` or
 `allowance_checked: false`; in that case it is guidance, not a final on-chain
 guarantee.
 
-## Amount Rounding
+## Seller-borne Micro / Nano Amounts
 
 Micro / Nano usage rows keep provider price and protocol fee values as decimal
 minor-unit amounts. This allows Nano fees such as JPY 0.2 per SDRP Tx to be
 accounted without rounding every accepted payment.
 
-Rounding happens once when a settlement batch is created:
+The buyer is charged only the provider-visible usage amount. Micro / Nano
+protocol fees are seller-borne and are deducted from provider receivable:
 
 ```text
-provider_usage_amount_minor = sum(provider price minor units for accepted metered rows)
+provider_gross_amount_minor = sum(provider price minor units for accepted metered rows)
+provider_usage_amount_minor = provider_gross_amount_minor   # legacy alias
+gross_buyer_debit_minor = provider_gross_amount_minor       # legacy alias
+buyer_debit_minor = provider_gross_amount_minor
 protocol_fee_minor = sum(Micro/Nano fixed protocol fee minor units for accepted metered rows)
-provider_receivable_minor = max(provider_usage_amount_minor - protocol_fee_minor, 0)
-gross_buyer_debit_minor = provider_usage_amount_minor
-buyer_debit_minor = ceil(gross_buyer_debit_minor)
-rounding_delta_minor = buyer_debit_minor - gross_buyer_debit_minor
+provider_receivable_minor = provider_gross_amount_minor - protocol_fee_minor
+rounding_delta_minor = 0 for buyer/provider accounting
 ```
 
-For low-count Nano batches, the ceiling can make the effective rounded debit per
-SDRP Tx higher than the decimal provider usage amount. Here, `Tx` means one
-accepted SDRP payment, not an on-chain settlement transaction. The protocol fee
-remains the decimal statement amount and is deducted from provider receivable;
-the extra integer-minor-unit adjustment is recorded as `rounding_delta_minor` on
-the settlement batch. Each settlement batch can add a positive rounding
-adjustment of less than 1 token minor unit; if a buyer uses many providers /
-payees in one period, that adjustment can occur once per settlement batch.
+Example: a JPY 100 Micro usage event has `buyer_debit_minor = 100`,
+`protocol_fee_minor = 2`, and `provider_receivable_minor = 98`.
 
-`rounding_delta_minor` belongs to the buyer debit and Siglume's rounding
-adjustment accounting for that batch. It is not provider revenue.
-`protocol_fee_minor` is provider-borne and is not added to the buyer debit.
-Provider reports should use `provider_receivable_minor`,
-`settled_provider_receivable_minor`, `unsettled_provider_receivable_minor`, and
-`past_due_provider_receivable_minor`.
+The `rounding_delta_minor` field remains in some statement schemas for
+compatibility. It is not added to `buyer_debit_minor`, not added to
+`provider_gross_amount_minor`, and not deducted again from
+`provider_receivable_minor`. If non-zero in a historical or internal record,
+treat it as a Siglume platform accounting adjustment, not buyer debit or
+provider revenue.
 
 Micro / Nano amount fields are decimal minor-unit strings. JavaScript
 integrations should aggregate them with a decimal library, not `number`. Python
@@ -149,7 +145,9 @@ Buyer usage event amount fields:
 
 - `provider_usage_amount_minor`: provider price for the usage event
 - `protocol_fee_minor`: provider-borne metered protocol fee
-- `gross_buyer_debit_minor`: provider usage amount before integer-token rounding
+- `provider_gross_amount_minor`: provider price before protocol fee
+- `gross_buyer_debit_minor`: legacy alias of `provider_gross_amount_minor`
+- `buyer_debit_minor`: buyer debit; equals `provider_gross_amount_minor`
 - `expected_scheduled_debit_at`: derived schedule for an open period before a
   settlement batch exists
 
@@ -175,8 +173,10 @@ Buyer batch amount fields:
 
 - `estimated_buyer_debit_minor`: total buyer debit for the batch
 - `provider_usage_amount_minor`: provider usage amount before protocol fee
-- `gross_buyer_debit_minor`: provider usage amount before integer-token rounding
+- `provider_gross_amount_minor`: provider gross before protocol fee
+- `gross_buyer_debit_minor`: legacy alias of `provider_gross_amount_minor`
 - `buyer_debit_minor`: amount scheduled for the debit transaction
+- `provider_receivable_minor`: provider gross minus provider-borne protocol fee
 
 Past-due batches include:
 
@@ -197,7 +197,7 @@ Threshold-control fields:
 - `threshold_reached_at`: set when the fixed amount threshold closed the batch
 - `total_unsettled_exposure_minor`: open plus `notice_pending`, `ready`,
   `submitted`, retrying, and `past_due` provider gross exposure for the same
-  buyer / provider / token
+  buyer / provider / token / pricing band
 
 JPY 10,000 and USD 100.00 are market-specific fixed thresholds, not FX
 conversions of one another.
@@ -316,7 +316,7 @@ Important batch fields:
 | `settlement_trigger` | `amount_threshold` for early threshold close, or `scheduled_close` for weekly/monthly close |
 | `settlement_threshold_minor` | Fixed market threshold for early settlement: JPY `10000` or USD `10000` minor units |
 | `threshold_reached_at` | Timestamp when the fixed threshold closed the batch, otherwise null |
-| `total_unsettled_exposure_minor` | Current open plus notice/ready/submitted/retrying/past-due provider gross exposure for the same buyer / provider / token |
+| `total_unsettled_exposure_minor` | Current open plus notice/ready/submitted/retrying/past-due provider gross exposure for the same buyer / provider / token / pricing band |
 | `expected_scheduled_debit_at` | Expected debit time for an open period before a batch exists |
 | `scheduled_debit_at` | Scheduled debit time after batch creation |
 | `not_before_attempt_at` | Earliest allowed debit attempt; this is the close-plus-3-day gate |
@@ -324,14 +324,15 @@ Important batch fields:
 | `latest_execution_attempt_status` | Latest non-sensitive execution attempt status |
 | `chain_receipt_id` | On-chain receipt id when available |
 | `usage_event_digest` | Digest of usage rows included in the batch |
+| `provider_gross_amount_minor` | Provider gross before provider-borne protocol fee |
 | `provider_usage_amount_minor` | Provider usage amount before protocol fee |
 | `provider_receivable_minor` | Provider amount for the batch after provider-borne protocol fee |
 | `settled_provider_receivable_minor` | Provider receivable that is settled on-chain |
 | `unsettled_provider_receivable_minor` | Provider receivable not yet settled |
 | `past_due_provider_receivable_minor` | Provider receivable blocked on past-due settlement |
-| `gross_buyer_debit_minor` | Provider usage amount before integer-token rounding |
+| `gross_buyer_debit_minor` | Legacy alias of provider gross; protocol fee is not added |
 | `protocol_fee_minor` | Micro / Nano protocol fee deducted from provider receivable |
-| `buyer_debit_minor` | Amount scheduled for the buyer debit |
+| `buyer_debit_minor` | Amount scheduled for the buyer debit; equals provider gross |
 | `attempt_count`, `next_attempt_at` | Retry state |
 | `failure_reason_code`, `failure_reason_label`, `failure_reason_help` | Sanitized public failure reason |
 | `support_reference` | Non-secret support reference |
@@ -350,14 +351,14 @@ curl https://siglume.com/v1/sdrp/metered/provider/settlement-batches/<batch-id>/
 The CSV contains exactly these columns:
 
 ```text
-metered_usage_id,created_at,plan_type,settlement_cadence,period_start,period_end,listing_id,capability_key,operation_key,currency,token_symbol,provider_usage_amount_minor,provider_receivable_minor,protocol_fee_minor,gross_buyer_debit_minor,rounding_delta_minor,buyer_debit_minor,status,settlement_batch_id,buyer_period_ref
+metered_usage_id,created_at,plan_type,settlement_cadence,period_start,period_end,listing_id,capability_key,operation_key,currency,token_symbol,provider_gross_amount_minor,provider_usage_amount_minor,provider_receivable_minor,protocol_fee_minor,gross_buyer_debit_minor,rounding_delta_minor,buyer_debit_minor,status,settlement_batch_id,buyer_period_ref
 ```
 
 The CSV uses `buyer_period_ref`, not `buyer_user_id`.
 `rounding_delta_minor` is present for a stable usage-event schema, but per-row
-values are `0`. The authoritative rounding adjustment is the settlement batch
-`rounding_delta_minor`; do not allocate that adjustment to provider revenue
-from individual CSV rows.
+values are `0`. If a batch-level `rounding_delta_minor` appears in historical or
+internal records, do not add it to buyer debit and do not allocate it to provider
+revenue.
 
 ## Notifications
 

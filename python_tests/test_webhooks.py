@@ -54,6 +54,22 @@ def test_rejects_stale_or_mismatched_webhook_signatures() -> None:
         verify_webhook_signature("wrong_secret", raw_body, header, now=1800000000)
 
 
+def test_rejects_json_objects_for_webhook_verification_even_when_header_builder_accepts_them() -> None:
+    event = {
+        "id": "evt_123",
+        "type": "direct_payment.confirmed",
+        "api_version": "2026-06-11",
+        "occurred_at": "2026-06-11T00:00:00Z",
+        "data": {"mode": "external_402"},
+    }
+    header = build_webhook_signature_header("whsec_test", event, timestamp=1800000000)
+
+    with pytest.raises(SiglumeWebhookPayloadError):
+        verify_webhook_signature("whsec_test", event, header, now=1800000000)  # type: ignore[arg-type]
+    with pytest.raises(SiglumeWebhookPayloadError):
+        verify_direct_request_payment_webhook("whsec_test", event, header, now=1800000000)  # type: ignore[arg-type]
+
+
 def test_accepts_metered_settlement_confirmation_machine_fields() -> None:
     event = {
         "id": "evt_metered",

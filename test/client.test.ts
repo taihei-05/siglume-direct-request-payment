@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAllowanceExecutionPayload,
   buildPaymentExecutionPayload,
+  DIRECT_REQUEST_PAYMENT_SDK_VERSION,
   DirectRequestPaymentClient,
   DirectRequestPaymentMerchantClient,
   type DirectPaymentRequirement,
@@ -15,6 +16,14 @@ import {
 function envelope(data: unknown) {
   return { data, meta: { request_id: "req_test", trace_id: "trc_test" } };
 }
+
+describe("package metadata", () => {
+  it("keeps the runtime SDK version aligned with package.json", () => {
+    const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+
+    expect(DIRECT_REQUEST_PAYMENT_SDK_VERSION).toBe(packageJson.version);
+  });
+});
 
 function fixtureRequirement(): DirectPaymentRequirement {
   return {
@@ -145,9 +154,12 @@ describe("DirectRequestPaymentClient", () => {
             settlement_cadence: "weekly",
             currency: "JPY",
             token_symbol: "JPYC",
+            provider_gross_amount_minor: "100",
             provider_usage_amount_minor: "100",
             protocol_fee_minor: "2",
             gross_buyer_debit_minor: "100",
+            buyer_debit_minor: "100",
+            rounding_delta_minor: "0",
             status: "pending_settlement",
           },
         ],
@@ -161,16 +173,33 @@ describe("DirectRequestPaymentClient", () => {
             settlement_cadence: "weekly",
             currency: "JPY",
             token_symbol: "JPYC",
+            provider_gross_amount_minor: "100",
             provider_usage_amount_minor: "100",
             protocol_fee_minor: "2",
             gross_buyer_debit_minor: "100",
+            buyer_debit_minor: "100",
+            rounding_delta_minor: "0",
             status: "pending_settlement",
           },
         ],
         next_cursor: null,
       }),
       envelope({
-        items: [{ settlement_batch_id: "msb_1", plan_type: "micro", settlement_cadence: "weekly", status: "ready" }],
+        items: [
+          {
+            settlement_batch_id: "msb_1",
+            plan_type: "micro",
+            settlement_cadence: "weekly",
+            status: "ready",
+            provider_gross_amount_minor: "100",
+            provider_usage_amount_minor: "100",
+            protocol_fee_minor: "2",
+            provider_receivable_minor: "98",
+            gross_buyer_debit_minor: "100",
+            buyer_debit_minor: "100",
+            rounding_delta_minor: "0",
+          },
+        ],
         next_cursor: null,
       }),
       envelope({
@@ -225,8 +254,22 @@ describe("DirectRequestPaymentClient", () => {
     await client.getProviderSettlementBatch("msb_1", { listing_id: "listing_1" });
 
     expect(buyerEvents.items[0]?.metered_usage_id).toBe("mu_1");
+    expect(buyerEvents.items[0]?.provider_gross_amount_minor).toBe("100");
+    expect(buyerEvents.items[0]?.gross_buyer_debit_minor).toBe("100");
+    expect(buyerEvents.items[0]?.buyer_debit_minor).toBe("100");
+    expect(buyerEvents.items[0]?.protocol_fee_minor).toBe("2");
+    expect(buyerEvents.items[0]?.rounding_delta_minor).toBe("0");
     expect(buyerEventsNext.items[0]?.metered_usage_id).toBe("mu_2");
     expect(buyerBatches.items[0]?.settlement_batch_id).toBe("msb_1");
+    expect(buyerBatches.items[0]?.provider_gross_amount_minor).toBe("100");
+    expect(buyerBatches.items[0]?.provider_receivable_minor).toBe("98");
+    expect(buyerBatches.items[0]?.buyer_debit_minor).toBe("100");
+    expect(buyerBatches.items[0]?.protocol_fee_minor).toBe("2");
+    expect(buyerBatches.items[0]?.rounding_delta_minor).toBe("0");
+    expect(
+      Number(buyerBatches.items[0]?.provider_gross_amount_minor) - Number(buyerBatches.items[0]?.protocol_fee_minor),
+    ).toBe(Number(buyerBatches.items[0]?.provider_receivable_minor));
+    expect(buyerBatches.items[0]?.buyer_debit_minor).toBe(buyerBatches.items[0]?.provider_gross_amount_minor);
     expect(providerBatches.items[0]?.settlement_batch_id).toBe("msb_1");
     expect(providerBatchesNext.items[0]?.settlement_batch_id).toBe("msb_2");
     expect(calls.map((call) => call.url)).toEqual([

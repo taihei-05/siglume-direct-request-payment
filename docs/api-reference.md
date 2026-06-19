@@ -537,15 +537,20 @@ accepted by these user-authenticated routes.
 This client creates SDRP Standard Payment requirements for external merchant
 checkout flows. Micro Payment and Nano Payment are applied automatically by
 amount and settled on account-assigned weekly / monthly slots, or earlier when a
-buyer/payee/token batch reaches JPY 10,000 / USD 100.00; they are not created
-explicitly through this client. Use the statement APIs below to see open-period
-usage, the close time, the final-notice schedule, and settled / unsettled /
-past-due revenue.
+buyer / provider / token / pricing-band batch reaches JPY 10,000 / USD 100.00;
+they are not created explicitly through this client. Use the statement APIs
+below to see open-period usage, the close time, the final-notice schedule, and
+settled / unsettled / past-due revenue.
 
 Standard Payment requirements include `fee_bps` from the Siglume platform. The
 SDK does not calculate merchant plan fees locally. For Micro / Nano, use the
 statement API amount fields (`protocol_fee_minor`, `gross_buyer_debit_minor`,
-`buyer_debit_minor`, and `rounding_delta_minor`); see [Pricing](./pricing.md).
+`buyer_debit_minor`, `provider_gross_amount_minor`, and
+`rounding_delta_minor`); see [Pricing](./pricing.md).
+`provider_gross_amount_minor` is canonical; `provider_usage_amount_minor` and
+`gross_buyer_debit_minor` are compatibility aliases of the same provider gross
+amount. Micro / Nano protocol fees are seller-borne, so
+`buyer_debit_minor = provider_gross_amount_minor`.
 
 ```ts
 const siglume = new DirectRequestPaymentClient({
@@ -772,6 +777,7 @@ returns `{items, next_cursor}`. When `next_cursor` is non-null, pass it back as
 Buyer-facing amount names are centered on the debit:
 
 - `estimated_buyer_debit_minor`
+- `provider_gross_amount_minor`
 - `provider_usage_amount_minor`
 - `gross_buyer_debit_minor`
 - `buyer_debit_minor`
@@ -837,6 +843,7 @@ back as `cursor` to fetch the next page.
 
 Provider-facing amount names:
 
+- `provider_gross_amount_minor`
 - `provider_usage_amount_minor`
 - `provider_receivable_minor`
 - `gross_buyer_debit_minor`
@@ -892,13 +899,14 @@ curl https://siglume.com/v1/sdrp/metered/provider/settlement-batches/<batch-id>/
 Columns:
 
 ```text
-metered_usage_id,created_at,plan_type,settlement_cadence,period_start,period_end,listing_id,capability_key,operation_key,currency,token_symbol,provider_usage_amount_minor,provider_receivable_minor,protocol_fee_minor,gross_buyer_debit_minor,rounding_delta_minor,buyer_debit_minor,status,settlement_batch_id,buyer_period_ref
+metered_usage_id,created_at,plan_type,settlement_cadence,period_start,period_end,listing_id,capability_key,operation_key,currency,token_symbol,provider_gross_amount_minor,provider_usage_amount_minor,provider_receivable_minor,protocol_fee_minor,gross_buyer_debit_minor,rounding_delta_minor,buyer_debit_minor,status,settlement_batch_id,buyer_period_ref
 ```
 
 The CSV uses `buyer_period_ref`, not raw buyer account identifiers.
 The CSV keeps the `rounding_delta_minor` column for schema stability, but usage
-rows report `0`; the authoritative rounding adjustment is the settlement batch
-field `rounding_delta_minor`.
+rows report `0`. If a batch-level `rounding_delta_minor` appears in historical
+or internal records, do not add it to buyer debit and do not allocate it to
+provider revenue.
 
 Micro / Nano amount fields are decimal minor-unit strings. In JavaScript, do
 not aggregate them with `number`; parse them with a decimal library. In Python,
@@ -950,14 +958,17 @@ Returns the prepared-transaction payload object.
 Returns the bare HMAC-SHA256 hex digest over `"<timestamp>.<body>"`. This is the
 primitive `buildWebhookSignatureHeader` / `verifyWebhookSignature` use. In
 TypeScript `options` is `{ timestamp: number }`; in Python `timestamp` is a
-keyword-only `int`. `body` may be raw bytes, a string, or a JSON object.
+keyword-only `int`. `body` may be raw bytes, a string, or a JSON object when you
+are building a test signature. Production webhook verification must use the
+exact raw request body.
 
 ### `buildWebhookSignatureHeader(secret, body, options)` / `build_webhook_signature_header(secret, body, *, timestamp=None)`
 
 Returns a `t=<timestamp>,v1=<signature>` header string. Mainly for tests /
 mocking inbound webhooks. In TypeScript `options` is an optional
 `{ timestamp?: number }` (defaults to now); in Python `timestamp` is a
-keyword-only optional `int`.
+keyword-only optional `int`. This helper accepts JSON objects for tests; the
+verification helpers below do not.
 
 ### `verifyWebhookSignature(secret, body, signature_header, options)` / `verify_webhook_signature(secret, body, signature_header, *, tolerance_seconds=300, now=None)`
 
@@ -966,7 +977,9 @@ Verifies the `Siglume-Signature` header against the raw `body`. Throws
 the timestamp is outside tolerance or the signature does not match. In TypeScript
 `options` is `{ tolerance_seconds?, now? }`; in Python those are keyword-only
 (`tolerance_seconds` defaults to `DEFAULT_WEBHOOK_TOLERANCE_SECONDS` = 300).
-Returns `{ timestamp, signature }`.
+Returns `{ timestamp, signature }`. Pass the exact raw request body bytes or raw
+body string captured by your web framework. Passing a parsed JSON object is
+rejected because re-stringifying changes the signed bytes.
 
 ### `parseDirectRequestPaymentWebhookEvent(payload)` / `parse_direct_request_payment_webhook_event(payload)`
 
@@ -1029,7 +1042,8 @@ return `kind: "unknown"` with a machine-readable `reason`.
 
 Verifies the signature and parses the event in one call. Returns
 `{ event, verification }` (TS) / `{"event": ..., "verification": ...}` (Py). Same
-options shape as `verifyWebhookSignature` (keyword-only in Python).
+options shape as `verifyWebhookSignature` (keyword-only in Python). The `body`
+argument is raw bytes or a raw body string only; do not pass parsed JSON.
 
 Webhook-verification trio (typical inbound webhook handler):
 
@@ -1056,6 +1070,45 @@ verified = verify_direct_request_payment_webhook(
 event = verified["event"]
 # event["type"] == "direct_payment.confirmed"; use classify_direct_payment_confirmation(event)
 # or equivalent fail-closed field checks before marking an order paid or fulfilled.
+```
+
+Express example:
+
+```ts
+app.post("/siglume/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  const { event } = await verifyDirectRequestPaymentWebhook(
+    process.env.SIGLUME_WEBHOOK_SECRET!,
+    req.body,
+    req.header("siglume-signature") ?? "",
+  );
+  res.json({ received: event.id });
+});
+```
+
+FastAPI example:
+
+```py
+@app.post("/siglume/webhook")
+async def siglume_webhook(request: Request):
+    raw_body = await request.body()
+    verified = verify_direct_request_payment_webhook(
+        os.environ["SIGLUME_WEBHOOK_SECRET"],
+        raw_body,
+        request.headers.get("siglume-signature", ""),
+    )
+    return {"received": verified["event"]["id"]}
+```
+
+Django example:
+
+```py
+def siglume_webhook(request):
+    verified = verify_direct_request_payment_webhook(
+        os.environ["SIGLUME_WEBHOOK_SECRET"],
+        request.body,
+        request.headers.get("Siglume-Signature", ""),
+    )
+    return JsonResponse({"received": verified["event"]["id"]})
 ```
 
 ## Exported Constants

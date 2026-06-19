@@ -9,7 +9,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.13";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.15";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain";
@@ -20,6 +20,8 @@ export type DirectRequestPaymentCurrency = "JPY" | "USD";
 export type DirectRequestPaymentToken = "JPYC" | "USDC";
 export type DirectRequestPaymentMeteredPlanType = "micro" | "nano";
 export type DirectRequestPaymentMinorAmount = string;
+export type DirectRequestPaymentRawWebhookBody = Uint8Array | ArrayBuffer | string;
+export type DirectRequestPaymentWebhookSignatureBody = DirectRequestPaymentRawWebhookBody | Record<string, unknown>;
 
 export interface DirectRequestPaymentBuyerMeteredQuery {
   plan_type?: DirectRequestPaymentMeteredPlanType | string;
@@ -60,9 +62,12 @@ export interface DirectRequestPaymentBuyerUsageEvent {
   operation_key?: string | null;
   currency: string;
   token_symbol: string;
+  provider_gross_amount_minor: DirectRequestPaymentMinorAmount;
   provider_usage_amount_minor: DirectRequestPaymentMinorAmount;
   protocol_fee_minor: DirectRequestPaymentMinorAmount;
   gross_buyer_debit_minor: DirectRequestPaymentMinorAmount;
+  buyer_debit_minor?: DirectRequestPaymentMinorAmount;
+  rounding_delta_minor?: DirectRequestPaymentMinorAmount;
   status: string;
   period_start?: string | null;
   period_end?: string | null;
@@ -82,10 +87,13 @@ export interface DirectRequestPaymentProviderUsageEvent {
   operation_key?: string | null;
   currency: string;
   token_symbol: string;
+  provider_gross_amount_minor: DirectRequestPaymentMinorAmount;
   provider_usage_amount_minor: DirectRequestPaymentMinorAmount;
   provider_receivable_minor: DirectRequestPaymentMinorAmount;
   protocol_fee_minor: DirectRequestPaymentMinorAmount;
   gross_buyer_debit_minor: DirectRequestPaymentMinorAmount;
+  buyer_debit_minor?: DirectRequestPaymentMinorAmount;
+  rounding_delta_minor?: DirectRequestPaymentMinorAmount;
   status: string;
   period_start?: string | null;
   period_end?: string | null;
@@ -121,6 +129,7 @@ export interface DirectRequestPaymentSettlementBatch {
   gross_buyer_debit_minor?: DirectRequestPaymentMinorAmount;
   rounding_delta_minor?: DirectRequestPaymentMinorAmount;
   buyer_debit_minor?: DirectRequestPaymentMinorAmount;
+  provider_gross_amount_minor?: DirectRequestPaymentMinorAmount;
   provider_usage_amount_minor?: DirectRequestPaymentMinorAmount;
   provider_receivable_minor?: DirectRequestPaymentMinorAmount;
   settled_provider_receivable_minor?: DirectRequestPaymentMinorAmount;
@@ -1230,7 +1239,7 @@ export function buildPreparedTransactionExecutionPayload(
 
 export async function computeWebhookSignature(
   signing_secret: string,
-  body: Uint8Array | ArrayBuffer | string | Record<string, unknown>,
+  body: DirectRequestPaymentWebhookSignatureBody,
   options: { timestamp: number },
 ): Promise<string> {
   if (!signing_secret) {
@@ -1247,7 +1256,7 @@ export async function computeWebhookSignature(
 
 export async function buildWebhookSignatureHeader(
   signing_secret: string,
-  body: Uint8Array | ArrayBuffer | string | Record<string, unknown>,
+  body: DirectRequestPaymentWebhookSignatureBody,
   options: { timestamp?: number } = {},
 ): Promise<string> {
   const timestamp = Math.trunc(options.timestamp ?? Date.now() / 1000);
@@ -1257,7 +1266,7 @@ export async function buildWebhookSignatureHeader(
 
 export async function verifyWebhookSignature(
   signing_secret: string,
-  body: Uint8Array | ArrayBuffer | string | Record<string, unknown>,
+  body: DirectRequestPaymentRawWebhookBody,
   signature_header: string,
   options: { tolerance_seconds?: number; now?: number } = {},
 ): Promise<WebhookSignatureVerification> {
@@ -1267,7 +1276,8 @@ export async function verifyWebhookSignature(
   if (Math.abs(nowSeconds - timestamp) > toleranceSeconds) {
     throw new SiglumeWebhookSignatureError("Webhook timestamp is outside the allowed tolerance window.");
   }
-  const expected = await computeWebhookSignature(signing_secret, body, { timestamp });
+  const rawBody = rawWebhookBodyBytes(body);
+  const expected = await computeWebhookSignature(signing_secret, rawBody, { timestamp });
   if (!(await timingSafeEqualHex(expected, signature))) {
     throw new SiglumeWebhookSignatureError("Webhook signature did not match.");
   }
@@ -1441,12 +1451,12 @@ export function classifyDirectPaymentConfirmation(
 
 export async function verifyDirectRequestPaymentWebhook(
   signing_secret: string,
-  body: Uint8Array | ArrayBuffer | string | Record<string, unknown>,
+  body: DirectRequestPaymentRawWebhookBody,
   signature_header: string,
   options: { tolerance_seconds?: number; now?: number } = {},
 ): Promise<{ event: DirectRequestPaymentWebhookEvent; verification: WebhookSignatureVerification }> {
   const verification = await verifyWebhookSignature(signing_secret, body, signature_header, options);
-  const text = new TextDecoder().decode(bodyBytes(body));
+  const text = new TextDecoder().decode(rawWebhookBodyBytes(body));
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -1708,7 +1718,7 @@ function envValue(name: string): string | undefined {
   return value && value.trim() ? value.trim() : undefined;
 }
 
-function bodyBytes(body: Uint8Array | ArrayBuffer | string | Record<string, unknown>): Uint8Array {
+function bodyBytes(body: DirectRequestPaymentWebhookSignatureBody): Uint8Array {
   if (body instanceof Uint8Array) {
     return body;
   }
@@ -1722,6 +1732,21 @@ function bodyBytes(body: Uint8Array | ArrayBuffer | string | Record<string, unkn
     return new TextEncoder().encode(JSON.stringify(body));
   }
   throw new SiglumeWebhookPayloadError("Webhook body must be raw bytes, a string, or a JSON object.");
+}
+
+function rawWebhookBodyBytes(body: unknown): Uint8Array {
+  if (body instanceof Uint8Array) {
+    return body;
+  }
+  if (body instanceof ArrayBuffer) {
+    return new Uint8Array(body);
+  }
+  if (typeof body === "string") {
+    return new TextEncoder().encode(body);
+  }
+  throw new SiglumeWebhookPayloadError(
+    "Webhook verification requires the exact raw request body bytes or raw body string; JSON objects are only accepted by buildWebhookSignatureHeader for tests.",
+  );
 }
 
 function parseSignatureHeader(signatureHeader: string): { timestamp: number; signature: string } {

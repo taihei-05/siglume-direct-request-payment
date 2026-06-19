@@ -53,6 +53,24 @@ describe("Direct Request Payment webhooks", () => {
     );
   });
 
+  it("rejects JSON objects for webhook verification even though the test header builder accepts them", async () => {
+    const event = {
+      id: "evt_123",
+      type: "direct_payment.confirmed",
+      api_version: "2026-06-11",
+      occurred_at: "2026-06-11T00:00:00Z",
+      data: { mode: "external_402" },
+    };
+    const header = await buildWebhookSignatureHeader("whsec_test", event, { timestamp: 1800000000 });
+
+    await expect(
+      verifyWebhookSignature("whsec_test", event as unknown as string, header, { now: 1800000000 }),
+    ).rejects.toBeInstanceOf(SiglumeWebhookPayloadError);
+    await expect(
+      verifyDirectRequestPaymentWebhook("whsec_test", event as unknown as string, header, { now: 1800000000 }),
+    ).rejects.toBeInstanceOf(SiglumeWebhookPayloadError);
+  });
+
   it("accepts metered settlement confirmation machine fields", async () => {
     const event = {
       id: "evt_metered",

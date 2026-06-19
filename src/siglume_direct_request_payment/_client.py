@@ -25,7 +25,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.14"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.15"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
 DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain"
@@ -866,7 +866,7 @@ def build_webhook_signature_header(
 
 def verify_webhook_signature(
     signing_secret: str,
-    body: bytes | str | Mapping[str, Any],
+    body: bytes | str,
     signature_header: str,
     *,
     tolerance_seconds: int = DEFAULT_WEBHOOK_TOLERANCE_SECONDS,
@@ -878,7 +878,7 @@ def verify_webhook_signature(
     now_seconds = int(now if now is not None else time.time())
     if abs(now_seconds - timestamp) > tolerance:
         raise SiglumeWebhookSignatureError("Webhook timestamp is outside the allowed tolerance window.")
-    expected = compute_webhook_signature(signing_secret, body, timestamp=timestamp)
+    expected = compute_webhook_signature(signing_secret, _raw_body_bytes(body), timestamp=timestamp)
     signature = str(parsed["signature"])
     if not hmac.compare_digest(expected, signature):
         raise SiglumeWebhookSignatureError("Webhook signature did not match.")
@@ -1046,7 +1046,7 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
 
 def verify_direct_request_payment_webhook(
     signing_secret: str,
-    body: bytes | str | Mapping[str, Any],
+    body: bytes | str,
     signature_header: str,
     *,
     tolerance_seconds: int = DEFAULT_WEBHOOK_TOLERANCE_SECONDS,
@@ -1059,7 +1059,7 @@ def verify_direct_request_payment_webhook(
         tolerance_seconds=tolerance_seconds,
         now=now,
     )
-    raw = _body_bytes(body).decode("utf-8")
+    raw = _raw_body_bytes(body).decode("utf-8")
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -1265,6 +1265,16 @@ def _body_bytes(body: bytes | str | Mapping[str, Any]) -> bytes:
     if isinstance(body, Mapping):
         return json.dumps(dict(body), separators=(",", ":")).encode("utf-8")
     raise SiglumeWebhookPayloadError("Webhook body must be raw bytes, a string, or a JSON object.")
+
+
+def _raw_body_bytes(body: Any) -> bytes:
+    if isinstance(body, bytes):
+        return body
+    if isinstance(body, str):
+        return body.encode("utf-8")
+    raise SiglumeWebhookPayloadError(
+        "Webhook verification requires the exact raw request body bytes or raw body string; JSON objects are only accepted by build_webhook_signature_header for tests."
+    )
 
 
 def _parse_signature_header(signature_header: str) -> dict[str, Any]:
