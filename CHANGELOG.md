@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.4 - 2026-06-19
+
+Correctness and security hardening release for the SDRP Direct Request Payment
+SDK manual and public helpers.
+
+- Clarified that Standard / Micro / Nano are selected by amount, removed the
+  unsupported "force Standard for immediate finality" implication, and changed
+  Hosted Checkout Standard examples to Standard-band amounts.
+- Removed the Express sample route that accepted a buyer `Authorization` header
+  on the merchant server; human web checkout now redirects through Hosted
+  Checkout, while agent payment remains buyer-side direct API/tool work.
+- Documented Micro / Nano decimal fee rounding, `rounding_delta_minor`, budget
+  reservation versus token locking, no guaranteed `past_due` collection, HTTP
+  result accounting, and operational status handling.
+- Added typed TypeScript and named Python helpers for Micro / Nano statement
+  APIs.
+- Hardened TS/Python integer and `checkout_allowed_origins` validation.
+
 ## 0.4.3 - 2026-06-19
 
 Documentation-only release for SDRP Micro / Nano operations.

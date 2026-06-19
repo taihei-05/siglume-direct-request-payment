@@ -308,8 +308,10 @@ Input:
   Hosted Checkout (open-redirect defense). A Hosted Checkout `success_url` /
   `cancel_url` must be on a registered origin; the origin of
   `webhook_callback_url` is auto-allowed in addition. Each entry must be an
-  absolute origin such as `https://shop.example.com`; entries are normalized to
-  bare, lowercased origins and deduped.
+  absolute origin such as `https://shop.example.com`; production origins must
+  use `https`. Development `http` origins are accepted only for `localhost`,
+  `127.0.0.1`, or `[::1]`. Userinfo is rejected. Entries are normalized to bare,
+  lowercased origins and deduped.
 
 In addition to the `setupMerchant` inputs above, `setupCheckout` accepts these
 orchestration toggles:
@@ -371,7 +373,7 @@ POST /v1/sdrp/direct-payments/checkout-sessions
 ```ts
 const session = await merchant.createCheckoutSession({
   merchant: "example_merchant",
-  amount_minor: 500,
+  amount_minor: 1200,
   currency: "JPY",
   nonce: order.id,
   success_url: "https://www.your-shop.com/thanks",
@@ -383,7 +385,7 @@ const session = await merchant.createCheckoutSession({
 ```py
 session = merchant.create_checkout_session(
     merchant="example_merchant",
-    amount_minor=500,
+    amount_minor=1200,
     currency="JPY",
     nonce=order["id"],
     success_url="https://www.your-shop.com/thanks",
@@ -505,8 +507,10 @@ created explicitly through this client. Use the statement APIs below to see
 open-period usage, the close time, the final-notice schedule, and settled /
 unsettled / past-due revenue.
 
-Payment requirements include `fee_bps` from the Siglume platform. The SDK does
-not calculate merchant plan fees locally; see [Pricing](./pricing.md).
+Standard Payment requirements include `fee_bps` from the Siglume platform. The
+SDK does not calculate merchant plan fees locally. For Micro / Nano, use the
+statement API amount fields (`protocol_fee_minor`, `gross_buyer_debit_minor`,
+`buyer_debit_minor`, and `rounding_delta_minor`); see [Pricing](./pricing.md).
 
 ```ts
 const siglume = new DirectRequestPaymentClient({
@@ -640,9 +644,9 @@ base URL configured on `DirectRequestPaymentClient`.
 `/sdrp/metered/my-summary`. The helper expects a JSON response. Use raw
 `fetch`, `curl`, or your HTTP client for CSV exports.
 
-Python does not expose a public generic request helper in this release. Use
-ordinary HTTPS requests with the same Siglume bearer token for endpoints that do
-not yet have a named Python SDK method.
+Python does not expose a public generic request helper. Use the named Python
+methods documented below for Micro / Nano statements, and ordinary HTTPS
+requests for endpoints that do not yet have a named Python SDK method.
 
 ## Metered Statement APIs
 
@@ -667,13 +671,16 @@ Common query parameters:
 TypeScript:
 
 ```ts
-const summary = await siglume.request<{
-  role: "buyer";
-  open_periods: Array<Record<string, unknown>>;
-  settlement_batches: Array<Record<string, unknown>>;
-  past_due_blocks: Array<Record<string, unknown>>;
-  balance_sufficiency: Record<string, unknown>;
-}>("GET", "/sdrp/metered/my-summary?plan_type=micro&token_symbol=JPYC");
+const summary = await siglume.getBuyerMeteredSummary({
+  plan_type: "micro",
+  token_symbol: "JPYC",
+});
+```
+
+Python:
+
+```py
+summary = siglume.get_buyer_metered_summary(plan_type="micro", token_symbol="JPYC")
 ```
 
 Use `open_periods` for current-period estimated debit,
@@ -686,6 +693,14 @@ Use `open_periods` for current-period estimated debit,
 GET /v1/sdrp/metered/my-usage-events
 GET /v1/sdrp/metered/my-settlement-batches
 ```
+
+SDK methods:
+
+- TypeScript: `listBuyerUsageEvents(...)`, `listBuyerSettlementBatches(...)`
+- Python: `list_buyer_usage_events(...)`, `list_buyer_settlement_batches(...)`
+
+Each accepts `plan_type`, `token_symbol`, `status`, and `limit`, and returns
+`{items, next_cursor}`.
 
 Buyer-facing amount names are centered on the debit:
 
@@ -711,16 +726,16 @@ Common query parameters:
 TypeScript:
 
 ```ts
-const providerSummary = await siglume.request<{
-  role: "provider";
-  timezone: string;
-  open_periods: Array<Record<string, unknown>>;
-  periods: Array<Record<string, unknown>>;
-  totals: Record<string, string>;
-}>(
-  "GET",
-  "/sdrp/metered/provider/summary?plan_type=micro&token_symbol=JPYC",
-);
+const providerSummary = await siglume.getProviderMeteredSummary({
+  plan_type: "micro",
+  token_symbol: "JPYC",
+});
+```
+
+Python:
+
+```py
+provider_summary = siglume.get_provider_metered_summary(plan_type="micro", token_symbol="JPYC")
 ```
 
 Use `open_periods` for current-period expected revenue, `periods` for closed
@@ -735,6 +750,18 @@ GET /v1/sdrp/metered/provider/usage-events
 GET /v1/sdrp/metered/provider/settlement-batches
 GET /v1/sdrp/metered/provider/settlement-batches/{settlement_batch_id}
 ```
+
+SDK methods:
+
+- TypeScript: `listProviderUsageEvents(...)`,
+  `listProviderSettlementBatches(...)`, `getProviderSettlementBatch(...)`
+- Python: `list_provider_usage_events(...)`,
+  `list_provider_settlement_batches(...)`, `get_provider_settlement_batch(...)`
+
+Provider list methods accept `plan_type`, `token_symbol`, `status`,
+`listing_id`, `capability_key`, and `limit`. Detail accepts
+`settlement_batch_id`, plus optional `listing_id` and `capability_key`. List
+methods return `{items, next_cursor}`.
 
 Provider-facing amount names:
 
@@ -910,6 +937,7 @@ Both packages export these importable constants:
 | `DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND` | `sdrp_direct_payment_allowance` |
 | `DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE` | `sdrp_direct_payment_requirement` |
 | `DEFAULT_WEBHOOK_TOLERANCE_SECONDS` | `300` |
+| `DIRECT_REQUEST_PAYMENT_SDK_VERSION` | package version string |
 
 The `external_402` / `siglume-external-402-*` values are legacy wire-compat
 identifiers, not public product names (see the README "Compatibility Notes").

@@ -19,8 +19,8 @@ Siglume applies the settlement band from the amount.
 
 | Band | Cadence | Period close | First debit attempt | Revenue recognition |
 | --- | --- | --- | --- | --- |
-| Micro Payment | Weekly | Account-assigned fixed weekly slot in the buyer settlement timezone | After final debit notice delivery and the fixed close-plus-3-day site | Only after the aggregated settlement confirms on-chain |
-| Nano Payment | Monthly | Account-assigned fixed monthly slot in the buyer settlement timezone | After final debit notice delivery and the fixed close-plus-3-day site | Only after the aggregated settlement confirms on-chain |
+| Micro Payment | Weekly | Account-assigned fixed weekly slot in the buyer settlement timezone | After final debit notice delivery and the fixed close-plus-3-day window | Only after the aggregated settlement confirms on-chain |
+| Nano Payment | Monthly | Account-assigned fixed monthly slot in the buyer settlement timezone | After final debit notice delivery and the fixed close-plus-3-day window | Only after the aggregated settlement confirms on-chain |
 
 The schedule is platform-managed. Buyers and providers can see the assigned
 period and scheduled attempt times through the statement APIs, but cannot choose
@@ -45,10 +45,8 @@ token. Provider responses never include raw `buyer_user_id`, buyer email, or raw
 wallet identifiers. Use `buyer_period_ref` to reconcile repeated usage by the
 same buyer within the provider's statement period without receiving buyer PII.
 
-TypeScript can call JSON statement endpoints with
-`DirectRequestPaymentClient.request<T>()`. Python does not expose a public
-generic request helper in this release; use ordinary HTTPS requests with the
-same bearer token.
+TypeScript and Python expose named helpers for the JSON statement endpoints.
+Use raw HTTPS only for the CSV export.
 
 ## Buyer Statement APIs
 
@@ -63,19 +61,19 @@ const siglume = new DirectRequestPaymentClient({
   auth_token: buyerSiglumeBearerToken,
 });
 
-const summary = await siglume.request<{
-  role: "buyer";
-  open_periods: Array<Record<string, unknown>>;
-  settlement_batches: Array<Record<string, unknown>>;
-  past_due_blocks: Array<Record<string, unknown>>;
-  balance_sufficiency: Record<string, unknown>;
-}>(
-  "GET",
-  "/sdrp/metered/my-summary?plan_type=micro&token_symbol=JPYC",
-);
+const summary = await siglume.getBuyerMeteredSummary({
+  plan_type: "micro",
+  token_symbol: "JPYC",
+});
 ```
 
-Raw HTTP / Python:
+Python:
+
+```py
+summary = siglume.get_buyer_metered_summary(plan_type="micro", token_symbol="JPYC")
+```
+
+Raw HTTP:
 
 ```bash
 curl https://siglume.com/v1/sdrp/metered/my-summary?plan_type=micro\&token_symbol=JPYC \
@@ -92,6 +90,28 @@ open period. It can report `wallet_balance_checked: false` or
 `allowance_checked: false`; in that case it is guidance, not a final on-chain
 guarantee.
 
+## Amount Rounding
+
+Micro / Nano usage rows keep provider price and protocol fee values as decimal
+minor-unit amounts. This allows Nano fees such as about JPY 0.2 per usage to be
+accounted without rounding every event.
+
+Rounding happens once when a settlement batch is created:
+
+```text
+provider_usage_amount_minor = sum(provider price minor units for accepted usage)
+protocol_fee_minor = sum(Micro/Nano fixed protocol fee minor units for accepted usage)
+gross_buyer_debit_minor = provider_usage_amount_minor + protocol_fee_minor
+buyer_debit_minor = ceil(gross_buyer_debit_minor)
+rounding_delta_minor = buyer_debit_minor - gross_buyer_debit_minor
+```
+
+`rounding_delta_minor` belongs to the buyer debit and Siglume's rounding
+adjustment accounting for that batch. It is not provider revenue. Provider
+reports should use `provider_receivable_minor`,
+`settled_provider_receivable_minor`, `unsettled_provider_receivable_minor`, and
+`past_due_provider_receivable_minor`.
+
 ### Usage Events
 
 ```text
@@ -104,6 +124,9 @@ Query parameters:
 - `token_symbol`: `JPYC` or `USDC`
 - `status`: for example `pending_settlement`, `settled`, `failed_chargeable`
 - `limit`: 1 to 500
+
+SDK methods: `listBuyerUsageEvents(...)` / `list_buyer_usage_events(...)`.
+They return `{items, next_cursor}`.
 
 Buyer usage event amount fields:
 
@@ -126,6 +149,9 @@ Query parameters:
 - `status`: `notice_pending`, `ready`, `submitted`, `settled`, `failed`,
   `past_due`, or `notice_delivery_failed`
 - `limit`: 1 to 200
+
+SDK methods: `listBuyerSettlementBatches(...)` /
+`list_buyer_settlement_batches(...)`. They return `{items, next_cursor}`.
 
 Buyer batch amount fields:
 
@@ -157,20 +183,19 @@ const siglume = new DirectRequestPaymentClient({
   auth_token: providerSiglumeBearerToken,
 });
 
-const providerSummary = await siglume.request<{
-  role: "provider";
-  timezone: string;
-  filters: Record<string, unknown>;
-  open_periods: Array<Record<string, unknown>>;
-  periods: Array<Record<string, unknown>>;
-  totals: Record<string, string>;
-}>(
-  "GET",
-  "/sdrp/metered/provider/summary?plan_type=micro&token_symbol=JPYC",
-);
+const providerSummary = await siglume.getProviderMeteredSummary({
+  plan_type: "micro",
+  token_symbol: "JPYC",
+});
 ```
 
-Raw HTTP / Python:
+Python:
+
+```py
+provider_summary = siglume.get_provider_metered_summary(plan_type="micro", token_symbol="JPYC")
+```
+
+Raw HTTP:
 
 ```bash
 curl https://siglume.com/v1/sdrp/metered/provider/summary?plan_type=micro\&token_symbol=JPYC \
@@ -210,6 +235,9 @@ Query parameters:
 - `capability_key`
 - `limit`: 1 to 500
 
+SDK methods: `listProviderUsageEvents(...)` /
+`list_provider_usage_events(...)`. They return `{items, next_cursor}`.
+
 Provider usage event fields include:
 
 - `provider_receivable_minor`
@@ -241,6 +269,10 @@ Query parameters for the list endpoint:
 - `limit`: 1 to 200
 
 The detail endpoint also accepts `listing_id` and `capability_key`.
+
+SDK methods: `listProviderSettlementBatches(...)` /
+`list_provider_settlement_batches(...)` and `getProviderSettlementBatch(...)` /
+`get_provider_settlement_batch(...)`. List methods return `{items, next_cursor}`.
 
 Important batch fields:
 
@@ -325,6 +357,40 @@ request, and the request is not charged.
 Public failure fields are sanitized. Show `failure_reason_code`,
 `failure_reason_label`, `failure_reason_help`, and `support_reference` to users
 or support staff. Do not depend on raw platform failure messages.
+
+## Usage Accounting by Result
+
+Use idempotency keys for every paid operation. Siglume records one chargeable
+usage event per idempotency key within the same buyer / listing / operation
+scope.
+
+| Case | Provider API executed? | Usage counted? | Integration rule |
+| --- | --- | --- | --- |
+| Budget gate rejected | No | No | Treat the request as rejected with no charge. The provider must not fulfill work. |
+| Provider returns 2xx | Yes | Yes | Chargeable usage is recorded once. Fulfill idempotently by order id / requirement id / idempotency key. |
+| Provider returns 4xx | Yes | Usually no, unless your integration deliberately marks the work as accepted before returning the 4xx | Prefer returning 2xx for completed work and 4xx only for unfulfilled client errors. Document any deliberate `failed_chargeable` mapping in your provider. |
+| Provider returns 5xx | Yes | No by default | Treat as unfulfilled; retry from the caller with the same idempotency key if safe. |
+| Provider timeout | Unknown | No by default unless the provider later confirms successful work under the same idempotency key | Reconcile by idempotency key before retrying side effects. |
+| Client disconnects after provider success | Yes | Yes if the provider completed work and Siglume observed/records that success | The client may see failure while the provider completed work; use idempotency to avoid duplicate fulfillment. |
+| Duplicate idempotency key | Maybe | One usage event | Return/reconcile the first outcome; do not create another chargeable event. |
+| Usage cancellation/refund before settlement | Depends on platform support and status | Not self-service in this SDK release | Contact support or use the platform path Siglume provides for the account; do not mutate CSV/statement totals locally. |
+| Refund/adjustment after settlement | Settled on-chain | Not self-service in this SDK release | Handle through an explicit adjustment/refund process; do not reverse settled revenue by editing statements. |
+
+`failed_chargeable` means the provider-side work is treated as completed or
+economically accepted even though the caller may have observed a failure state.
+It is for cases such as "provider completed the operation, but the client
+connection failed before receiving the response." It is not a catch-all for
+provider 5xx errors. Integrations should make this state rare and defensible by
+using stable idempotency keys and provider-side completion records.
+
+## Operational Status Handling
+
+| Status | Buyer / provider view | Automatic processing | Operator action | Integration guidance |
+| --- | --- | --- | --- | --- |
+| `notice_delivery_failed` | Buyer debit is not yet allowed; provider revenue remains unsettled | Notice delivery can be retried or reviewed | Required if delivery keeps failing | Do not attempt your own debit notice or mark revenue settled. Show support context only. |
+| `submitted_reconcile_required` | A settlement submission exists but final on-chain outcome is not yet reconciled | Reconciliation may complete if a receipt is found | Required if reconciliation stalls | Do not retry payment yourself. Wait for `settled`, `failed_retryable`, or `past_due`. |
+| `past_due` | Buyer has an unresolved settlement block; provider sees past-due revenue | New Micro / Nano usage for the same buyer / plan / token is paused | Operator requeue or manual resolution only | Do not promise collection or provider payment. Ask the buyer to repair balance / allowance / BudgetVault / caps and reference `support_reference`. |
+| `failed_chargeable` | Usage is still chargeable because provider work was accepted or completed | Included in later settlement attempts | Review if the provider disputes completion | Keep fulfillment idempotent and preserve evidence keyed by idempotency key. |
 
 ## Operational Recipes
 

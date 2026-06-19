@@ -1,13 +1,15 @@
 import express from "express";
 import {
-  createDirectRequestPaymentChallenge,
-  DirectRequestPaymentClient,
+  DirectRequestPaymentMerchantClient,
   verifyDirectRequestPaymentWebhook,
 } from "@siglume/direct-request-payment";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const merchantKey = process.env.SIGLUME_DIRECT_PAYMENT_MERCHANT || "example_merchant";
+const siglumeMerchant = new DirectRequestPaymentMerchantClient({
+  auth_token: process.env.SIGLUME_MERCHANT_AUTH_TOKEN,
+});
 
 // Use JSON for normal routes. Use raw body only on the webhook route.
 app.use((req, res, next) => {
@@ -35,47 +37,27 @@ app.post("/checkout/siglume/start", asyncRoute(async (req, res) => {
   }
 
   order.payment_attempt = Number(order.payment_attempt || 0) + 1;
-  const challenge = await createDirectRequestPaymentChallenge({
+  const session = await siglumeMerchant.createCheckoutSession({
     merchant: merchantKey,
     amount_minor: order.amount_minor,
     currency: order.currency,
-    secret: process.env.SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET!,
     nonce: `${order.id}-attempt_${order.payment_attempt}`,
+    success_url: `${process.env.SHOP_PUBLIC_ORIGIN || "https://shop.example.com"}/thanks`,
+    cancel_url: `${process.env.SHOP_PUBLIC_ORIGIN || "https://shop.example.com"}/cart`,
+    metadata: { order_id: order.id },
   });
 
-  order.siglume_challenge_hash = challenge.challenge_hash;
+  order.siglume_challenge_hash = session.challenge_hash;
+  order.siglume_checkout_session_id = session.session_id;
   order.siglume_payment_status = "pending";
 
   res.json({
     order_id: order.id,
     amount_minor: order.amount_minor,
     currency: order.currency,
-    siglume_challenge: challenge.challenge,
+    checkout_url: session.checkout_url,
+    session_id: session.session_id,
   });
-}));
-
-app.post("/checkout/siglume/pay", asyncRoute(async (req, res) => {
-  const order = orders.get(String(req.body.order_id || ""));
-  if (!order) {
-    res.status(404).json({ error: "order_not_found" });
-    return;
-  }
-
-  // In production, obtain this from the authenticated buyer's Siglume session
-  // or a hosted Siglume payment confirmation flow. Do not use a merchant secret
-  // to charge a customer wallet.
-  const siglume = new DirectRequestPaymentClient({
-    auth_token: String(req.headers.authorization || "").replace(/^Bearer\s+/i, ""),
-  });
-
-  const requirement = await siglume.createPaymentRequirement({
-    merchant: merchantKey,
-    amount_minor: order.amount_minor,
-    currency: order.currency,
-    challenge: String(req.body.siglume_challenge || ""),
-  });
-
-  res.json({ requirement });
 }));
 
 app.post("/siglume/webhook", express.raw({ type: "application/json" }), asyncRoute(async (req, res) => {

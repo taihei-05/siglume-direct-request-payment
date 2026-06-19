@@ -61,6 +61,11 @@ bare, lowercased origins and deduped. A return URL that is not on an allowed
 origin is rejected, so an attacker cannot point a session at an arbitrary
 redirect target.
 
+Production allowlist entries must use `https`. Development `http` entries are
+accepted only for `http://localhost`, `http://127.0.0.1`, or `http://[::1]`
+(with optional ports). Userinfo such as `https://user@shop.example.com` is
+rejected so an attacker cannot rely on origin-spoofing URL forms.
+
 For a Hosted Checkout session, Siglume authors the amount, currency, challenge,
 and return URLs server-side at session creation. The browser cannot tamper with
 the price or the redirect target, and the raw challenge is never exposed to the
@@ -159,3 +164,9 @@ a rejected request is never charged. Provider revenue for Micro and Nano remains
 unsettled until the aggregated on-chain settlement succeeds; Siglume does not
 advance or guarantee revenue when a buyer's balance, allowance, BudgetVault
 authorization, cap, or on-chain transaction fails.
+
+A Micro / Nano budget reservation is not a token lock, escrow, or payment
+guarantee. It reserves room against Siglume spending limits only. A later
+settlement can still fail if the buyer no longer has sufficient balance,
+allowance, BudgetVault authorization, or cap room; `past_due` records the issue
+but does not guarantee eventual collection or provider payment.

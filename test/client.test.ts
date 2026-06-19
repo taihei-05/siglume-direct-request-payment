@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -94,6 +96,119 @@ describe("DirectRequestPaymentClient", () => {
       challenge: "siglume-external-402-v1:nonce:sig",
       metadata: { order_id: "order_123" },
     });
+  });
+
+  it("rejects non-integer payment amounts before making a request", async () => {
+    let called = false;
+    const client = new DirectRequestPaymentClient({
+      auth_token: "buyer_token",
+      fetch: (async () => {
+        called = true;
+        return new Response("{}");
+      }) as typeof fetch,
+    });
+
+    await expect(
+      client.createPaymentRequirement({
+        merchant: "example_merchant",
+        amount_minor: 1.9 as unknown as number,
+        currency: "JPY",
+        challenge: "siglume-external-402-v1:nonce:sig",
+      }),
+    ).rejects.toThrow(/positive safe integer/);
+    await expect(
+      client.createPaymentRequirement({
+        merchant: "example_merchant",
+        amount_minor: true as unknown as number,
+        currency: "JPY",
+        challenge: "siglume-external-402-v1:nonce:sig",
+      }),
+    ).rejects.toThrow(/positive safe integer/);
+    expect(called).toBe(false);
+  });
+
+  it("wraps metered statement endpoints with normalized query parameters", async () => {
+    const calls: Array<{ url: string; method: string }> = [];
+    const responses = [
+      envelope({
+        role: "buyer",
+        open_periods: [],
+        settlement_batches: [],
+        past_due_blocks: [],
+        balance_sufficiency: {},
+      }),
+      envelope({
+        items: [
+          {
+            metered_usage_id: "mu_1",
+            plan_type: "micro",
+            settlement_cadence: "weekly",
+            currency: "JPY",
+            token_symbol: "JPYC",
+            provider_usage_amount_minor: "100",
+            protocol_fee_minor: "2",
+            gross_buyer_debit_minor: "102",
+            status: "pending_settlement",
+          },
+        ],
+        next_cursor: null,
+      }),
+      envelope({
+        items: [{ settlement_batch_id: "msb_1", plan_type: "micro", settlement_cadence: "weekly", status: "ready" }],
+        next_cursor: null,
+      }),
+      envelope({
+        role: "provider",
+        open_periods: [],
+        periods: [],
+        totals: {
+          settled_provider_receivable_minor: "0",
+          unsettled_provider_receivable_minor: "100",
+          past_due_provider_receivable_minor: "0",
+        },
+      }),
+      envelope({
+        items: [{ settlement_batch_id: "msb_1", plan_type: "micro", settlement_cadence: "weekly", status: "ready" }],
+        next_cursor: null,
+      }),
+      envelope({ settlement_batch_id: "msb_1", plan_type: "micro", settlement_cadence: "weekly", status: "ready" }),
+    ];
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      calls.push({ url: String(input), method: String(init.method || "GET") });
+      return new Response(JSON.stringify(responses.shift()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const client = new DirectRequestPaymentClient({
+      auth_token: "buyer_or_provider_token",
+      base_url: "https://siglume.example/v1",
+      fetch: fetchImpl,
+    });
+
+    await client.getBuyerMeteredSummary({ plan_type: "MICRO", token_symbol: "jpyc" });
+    const buyerEvents = await client.listBuyerUsageEvents({
+      plan_type: "micro",
+      token_symbol: "JPYC",
+      status: "pending_settlement",
+      limit: 10,
+    });
+    const buyerBatches = await client.listBuyerSettlementBatches({ status: "ready", limit: 5 });
+    await client.getProviderMeteredSummary({ plan_type: "micro", listing_id: "listing_1", capability_key: "capability.alpha" });
+    const providerBatches = await client.listProviderSettlementBatches({ token_symbol: "USDC", limit: 2 });
+    await client.getProviderSettlementBatch("msb_1", { listing_id: "listing_1" });
+
+    expect(buyerEvents.items[0]?.metered_usage_id).toBe("mu_1");
+    expect(buyerBatches.items[0]?.settlement_batch_id).toBe("msb_1");
+    expect(providerBatches.items[0]?.settlement_batch_id).toBe("msb_1");
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://siglume.example/v1/sdrp/metered/my-summary?plan_type=micro&token_symbol=JPYC",
+      "https://siglume.example/v1/sdrp/metered/my-usage-events?plan_type=micro&token_symbol=JPYC&status=pending_settlement&limit=10",
+      "https://siglume.example/v1/sdrp/metered/my-settlement-batches?status=ready&limit=5",
+      "https://siglume.example/v1/sdrp/metered/provider/summary?plan_type=micro&listing_id=listing_1&capability_key=capability.alpha",
+      "https://siglume.example/v1/sdrp/metered/provider/settlement-batches?token_symbol=USDC&limit=2",
+      "https://siglume.example/v1/sdrp/metered/provider/settlement-batches/msb_1?listing_id=listing_1",
+    ]);
   });
 
   it("builds payment and allowance execution payloads", () => {
@@ -233,14 +348,16 @@ describe("DirectRequestPaymentMerchantClient", () => {
     await client.setupMerchant({
       merchant: "Shop",
       checkout_allowed_origins: [
-        "https://Shop.Example.com/checkout",
+        "https://Shop.Example.com",
         "https://shop.example.com",
         "https://other.example.com:8443",
+        "http://localhost:3000",
       ],
     });
     expect(calls[0]?.body.checkout_allowed_origins).toEqual([
       "https://shop.example.com",
       "https://other.example.com:8443",
+      "http://localhost:3000",
     ]);
   });
 
@@ -325,6 +442,22 @@ describe("DirectRequestPaymentMerchantClient", () => {
     ).rejects.toThrow(/absolute origin/);
   });
 
+  it("rejects unsafe checkout_allowed_origins entries", async () => {
+    const client = new DirectRequestPaymentMerchantClient({
+      auth_token: "merchant_jwt",
+      fetch: (async () => new Response("{}")) as typeof fetch,
+    });
+    await expect(
+      client.setupMerchant({ merchant: "shop", checkout_allowed_origins: ["http://shop.example.com"] }),
+    ).rejects.toThrow(/must use https/);
+    await expect(
+      client.setupMerchant({ merchant: "shop", checkout_allowed_origins: ["https://user@shop.example.com"] }),
+    ).rejects.toThrow(/userinfo/);
+    await expect(
+      client.setupMerchant({ merchant: "shop", checkout_allowed_origins: ["ftp://shop.example.com"] }),
+    ).rejects.toThrow(/must use https/);
+  });
+
   it("rejects a hosted checkout nonce containing the challenge separator", async () => {
     const client = new DirectRequestPaymentMerchantClient({
       auth_token: "merchant_jwt",
@@ -388,5 +521,13 @@ describe("DirectRequestPaymentMerchantClient", () => {
       code: "HOSTED_CHECKOUT_NOT_ENABLED",
       status: 409,
     });
+  });
+
+  it("does not route buyer Authorization through the merchant checkout example", () => {
+    const example = readFileSync(new URL("../examples/express-checkout.ts", import.meta.url), "utf8");
+
+    expect(example).not.toContain("/checkout/siglume/pay");
+    expect(example).not.toContain("DirectRequestPaymentClient");
+    expect(example).not.toMatch(/headers\.authorization/i);
   });
 });

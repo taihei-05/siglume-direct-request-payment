@@ -14,11 +14,12 @@ external merchant.
 The merchant server must not create charges with a customer wallet. It signs the
 order challenge; the buyer-facing Siglume payment flow pays it.
 
-This quickstart is for SDRP Standard Payment in an external merchant product.
-Micro Payment and Nano Payment are applied automatically by amount and settled on
-account-assigned weekly / monthly slots after the final notice and close-plus-3-day
-site (see [Pricing](./pricing.md#settlement-schedule)); they are not browser
-checkout requirements you create with this SDK. Their provider revenue remains
+This quickstart uses Standard-band example amounts. Micro Payment and Nano
+Payment are applied automatically by amount through the same Hosted Checkout or
+agent/API flow; you do not create a separate Micro/Nano object or pass a
+"force Standard" flag. Micro/Nano are settled on account-assigned weekly /
+monthly slots after the final notice and close-plus-3-day window (see
+[Pricing](./pricing.md#settlement-schedule)), and provider revenue remains
 unsettled until the later on-chain settlement succeeds.
 
 ## Two Buyer Systems
@@ -74,7 +75,7 @@ await merchant.setupCheckout({
 // Per order: create a session and redirect the shopper to checkout_url.
 const session = await merchant.createCheckoutSession({
   merchant: "example_merchant",
-  amount_minor: 500,            // server-fixed; the browser cannot change it
+  amount_minor: 1200,           // server-fixed; the browser cannot change it
   currency: "JPY",
   nonce: order.id,              // unique per order
   success_url: "https://www.example.com/thanks",
@@ -114,7 +115,7 @@ merchant.setup_checkout(
 # Per order: create a session and redirect the shopper to checkout_url.
 session = merchant.create_checkout_session(
     merchant="example_merchant",
-    amount_minor=500,            # server-fixed; the browser cannot change it
+    amount_minor=1200,           # server-fixed; the browser cannot change it
     currency="JPY",
     nonce=order["id"],           # unique per order
     success_url="https://www.example.com/thanks",
@@ -452,14 +453,10 @@ const siglume = new DirectRequestPaymentClient({
   auth_token: providerSiglumeBearerToken,
 });
 
-const summary = await siglume.request<{
-  open_periods: Array<Record<string, unknown>>;
-  periods: Array<Record<string, unknown>>;
-  totals: Record<string, string>;
-}>(
-  "GET",
-  "/sdrp/metered/provider/summary?plan_type=micro&token_symbol=JPYC",
-);
+const summary = await siglume.getProviderMeteredSummary({
+  plan_type: "micro",
+  token_symbol: "JPYC",
+});
 
 console.log(summary.totals.settled_provider_receivable_minor);
 console.log(summary.totals.unsettled_provider_receivable_minor);
@@ -474,9 +471,14 @@ curl https://siglume.com/v1/sdrp/metered/provider/settlement-batches/<batch-id>/
   -o sdrp-metered.csv
 ```
 
-Python does not expose a public generic request helper in this release. Use
-ordinary HTTPS requests with the provider's Siglume bearer token for these
-statement endpoints.
+Python exposes the same named helper:
+
+```py
+from siglume_direct_request_payment import DirectRequestPaymentClient
+
+siglume = DirectRequestPaymentClient(auth_token=provider_siglume_bearer_token)
+summary = siglume.get_provider_metered_summary(plan_type="micro", token_symbol="JPYC")
+```
 
 Do not book Micro / Nano provider revenue as settled revenue until the batch is
 `settled` and `chain_receipt_id` is present. See

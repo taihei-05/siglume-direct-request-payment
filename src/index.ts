@@ -9,9 +9,135 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.4";
 
 export type DirectRequestPaymentCurrency = "JPY" | "USD";
 export type DirectRequestPaymentToken = "JPYC" | "USDC";
+export type DirectRequestPaymentMeteredPlanType = "micro" | "nano";
+export type DirectRequestPaymentMinorAmount = string | number;
+
+export interface DirectRequestPaymentBuyerMeteredQuery {
+  plan_type?: DirectRequestPaymentMeteredPlanType | string;
+  token_symbol?: DirectRequestPaymentToken | string;
+}
+
+export interface DirectRequestPaymentMeteredListQuery extends DirectRequestPaymentBuyerMeteredQuery {
+  status?: string;
+  limit?: number;
+}
+
+export interface DirectRequestPaymentProviderMeteredQuery extends DirectRequestPaymentBuyerMeteredQuery {
+  listing_id?: string;
+  capability_key?: string;
+}
+
+export interface DirectRequestPaymentProviderMeteredListQuery extends DirectRequestPaymentProviderMeteredQuery {
+  status?: string;
+  limit?: number;
+}
+
+export interface DirectRequestPaymentListResponse<T> {
+  items: T[];
+  next_cursor?: string | null;
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentBuyerUsageEvent {
+  metered_usage_id: string;
+  created_at?: string | null;
+  plan_type: string;
+  settlement_cadence: string;
+  product_listing_id?: string | null;
+  listing_id?: string | null;
+  capability_key?: string | null;
+  operation_key?: string | null;
+  currency: string;
+  token_symbol: string;
+  provider_usage_amount_minor: DirectRequestPaymentMinorAmount;
+  protocol_fee_minor: DirectRequestPaymentMinorAmount;
+  gross_buyer_debit_minor: DirectRequestPaymentMinorAmount;
+  status: string;
+  period_start?: string | null;
+  period_end?: string | null;
+  settlement_batch_id?: string | null;
+  expected_scheduled_debit_at?: string | null;
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentProviderUsageEvent {
+  metered_usage_id: string;
+  created_at?: string | null;
+  plan_type: string;
+  settlement_cadence: string;
+  product_listing_id?: string | null;
+  listing_id?: string | null;
+  capability_key?: string | null;
+  operation_key?: string | null;
+  currency: string;
+  token_symbol: string;
+  provider_receivable_minor: DirectRequestPaymentMinorAmount;
+  protocol_fee_minor: DirectRequestPaymentMinorAmount;
+  gross_buyer_debit_minor: DirectRequestPaymentMinorAmount;
+  status: string;
+  period_start?: string | null;
+  period_end?: string | null;
+  expected_scheduled_debit_at?: string | null;
+  settlement_batch_id?: string | null;
+  buyer_period_ref?: string | null;
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentSettlementBatch {
+  settlement_batch_id: string;
+  plan_type: string;
+  settlement_cadence: string;
+  status: string;
+  notice_status?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  close_at?: string | null;
+  expected_scheduled_debit_at?: string | null;
+  scheduled_debit_at?: string | null;
+  not_before_attempt_at?: string | null;
+  execution_status?: string | null;
+  latest_execution_attempt_status?: string | null;
+  chain_receipt_id?: string | null;
+  usage_event_digest?: string | null;
+  protocol_fee_minor?: DirectRequestPaymentMinorAmount;
+  gross_buyer_debit_minor?: DirectRequestPaymentMinorAmount;
+  rounding_delta_minor?: DirectRequestPaymentMinorAmount;
+  buyer_debit_minor?: DirectRequestPaymentMinorAmount;
+  provider_usage_amount_minor?: DirectRequestPaymentMinorAmount;
+  provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  settled_provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  unsettled_provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  past_due_provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  buyer_period_ref?: string | null;
+  failure_reason_code?: string | null;
+  failure_reason_label?: string | null;
+  failure_reason_help?: string | null;
+  support_reference?: string | null;
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentBuyerMeteredSummary {
+  role: "buyer";
+  open_periods: Array<Record<string, unknown>>;
+  settlement_batches: DirectRequestPaymentSettlementBatch[];
+  past_due_blocks: Array<Record<string, unknown>>;
+  balance_sufficiency?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentProviderMeteredSummary {
+  role: "provider";
+  timezone?: string | null;
+  filters?: Record<string, unknown>;
+  open_periods: Array<Record<string, unknown>>;
+  periods: DirectRequestPaymentSettlementBatch[];
+  totals: Record<string, DirectRequestPaymentMinorAmount>;
+  [key: string]: unknown;
+}
 
 export interface DirectRequestPaymentChallengeInput {
   merchant: string;
@@ -368,7 +494,7 @@ export class DirectRequestPaymentClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.4.3";
+    this.user_agent = options.user_agent ?? `@siglume/direct-request-payment/${DIRECT_REQUEST_PAYMENT_SDK_VERSION}`;
     this.fetch_impl = fetchImpl;
   }
 
@@ -434,6 +560,75 @@ export class DirectRequestPaymentClient {
     return this.executePreparedTransaction(buildAllowanceExecutionPayload(requirement, options));
   }
 
+  async getBuyerMeteredSummary(
+    input: DirectRequestPaymentBuyerMeteredQuery = {},
+  ): Promise<DirectRequestPaymentBuyerMeteredSummary> {
+    return this.request<DirectRequestPaymentBuyerMeteredSummary>(
+      "GET",
+      meteredQueryPath("/sdrp/metered/my-summary", input),
+    );
+  }
+
+  async listBuyerUsageEvents(
+    input: DirectRequestPaymentMeteredListQuery = {},
+  ): Promise<DirectRequestPaymentListResponse<DirectRequestPaymentBuyerUsageEvent>> {
+    return this.request<DirectRequestPaymentListResponse<DirectRequestPaymentBuyerUsageEvent>>(
+      "GET",
+      meteredQueryPath("/sdrp/metered/my-usage-events", input),
+    );
+  }
+
+  async listBuyerSettlementBatches(
+    input: DirectRequestPaymentMeteredListQuery = {},
+  ): Promise<DirectRequestPaymentListResponse<DirectRequestPaymentSettlementBatch>> {
+    return this.request<DirectRequestPaymentListResponse<DirectRequestPaymentSettlementBatch>>(
+      "GET",
+      meteredQueryPath("/sdrp/metered/my-settlement-batches", input),
+    );
+  }
+
+  async getProviderMeteredSummary(
+    input: DirectRequestPaymentProviderMeteredQuery = {},
+  ): Promise<DirectRequestPaymentProviderMeteredSummary> {
+    return this.request<DirectRequestPaymentProviderMeteredSummary>(
+      "GET",
+      meteredQueryPath("/sdrp/metered/provider/summary", input),
+    );
+  }
+
+  async listProviderUsageEvents(
+    input: DirectRequestPaymentProviderMeteredListQuery = {},
+  ): Promise<DirectRequestPaymentListResponse<DirectRequestPaymentProviderUsageEvent>> {
+    return this.request<DirectRequestPaymentListResponse<DirectRequestPaymentProviderUsageEvent>>(
+      "GET",
+      meteredQueryPath("/sdrp/metered/provider/usage-events", input),
+    );
+  }
+
+  async listProviderSettlementBatches(
+    input: DirectRequestPaymentProviderMeteredListQuery = {},
+  ): Promise<DirectRequestPaymentListResponse<DirectRequestPaymentSettlementBatch>> {
+    return this.request<DirectRequestPaymentListResponse<DirectRequestPaymentSettlementBatch>>(
+      "GET",
+      meteredQueryPath("/sdrp/metered/provider/settlement-batches", input),
+    );
+  }
+
+  async getProviderSettlementBatch(
+    settlement_batch_id: string,
+    input: Pick<DirectRequestPaymentProviderMeteredQuery, "listing_id" | "capability_key"> = {},
+  ): Promise<DirectRequestPaymentSettlementBatch> {
+    return this.request<DirectRequestPaymentSettlementBatch>(
+      "GET",
+      meteredQueryPath(
+        `/sdrp/metered/provider/settlement-batches/${encodeURIComponent(
+          requireNonEmpty(settlement_batch_id, "settlement_batch_id"),
+        )}`,
+        input,
+      ),
+    );
+  }
+
   async request<T>(method: string, path: string, json_body?: unknown): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeout_ms);
@@ -493,7 +688,7 @@ export class DirectRequestPaymentMerchantClient {
     this.auth_token = authToken;
     this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
-    this.user_agent = options.user_agent ?? "@siglume/direct-request-payment/0.4.3";
+    this.user_agent = options.user_agent ?? `@siglume/direct-request-payment/${DIRECT_REQUEST_PAYMENT_SDK_VERSION}`;
     this.fetch_impl = fetchImpl;
   }
 
@@ -1041,6 +1236,14 @@ function normalizeToken(value: string): DirectRequestPaymentToken {
   return token;
 }
 
+function normalizeMeteredPlanType(value: string): DirectRequestPaymentMeteredPlanType {
+  const planType = requireNonEmpty(value, "plan_type").toLowerCase();
+  if (planType === "micro" || planType === "nano") {
+    return planType;
+  }
+  throw new SiglumeDirectRequestPaymentError("plan_type must be micro or nano.");
+}
+
 function normalizeAllowedCurrencies(value: Record<string, string> | Array<DirectRequestPaymentCurrency | string>): Record<string, string> {
   const normalized: Record<string, string> = {};
   if (Array.isArray(value)) {
@@ -1080,7 +1283,15 @@ function normalizeOriginList(value: string[]): string[] {
         "each checkout_allowed_origins entry must be an absolute origin such as https://shop.example.com.",
       );
     }
-    const origin = `${url.protocol.toLowerCase()}//${url.host.toLowerCase()}`;
+    if (url.username || url.password) {
+      throw new SiglumeDirectRequestPaymentError("checkout_allowed_origins entries must not include userinfo.");
+    }
+    if (!isAllowedCheckoutOriginScheme(url)) {
+      throw new SiglumeDirectRequestPaymentError(
+        "checkout_allowed_origins entries must use https, except http is allowed for localhost, 127.0.0.1, or [::1].",
+      );
+    }
+    const origin = url.origin.toLowerCase();
     if (!seen.has(origin)) {
       seen.add(origin);
       origins.push(origin);
@@ -1089,8 +1300,49 @@ function normalizeOriginList(value: string[]): string[] {
   return origins;
 }
 
-function positiveInteger(value: number, name: string): number {
-  const parsed = Number(value);
+function isAllowedCheckoutOriginScheme(url: URL): boolean {
+  if (url.protocol === "https:") {
+    return Boolean(url.hostname);
+  }
+  if (url.protocol !== "http:") {
+    return false;
+  }
+  const hostname = url.hostname.toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1";
+}
+
+function meteredQueryPath(
+  path: string,
+  input: DirectRequestPaymentBuyerMeteredQuery | DirectRequestPaymentMeteredListQuery | DirectRequestPaymentProviderMeteredQuery | DirectRequestPaymentProviderMeteredListQuery,
+): string {
+  const params = new URLSearchParams();
+  if (input.plan_type !== undefined) {
+    params.set("plan_type", normalizeMeteredPlanType(input.plan_type));
+  }
+  if (input.token_symbol !== undefined) {
+    params.set("token_symbol", normalizeToken(input.token_symbol));
+  }
+  if ("status" in input && input.status !== undefined) {
+    params.set("status", requireNonEmpty(input.status, "status"));
+  }
+  if ("listing_id" in input && input.listing_id !== undefined) {
+    params.set("listing_id", requireNonEmpty(input.listing_id, "listing_id"));
+  }
+  if ("capability_key" in input && input.capability_key !== undefined) {
+    params.set("capability_key", requireNonEmpty(input.capability_key, "capability_key"));
+  }
+  if ("limit" in input && input.limit !== undefined) {
+    params.set("limit", String(positiveInteger(input.limit, "limit")));
+  }
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+function positiveInteger(value: unknown, name: string): number {
+  if (typeof value !== "number") {
+    throw new SiglumeDirectRequestPaymentError(`${name} must be a positive safe integer.`);
+  }
+  const parsed = value;
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new SiglumeDirectRequestPaymentError(`${name} must be a positive safe integer.`);
   }

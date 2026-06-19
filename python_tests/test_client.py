@@ -68,6 +68,94 @@ def test_creates_external_402_payment_requirement() -> None:
     assert request_body["merchant"] == "example_merchant"
 
 
+def test_rejects_non_integer_payment_amounts_before_request() -> None:
+    with pytest.raises(DirectRequestPaymentError, match="positive safe integer"):
+        DirectRequestPaymentClient(auth_token="buyer_jwt").create_payment_requirement(
+            merchant="example_merchant",
+            amount_minor=1.9,  # type: ignore[arg-type]
+            currency="JPY",
+            challenge="siglume-external-402-v1:nonce:sig",
+        )
+    with pytest.raises(DirectRequestPaymentError, match="positive safe integer"):
+        DirectRequestPaymentClient(auth_token="buyer_jwt").create_payment_requirement(
+            merchant="example_merchant",
+            amount_minor=True,  # type: ignore[arg-type]
+            currency="JPY",
+            challenge="siglume-external-402-v1:nonce:sig",
+        )
+
+
+@respx.mock
+def test_named_metered_statement_methods() -> None:
+    routes = [
+        respx.get("https://siglume.test/v1/sdrp/metered/my-summary?plan_type=micro&token_symbol=JPYC").mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "role": "buyer",
+                        "open_periods": [],
+                        "settlement_batches": [],
+                        "past_due_blocks": [],
+                    }
+                },
+            )
+        ),
+        respx.get(
+            "https://siglume.test/v1/sdrp/metered/my-usage-events?"
+            "plan_type=micro&token_symbol=JPYC&status=pending_settlement&limit=10"
+        ).mock(
+            return_value=httpx.Response(
+                200,
+                json={"data": {"items": [{"metered_usage_id": "mu_1"}], "next_cursor": None}},
+            )
+        ),
+        respx.get("https://siglume.test/v1/sdrp/metered/my-settlement-batches?status=ready&limit=5").mock(
+            return_value=httpx.Response(
+                200,
+                json={"data": {"items": [{"settlement_batch_id": "msb_1"}], "next_cursor": None}},
+            )
+        ),
+        respx.get(
+            "https://siglume.test/v1/sdrp/metered/provider/summary?"
+            "plan_type=micro&listing_id=listing_1&capability_key=capability.alpha"
+        ).mock(return_value=httpx.Response(200, json={"data": {"role": "provider", "open_periods": [], "periods": []}})),
+        respx.get("https://siglume.test/v1/sdrp/metered/provider/settlement-batches?token_symbol=USDC&limit=2").mock(
+            return_value=httpx.Response(
+                200,
+                json={"data": {"items": [{"settlement_batch_id": "msb_1"}], "next_cursor": None}},
+            )
+        ),
+        respx.get("https://siglume.test/v1/sdrp/metered/provider/settlement-batches/msb_1?listing_id=listing_1").mock(
+            return_value=httpx.Response(200, json={"data": {"settlement_batch_id": "msb_1"}})
+        ),
+    ]
+    client = DirectRequestPaymentClient(auth_token="buyer_or_provider_jwt", base_url="https://siglume.test/v1")
+
+    assert client.get_buyer_metered_summary(plan_type="MICRO", token_symbol="jpyc")["role"] == "buyer"
+    assert client.list_buyer_usage_events(
+        plan_type="micro",
+        token_symbol="JPYC",
+        status="pending_settlement",
+        limit=10,
+    ) == {"items": [{"metered_usage_id": "mu_1"}], "next_cursor": None}
+    assert client.list_buyer_settlement_batches(status="ready", limit=5) == {
+        "items": [{"settlement_batch_id": "msb_1"}],
+        "next_cursor": None,
+    }
+    assert client.get_provider_metered_summary(
+        plan_type="micro",
+        listing_id="listing_1",
+        capability_key="capability.alpha",
+    )["role"] == "provider"
+    assert client.list_provider_settlement_batches(token_symbol="USDC", limit=2) == {
+        "items": [{"settlement_batch_id": "msb_1"}],
+        "next_cursor": None,
+    }
+    assert client.get_provider_settlement_batch("msb_1", listing_id="listing_1") == {"settlement_batch_id": "msb_1"}
+    assert all(route.called for route in routes)
+
+
 def test_builds_prepared_transaction_payloads() -> None:
     requirement = requirement_payload()
 
@@ -180,15 +268,17 @@ def test_merchant_client_registers_checkout_allowed_origins() -> None:
     client.setup_merchant(
         merchant="Shop",
         checkout_allowed_origins=[
-            "https://Shop.Example.com/checkout",
+            "https://Shop.Example.com",
             "https://shop.example.com",
             "https://other.example.com:8443",
+            "http://localhost:3000",
         ],
     )
     body = json.loads(route.calls.last.request.content)
     assert body["checkout_allowed_origins"] == [
         "https://shop.example.com",
         "https://other.example.com:8443",
+        "http://localhost:3000",
     ]
 
 
@@ -248,6 +338,17 @@ def test_merchant_client_rejects_non_absolute_origin() -> None:
     client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
     with pytest.raises(DirectRequestPaymentError):
         client.setup_merchant(merchant="shop", checkout_allowed_origins=["not-a-url"])
+
+
+@respx.mock
+def test_merchant_client_rejects_unsafe_origins() -> None:
+    client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
+    with pytest.raises(DirectRequestPaymentError, match="must use https"):
+        client.setup_merchant(merchant="shop", checkout_allowed_origins=["http://shop.example.com"])
+    with pytest.raises(DirectRequestPaymentError, match="userinfo"):
+        client.setup_merchant(merchant="shop", checkout_allowed_origins=["https://user@shop.example.com"])
+    with pytest.raises(DirectRequestPaymentError, match="must use https"):
+        client.setup_merchant(merchant="shop", checkout_allowed_origins=["ftp://shop.example.com"])
 
 
 def test_merchant_client_rejects_checkout_nonce_separator() -> None:

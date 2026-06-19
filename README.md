@@ -89,7 +89,7 @@ await merchant.setupMerchant({
 // 2. Per order: create a session and redirect the shopper to checkout_url.
 const session = await merchant.createCheckoutSession({
   merchant: "your_merchant_key",
-  amount_minor: 500,            // server-fixed; the browser cannot change it
+  amount_minor: 1200,           // server-fixed; the browser cannot change it
   currency: "JPY",
   nonce: order.id,              // unique per order
   success_url: "https://www.your-shop.com/thanks",
@@ -121,7 +121,7 @@ merchant.setup_merchant(
 # 2. Per order: create a session and redirect the shopper to checkout_url.
 session = merchant.create_checkout_session(
     merchant="your_merchant_key",
-    amount_minor=500,            # server-fixed; the browser cannot change it
+    amount_minor=1200,           # server-fixed; the browser cannot change it
     currency="JPY",
     nonce=order["id"],           # unique per order
     success_url="https://www.your-shop.com/thanks",
@@ -183,6 +183,11 @@ Provider revenue in the Micro and Nano bands is not settled revenue until the
 weekly or monthly on-chain settlement succeeds. Siglume keeps outstanding failed
 settlements for retry under the published policy, but does not advance or
 guarantee provider revenue before settlement succeeds.
+Micro / Nano budget checks reserve spending capacity only; they do not lock,
+escrow, or guarantee the buyer's wallet balance, allowance, or settlement funds.
+Sub-minor-unit Nano fees are accumulated with decimal precision and rounded only
+when a settlement batch is created; see [Pricing](./docs/pricing.md) for the
+rounding formula and `rounding_delta_minor` semantics.
 For operational reconciliation, expected revenue, settled revenue, retry state,
 and CSV exports, see
 [docs/metered-statements.md](./docs/metered-statements.md).
@@ -230,14 +235,20 @@ amounts differ.
 
 | Payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
-| Over JPY 500 / over USD 3.00, or whenever immediate finality is required | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
+| Over JPY 500 / over USD 3.00 | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
 | JPY 50-500 / over USD 0.30 and up to USD 3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Weekly settlement - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
 | Under JPY 50 / up to USD 0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Monthly settlement - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
 
 A merchant billing mandate is required before accepting payments, even on the
-Launch plan. `fee_bps` returned on a payment requirement is the authoritative
-fee rate for that payment in the merchant's settlement currency. The full fee
-table and the weekly / monthly settlement schedule live in
+Launch plan. The current public API does not expose a flag that forces a
+JPY 500-and-under / USD 3-and-under payment into Standard immediate settlement.
+If immediate on-chain settlement is a hard requirement, price the item in the
+Standard band or confirm a merchant-specific contract with Siglume before
+launch. For Standard Payment, `fee_bps` returned on a payment requirement is the
+authoritative fee rate for that payment in the merchant's settlement currency.
+For Micro / Nano, the statement APIs expose `protocol_fee_minor`,
+`gross_buyer_debit_minor`, `buyer_debit_minor`, and `rounding_delta_minor`.
+The full fee table and the weekly / monthly settlement schedule live in
 [docs/pricing.md](./docs/pricing.md). Statement APIs for "how much was used,
 when will it close, when can it debit, and what is settled" are documented in
 [docs/metered-statements.md](./docs/metered-statements.md).
@@ -538,7 +549,8 @@ Read [docs/security.md](./docs/security.md) before going live.
 - Store the returned `SIGLUME_WEBHOOK_SECRET` only on the merchant server.
 - Persist `challenge_hash`, `requirement_id`, and fulfillment state per order.
 - Fulfill orders only from verified webhook data, with idempotency.
-- Treat `fee_bps` returned by Siglume as the runtime fee source of truth.
+- Treat `fee_bps` returned by Siglume as the Standard Payment runtime fee source
+  of truth; use statement API amount fields for Micro / Nano.
 
 ## Compatibility Notes
 

@@ -9,7 +9,7 @@ import time
 import uuid
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
 
@@ -25,6 +25,8 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.4"
+MAX_SAFE_INTEGER = 9007199254740991
 
 _MERCHANT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,95}$")
 
@@ -65,7 +67,7 @@ class DirectRequestPaymentClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.4.3",
+        user_agent: str = f"siglume-direct-request-payment/{DIRECT_REQUEST_PAYMENT_SDK_VERSION}",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -155,6 +157,137 @@ class DirectRequestPaymentClient:
         payload = build_allowance_execution_payload(requirement, await_finality=await_finality, metadata=metadata)
         return self.execute_prepared_transaction(payload)
 
+    def get_buyer_metered_summary(
+        self,
+        *,
+        plan_type: str | None = None,
+        token_symbol: str | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            _metered_query_path("/sdrp/metered/my-summary", plan_type=plan_type, token_symbol=token_symbol),
+        )
+
+    def list_buyer_usage_events(
+        self,
+        *,
+        plan_type: str | None = None,
+        token_symbol: str | None = None,
+        status: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            _metered_query_path(
+                "/sdrp/metered/my-usage-events",
+                plan_type=plan_type,
+                token_symbol=token_symbol,
+                status=status,
+                limit=limit,
+            ),
+        )
+
+    def list_buyer_settlement_batches(
+        self,
+        *,
+        plan_type: str | None = None,
+        token_symbol: str | None = None,
+        status: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            _metered_query_path(
+                "/sdrp/metered/my-settlement-batches",
+                plan_type=plan_type,
+                token_symbol=token_symbol,
+                status=status,
+                limit=limit,
+            ),
+        )
+
+    def get_provider_metered_summary(
+        self,
+        *,
+        plan_type: str | None = None,
+        token_symbol: str | None = None,
+        listing_id: str | None = None,
+        capability_key: str | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            _metered_query_path(
+                "/sdrp/metered/provider/summary",
+                plan_type=plan_type,
+                token_symbol=token_symbol,
+                listing_id=listing_id,
+                capability_key=capability_key,
+            ),
+        )
+
+    def list_provider_usage_events(
+        self,
+        *,
+        plan_type: str | None = None,
+        token_symbol: str | None = None,
+        status: str | None = None,
+        listing_id: str | None = None,
+        capability_key: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            _metered_query_path(
+                "/sdrp/metered/provider/usage-events",
+                plan_type=plan_type,
+                token_symbol=token_symbol,
+                status=status,
+                listing_id=listing_id,
+                capability_key=capability_key,
+                limit=limit,
+            ),
+        )
+
+    def list_provider_settlement_batches(
+        self,
+        *,
+        plan_type: str | None = None,
+        token_symbol: str | None = None,
+        status: str | None = None,
+        listing_id: str | None = None,
+        capability_key: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            _metered_query_path(
+                "/sdrp/metered/provider/settlement-batches",
+                plan_type=plan_type,
+                token_symbol=token_symbol,
+                status=status,
+                listing_id=listing_id,
+                capability_key=capability_key,
+                limit=limit,
+            ),
+        )
+
+    def get_provider_settlement_batch(
+        self,
+        settlement_batch_id: str,
+        *,
+        listing_id: str | None = None,
+        capability_key: str | None = None,
+    ) -> dict[str, Any]:
+        batch_id = quote(_require_non_empty(settlement_batch_id, "settlement_batch_id"), safe="")
+        return self._request(
+            "GET",
+            _metered_query_path(
+                f"/sdrp/metered/provider/settlement-batches/{batch_id}",
+                listing_id=listing_id,
+                capability_key=capability_key,
+            ),
+        )
+
     def _request(self, method: str, path: str, *, json_body: Any | None = None) -> dict[str, Any]:
         headers = {
             "Accept": "application/json",
@@ -205,7 +338,7 @@ class DirectRequestPaymentMerchantClient:
         base_url: str | None = None,
         timeout: float = 15.0,
         client: httpx.Client | None = None,
-        user_agent: str = "siglume-direct-request-payment/0.4.3",
+        user_agent: str = f"siglume-direct-request-payment/{DIRECT_REQUEST_PAYMENT_SDK_VERSION}",
     ) -> None:
         token = auth_token or _env_value("SIGLUME_MERCHANT_AUTH_TOKEN") or _env_value("SIGLUME_AUTH_TOKEN")
         if not token:
@@ -802,6 +935,13 @@ def _normalize_token(value: str) -> str:
     return token
 
 
+def _normalize_metered_plan_type(value: str) -> str:
+    plan_type = _require_non_empty(value, "plan_type").lower()
+    if plan_type in {"micro", "nano"}:
+        return plan_type
+    raise DirectRequestPaymentError("plan_type must be micro or nano.")
+
+
 def _normalize_allowed_currencies(value: Mapping[str, str] | list[str] | tuple[str, ...]) -> dict[str, str]:
     normalized: dict[str, str] = {}
     if isinstance(value, Mapping):
@@ -823,8 +963,10 @@ def _default_token_for_currency(currency: str) -> str:
 
 
 def _positive_int(value: int, name: str) -> int:
-    parsed = int(value)
-    if parsed <= 0:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise DirectRequestPaymentError(f"{name} must be a positive safe integer.")
+    parsed = value
+    if parsed <= 0 or parsed > MAX_SAFE_INTEGER:
         raise DirectRequestPaymentError(f"{name} must be a positive safe integer.")
     return parsed
 
@@ -854,11 +996,62 @@ def _normalize_origin_list(value: list[str] | tuple[str, ...]) -> list[str]:
             raise DirectRequestPaymentError(
                 "each checkout_allowed_origins entry must be an absolute origin such as https://shop.example.com."
             )
-        origin = f"{parts.scheme.lower()}://{parts.netloc.lower()}"
+        if parts.username or parts.password:
+            raise DirectRequestPaymentError("checkout_allowed_origins entries must not include userinfo.")
+        scheme = parts.scheme.lower()
+        try:
+            port = parts.port
+        except ValueError as exc:
+            raise DirectRequestPaymentError("checkout_allowed_origins entries must include a valid port.") from exc
+        hostname = (parts.hostname or "").lower()
+        if not _is_allowed_checkout_origin_scheme(scheme, hostname):
+            raise DirectRequestPaymentError(
+                "checkout_allowed_origins entries must use https, except http is allowed for localhost, "
+                "127.0.0.1, or [::1]."
+            )
+        host = f"[{hostname}]" if ":" in hostname and not hostname.startswith("[") else hostname
+        if port is not None and not ((scheme == "https" and port == 443) or (scheme == "http" and port == 80)):
+            host = f"{host}:{port}"
+        origin = f"{scheme}://{host}"
         if origin not in seen:
             seen.add(origin)
             origins.append(origin)
     return origins
+
+
+def _is_allowed_checkout_origin_scheme(scheme: str, hostname: str) -> bool:
+    if scheme == "https":
+        return bool(hostname)
+    if scheme != "http":
+        return False
+    return hostname in {"localhost", "127.0.0.1", "::1"}
+
+
+def _metered_query_path(
+    path: str,
+    *,
+    plan_type: str | None = None,
+    token_symbol: str | None = None,
+    status: str | None = None,
+    listing_id: str | None = None,
+    capability_key: str | None = None,
+    limit: int | None = None,
+) -> str:
+    params: dict[str, str] = {}
+    if plan_type is not None:
+        params["plan_type"] = _normalize_metered_plan_type(plan_type)
+    if token_symbol is not None:
+        params["token_symbol"] = _normalize_token(token_symbol)
+    if status is not None:
+        params["status"] = _require_non_empty(status, "status")
+    if listing_id is not None:
+        params["listing_id"] = _require_non_empty(listing_id, "listing_id")
+    if capability_key is not None:
+        params["capability_key"] = _require_non_empty(capability_key, "capability_key")
+    if limit is not None:
+        params["limit"] = str(_positive_int(limit, "limit"))
+    query = urlencode(params)
+    return f"{path}?{query}" if query else path
 
 
 def _normalize_challenge_nonce(value: str) -> str:

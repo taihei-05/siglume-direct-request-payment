@@ -26,15 +26,20 @@ quoted per currency.
 
 | Payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
-| Over JPY 500 / over USD 3.00, or whenever immediate finality is required | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
+| Over JPY 500 / over USD 3.00 | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
 | JPY 50-500 / over USD 0.30 and up to USD 3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Aggregated and settled **weekly** (see [Settlement schedule](#settlement-schedule)) |
 | Under JPY 50 / up to USD 0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Aggregated and settled **monthly** (see [Settlement schedule](#settlement-schedule)) |
 
 Standard Payment settles per payment. Micro Payment and Nano Payment are
 aggregated and settled in account-assigned weekly / monthly slots - see
 [Settlement schedule](#settlement-schedule) for how each band closes, when the
-pre-debit notice site elapses, when revenue becomes settled, and how rejected
+pre-debit notice window elapses, when revenue becomes settled, and how rejected
 requests behave.
+
+The current public API chooses the band from `amount_minor`; it does not expose
+`settlement_mode: "immediate"` or `require_immediate_finality: true`. If a
+merchant needs immediate on-chain finality, the payment amount must be in the
+Standard band or the merchant must have a separately agreed platform contract.
 
 For the operational statement APIs, CSV export, buyer past-due blocks, and the
 field-by-field meaning of `scheduled_debit_at`, `not_before_attempt_at`,
@@ -52,10 +57,13 @@ Per-payment fees are deducted at settlement, so the merchant receives the net
 amount for each payment. Monthly base fees are collected separately through the
 merchant billing mandate.
 
-The same fee schedule applies in JPY and USD. The Siglume platform returns
-`fee_bps` in the merchant's settlement currency on every payment requirement, so
-the SDK never has to know which currency table to read — it just trusts the
-value Siglume returns.
+The same Standard Payment percentage schedule applies in JPY and USD. For
+Standard Payment, the Siglume platform returns `fee_bps` in the merchant's
+settlement currency on the payment requirement, so the SDK never has to know
+which currency table to read — it just trusts the value Siglume returns. For
+Micro / Nano, the authoritative fee fields are the statement API amounts:
+`protocol_fee_minor`, `gross_buyer_debit_minor`, `buyer_debit_minor`, and
+`rounding_delta_minor`.
 
 ## Settlement schedule
 
@@ -65,8 +73,8 @@ confirmed payment turns into money in your settlement wallet.
 | Band | Cadence | Period | You are paid |
 | --- | --- | --- | --- |
 | Standard Payment | Per payment | n/a | On-chain, immediately after each payment confirms |
-| Micro Payment | Weekly | Account-assigned fixed weekly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs | After the period closes and the roughly 3-day pre-debit notice site has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
-| Nano Payment | Monthly | Account-assigned fixed monthly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs | After the period closes and the roughly 3-day pre-debit notice site has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
+| Micro Payment | Weekly | Account-assigned fixed weekly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs | After the period closes and the roughly 3-day pre-debit notice window has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
+| Nano Payment | Monthly | Account-assigned fixed monthly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs | After the period closes and the roughly 3-day pre-debit notice window has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
 
 ### Micro weekly settlement
 
@@ -80,7 +88,7 @@ confirmed payment turns into money in your settlement wallet.
   payments — grouped per buyer, payee, token, and period — into on-chain
   settlement(s). Siglume sends the final debit notice first; the on-chain debit
   is not attempted until the scheduled attempt time after an approximately
-  3-day pre-debit notice site (`not_before_attempt_at`).
+  3-day pre-debit notice window (`not_before_attempt_at`).
 - **Revenue recognition.** A Micro payment is final only once its weekly
   settlement confirms on-chain. Until then it is accrued, not settled.
 
@@ -96,7 +104,7 @@ confirmed payment turns into money in your settlement wallet.
   payments — grouped per buyer, payee, token, and period — into on-chain
   settlement(s). Siglume sends the final debit notice first; the on-chain debit
   is not attempted until the scheduled attempt time after an approximately
-  3-day pre-debit notice site (`not_before_attempt_at`).
+  3-day pre-debit notice window (`not_before_attempt_at`).
 - **Revenue recognition.** A Nano payment is final only once its monthly
   settlement confirms on-chain.
 
@@ -115,14 +123,18 @@ confirmed payment turns into money in your settlement wallet.
 - Outstanding amounts remain attached to the failed settlement and are retried
   under this policy. They are not settled revenue, and Siglume does not advance,
   guarantee, or insure provider revenue before on-chain settlement succeeds.
+- A `past_due` batch remains recorded until operator resolution or requeue, but
+  this does not guarantee collection from the buyer or payment to the provider.
 
 ### Rejected / no-charge behavior
 
 Micro and Nano run a budget check before the buyer's paid request is fulfilled:
 
-- A buyer's wallet budget is consumed at the **gross amount** (your price plus
-  the protocol fee), held from the moment a request is accepted until its
-  settlement confirms.
+- A buyer's wallet budget reservation is consumed at the **gross amount** (your
+  price plus the protocol fee) from acceptance until settlement confirms. This
+  is a reservation against Siglume spending limits; it does not lock, escrow,
+  preserve, or guarantee the buyer's token balance, allowance, BudgetVault
+  authorization, or payment source.
 - If the buyer's budget, scope, or amount band does not allow a request, it is
   **rejected with no charge**: the request is not fulfilled, no amount is
   accrued, and nothing is added to a settlement. A buyer near their budget
@@ -137,10 +149,35 @@ Micro and Nano run a budget check before the buyer's paid request is fulfilled:
 The cadence is fixed: **Micro settles weekly, Nano settles monthly**, and a
 payment is final only after its on-chain settlement confirms. Micro and Nano are
 automatic amount bands, not customer-selected options. The account-assigned
-period boundaries, roughly 3-day pre-debit notice site, and current retry policy
+period boundaries, roughly 3-day pre-debit notice window, and current retry policy
 above are the public behavior as of 2026-06-18. Treat the platform's statement
-status, `not_before_attempt_at`, and `fee_bps` response as authoritative rather
-than hard-coding local revenue recognition.
+status, `not_before_attempt_at`, Standard `fee_bps`, and Micro / Nano statement
+amount fields as authoritative rather than hard-coding local revenue
+recognition.
+
+## Micro / Nano Amount Rounding
+
+Micro / Nano fees are stored internally as decimal minor-unit values so
+sub-yen and sub-cent Nano fees are not silently rounded per usage event. The
+current settlement rule is:
+
+```text
+provider_usage_amount_minor = sum(provider price minor units for accepted usage)
+protocol_fee_minor = sum(Micro/Nano fixed protocol fee minor units for accepted usage)
+gross_buyer_debit_minor = provider_usage_amount_minor + protocol_fee_minor
+buyer_debit_minor = ceil(gross_buyer_debit_minor)
+rounding_delta_minor = buyer_debit_minor - gross_buyer_debit_minor
+```
+
+Rounding happens once when the settlement batch is created, not per usage event.
+The rounding mode is ceiling to the next integer token minor unit because
+on-chain settlement cannot debit fractional JPYC/USDC minor units. The positive
+`rounding_delta_minor` is part of the buyer debit for that batch and is retained
+as a rounding adjustment in Siglume's settlement accounting; it is not provider
+revenue. Providers should reconcile their revenue with
+`provider_receivable_minor`, `settled_provider_receivable_minor`,
+`unsettled_provider_receivable_minor`, and
+`past_due_provider_receivable_minor`, not with `buyer_debit_minor`.
 
 ## Statement APIs and Notices
 
@@ -154,14 +191,15 @@ Use [Micro / Nano Statements and Notices](./metered-statements.md) to integrate:
 - provider usage-event CSV export,
 - buyer summaries for open-period estimated debit and past-due blocks,
 - sanitized public failure reasons and support references,
-- the fixed final notice plus close-plus-3-day debit site.
+- the fixed final notice plus close-plus-3-day debit window.
 
 ## SDK Behavior
 
 The SDK does not calculate merchant invoices or enforce plan limits locally.
 Instead, it exposes billing-related values returned by Siglume, including
-`fee_bps` on a payment requirement. This keeps merchant billing centralized in
-the Siglume platform and avoids stale client-side pricing logic.
+Standard Payment `fee_bps` on a payment requirement and Micro / Nano statement
+amount fields. This keeps merchant billing centralized in the Siglume platform
+and avoids stale client-side pricing logic.
 
 ## Supported Use Cases
 
@@ -179,4 +217,5 @@ The Siglume API and merchant registry may still expose the legacy `billing_plan`
 value `free` for the Launch tier. Treat `free` as a wire-compatibility key, not a
 public plan name. (Until 2026-06-12 the Launch plan included a free monthly
 allowance of 100 payments; that allowance has been retired — the platform
-`fee_bps` response is always the source of truth.)
+Standard `fee_bps` response and Micro / Nano statement amount fields are always
+the source of truth.)
