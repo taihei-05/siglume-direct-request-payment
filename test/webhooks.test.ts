@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildWebhookSignatureHeader,
+  classifyDirectPaymentConfirmation,
+  DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS,
   SiglumeWebhookPayloadError,
   SiglumeWebhookSignatureError,
   verifyDirectRequestPaymentWebhook,
@@ -85,6 +87,116 @@ describe("Direct Request Payment webhooks", () => {
     expect(verified.event.data.chain_receipt_id).toBe("chain_123");
     expect(verified.event.data.usage_event_digest).toBe("sha256:usage");
     expect(verified.event.data.settled_at).toBe("2026-06-19T00:00:00Z");
+  });
+
+  it("classifies standard settled confirmations only with finality and a receipt", () => {
+    const result = classifyDirectPaymentConfirmation({
+      id: "evt_standard",
+      type: "direct_payment.confirmed",
+      api_version: "2026-06-11",
+      occurred_at: "2026-06-11T00:00:00Z",
+      data: {
+        mode: "external_402",
+        pricing_band: "standard",
+        finality: "per_payment_onchain",
+        settlement_status: "settled",
+        requirement_id: "dpr_standard",
+        challenge_hash: "sha256:challenge",
+        chain_receipt_id: "chain_standard",
+      },
+    });
+
+    expect(result.kind).toBe("standard_settled");
+    if (result.kind === "standard_settled") {
+      expect(result.requirement_id).toBe("dpr_standard");
+      expect(result.challenge_hash).toBe("sha256:challenge");
+      expect(result.chain_receipt_id).toBe("chain_standard");
+    }
+  });
+
+  it("classifies metered usage only when finality and pending settlement match", () => {
+    const result = classifyDirectPaymentConfirmation({
+      id: "evt_micro",
+      type: "direct_payment.confirmed",
+      api_version: "2026-06-11",
+      occurred_at: "2026-06-11T00:00:00Z",
+      data: {
+        mode: "external_402",
+        pricing_band: "micro",
+        finality: "aggregated_onchain_settlement",
+        settlement_status: DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS,
+        requirement_id: "dpr_micro",
+        challenge_hash: "sha256:micro",
+      },
+    });
+
+    expect(result.kind).toBe("metered_usage_accepted");
+    if (result.kind === "metered_usage_accepted") {
+      expect(result.pricing_band).toBe("micro");
+      expect(result.requirement_id).toBe("dpr_micro");
+      expect(result.challenge_hash).toBe("sha256:micro");
+    }
+
+    const missingStatus = classifyDirectPaymentConfirmation({
+      id: "evt_micro_bad",
+      type: "direct_payment.confirmed",
+      api_version: "2026-06-11",
+      occurred_at: "2026-06-11T00:00:00Z",
+      data: {
+        mode: "external_402",
+        pricing_band: "micro",
+        finality: "aggregated_onchain_settlement",
+        settlement_status: "settled",
+        requirement_id: "dpr_micro",
+        challenge_hash: "sha256:micro",
+      },
+    });
+
+    expect(missingStatus.kind).toBe("unknown");
+    if (missingStatus.kind === "unknown") {
+      expect(missingStatus.reason).toBe("missing_metered_usage_fields");
+    }
+  });
+
+  it("requires settlement batch identifiers before classifying a metered batch settled", () => {
+    const result = classifyDirectPaymentConfirmation({
+      id: "evt_batch",
+      type: "direct_payment.confirmed",
+      api_version: "2026-06-11",
+      occurred_at: "2026-06-11T00:00:00Z",
+      data: {
+        mode: "metered_settlement_batch",
+        settlement_status: "settled",
+        settlement_batch_id: "msb_123",
+        chain_receipt_id: "chain_123",
+        usage_event_digest: "sha256:usage",
+      },
+    });
+
+    expect(result.kind).toBe("metered_batch_settled");
+    if (result.kind === "metered_batch_settled") {
+      expect(result.settlement_batch_id).toBe("msb_123");
+      expect(result.chain_receipt_id).toBe("chain_123");
+      expect(result.usage_event_digest).toBe("sha256:usage");
+    }
+
+    const missingReceipt = classifyDirectPaymentConfirmation({
+      id: "evt_batch_bad",
+      type: "direct_payment.confirmed",
+      api_version: "2026-06-11",
+      occurred_at: "2026-06-11T00:00:00Z",
+      data: {
+        mode: "metered_settlement_batch",
+        settlement_status: "settled",
+        settlement_batch_id: "msb_123",
+        usage_event_digest: "sha256:usage",
+      },
+    });
+
+    expect(missingReceipt.kind).toBe("unknown");
+    if (missingReceipt.kind === "unknown") {
+      expect(missingReceipt.reason).toBe("invalid_metered_settlement_confirmation");
+    }
   });
 
   it("rejects direct payment events with the wrong mode", async () => {

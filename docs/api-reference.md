@@ -968,18 +968,39 @@ Nano accepted-but-unsettled usage, or an aggregated Micro / Nano settlement
 confirmation. `event.data.request_hash_v2` is present on new challenge-backed
 requirements; keep accepting `event.data.request_hash` for historical payloads.
 
-Recommended branch:
+Recommended branch: call `classifyDirectPaymentConfirmation(event)` /
+`classify_direct_payment_confirmation(event)` and switch on `kind`:
 
-- `mode === "metered_settlement_batch"`: no order `challenge_hash` is expected.
-  Reconcile the batch only when `settlement_status === "settled"`.
-- `pricing_band === "standard"`, `finality === "per_payment_onchain"`, and
-  `settlement_status === "settled"`: mark the mapped order paid once.
-- `pricing_band === "micro" || pricing_band === "nano"`: treat the usage as
-  accepted but unsettled. SDRP merchant setup and terms assume the merchant
+- `metered_batch_settled`: no order `challenge_hash` is expected. Reconcile the
+  batch with the returned non-empty `settlement_batch_id`, `chain_receipt_id`,
+  and `usage_event_digest`.
+- `standard_settled`: mark the mapped order paid once. This requires Standard
+  pricing, per-payment on-chain finality, settled status, non-empty
+  `requirement_id`, non-empty `challenge_hash`, and non-empty
+  `chain_receipt_id`.
+- `metered_usage_accepted`: treat the usage as accepted but unsettled. This
+  requires Micro / Nano pricing, `finality === "aggregated_onchain_settlement"`,
+  `settlement_status === "pending_settlement"`, non-empty `requirement_id`, and
+  non-empty `challenge_hash`. SDRP merchant setup and terms assume the merchant
   accepts this delayed aggregated settlement model for Micro / Nano amount
   bands; reconcile final revenue from statement APIs / settlement batches.
-- Missing machine fields: do not mark paid from the event type alone; fetch the
+- `unknown`: do not mark paid or fulfilled from the event type alone; fetch the
   requirement or route the event to manual review.
+
+If you do not use the classifier, apply the same checks manually.
+
+### `classifyDirectPaymentConfirmation(event)` / `classify_direct_payment_confirmation(event)`
+
+Classifies a parsed `direct_payment.confirmed` event into:
+
+- `standard_settled`
+- `metered_usage_accepted`
+- `metered_batch_settled`
+- `unknown`
+
+The classifier is fail-closed: missing finality, missing settlement status,
+empty challenge hashes, empty requirement ids, and empty settlement batch
+receipt identifiers return `kind: "unknown"` with a machine-readable `reason`.
 
 ### `verifyDirectRequestPaymentWebhook(secret, body, signature_header, options)` / `verify_direct_request_payment_webhook(secret, body, signature_header, *, tolerance_seconds=300, now=None)`
 
@@ -997,8 +1018,8 @@ const { event, verification } = await verifyDirectRequestPaymentWebhook(
   rawRequestBody,                       // the RAW body bytes/string, not re-stringified JSON
   request.headers["siglume-signature"],
 );
-// event.type === "direct_payment.confirmed"; inspect pricing_band/finality/
-// settlement_status before marking an order paid.
+// event.type === "direct_payment.confirmed"; use classifyDirectPaymentConfirmation(event)
+// or equivalent fail-closed field checks before marking an order paid or fulfilled.
 ```
 
 ```py
@@ -1010,8 +1031,8 @@ verified = verify_direct_request_payment_webhook(
     siglume_signature_header,
 )
 event = verified["event"]
-# event["type"] == "direct_payment.confirmed"; inspect pricing_band/finality/
-# settlement_status before marking an order paid.
+# event["type"] == "direct_payment.confirmed"; use classify_direct_payment_confirmation(event)
+# or equivalent fail-closed field checks before marking an order paid or fulfilled.
 ```
 
 ## Exported Constants
@@ -1029,6 +1050,10 @@ Both packages export these importable constants:
 | `DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE` | `sdrp_direct_payment_requirement` |
 | `DEFAULT_WEBHOOK_TOLERANCE_SECONDS` | `300` |
 | `DIRECT_REQUEST_PAYMENT_SDK_VERSION` | package version string |
+| `DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS` | `settled` |
+| `DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS` | `pending_settlement` |
+| `DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY` | `per_payment_onchain` |
+| `DIRECT_REQUEST_PAYMENT_METERED_FINALITY` | `aggregated_onchain_settlement` |
 
 The `external_402` / `siglume-external-402-*` values are legacy wire-compat
 identifiers, not public product names (see the README "Compatibility Notes").

@@ -9,7 +9,11 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.7";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.8";
+export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
+export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
+export const DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain";
+export const DIRECT_REQUEST_PAYMENT_METERED_FINALITY = "aggregated_onchain_settlement";
 const DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = new Set([DIRECT_REQUEST_PAYMENT_MODE, "metered_settlement_batch"]);
 
 export type DirectRequestPaymentCurrency = "JPY" | "USD";
@@ -457,6 +461,67 @@ export interface DirectRequestPaymentWebhookEvent {
   };
   [key: string]: unknown;
 }
+
+export type DirectPaymentConfirmationKind =
+  | "standard_settled"
+  | "metered_usage_accepted"
+  | "metered_batch_settled"
+  | "unknown";
+
+export type DirectPaymentConfirmationUnknownReason =
+  | "not_direct_payment_confirmed"
+  | "invalid_metered_settlement_confirmation"
+  | "missing_standard_settlement_fields"
+  | "missing_metered_usage_fields"
+  | "unknown_confirmation_shape";
+
+export interface DirectPaymentStandardSettledClassification {
+  kind: "standard_settled";
+  event: DirectRequestPaymentWebhookEvent;
+  data: DirectRequestPaymentWebhookEvent["data"];
+  requirement_id: string;
+  challenge_hash: string;
+  chain_receipt_id: string;
+  request_hash_v2?: string | null;
+}
+
+export interface DirectPaymentMeteredUsageAcceptedClassification {
+  kind: "metered_usage_accepted";
+  event: DirectRequestPaymentWebhookEvent;
+  data: DirectRequestPaymentWebhookEvent["data"];
+  pricing_band: DirectRequestPaymentMeteredPlanType;
+  requirement_id: string;
+  challenge_hash: string;
+  request_hash_v2?: string | null;
+}
+
+export interface DirectPaymentMeteredBatchSettledClassification {
+  kind: "metered_batch_settled";
+  event: DirectRequestPaymentWebhookEvent;
+  data: DirectRequestPaymentWebhookEvent["data"];
+  settlement_batch_id: string;
+  chain_receipt_id: string;
+  usage_event_digest: string;
+  settled_at?: string | null;
+}
+
+export interface DirectPaymentUnknownClassification {
+  kind: "unknown";
+  event: DirectRequestPaymentWebhookEvent;
+  data: DirectRequestPaymentWebhookEvent["data"];
+  reason: DirectPaymentConfirmationUnknownReason;
+  requirement_id?: string | null;
+  settlement_batch_id?: string | null;
+  pricing_band?: string | null;
+  settlement_status?: string | null;
+  finality?: string | null;
+}
+
+export type DirectPaymentConfirmationClassification =
+  | DirectPaymentStandardSettledClassification
+  | DirectPaymentMeteredUsageAcceptedClassification
+  | DirectPaymentMeteredBatchSettledClassification
+  | DirectPaymentUnknownClassification;
 
 export class SiglumeDirectRequestPaymentError extends Error {
   constructor(message: string) {
@@ -1220,6 +1285,136 @@ export function parseDirectRequestPaymentWebhookEvent(payload: unknown): DirectR
     );
   }
   return parsed;
+}
+
+export function classifyDirectPaymentConfirmation(
+  event: DirectRequestPaymentWebhookEvent,
+): DirectPaymentConfirmationClassification {
+  const data = event.data;
+  const requirementId = stringOrNull(data.requirement_id) ?? stringOrNull(data.direct_payment_requirement_id);
+  const challengeHash = stringOrNull(data.challenge_hash);
+  const pricingBand = stringOrNull(data.pricing_band);
+  const finality = stringOrNull(data.finality);
+  const settlementStatus = stringOrNull(data.settlement_status);
+
+  if (event.type !== "direct_payment.confirmed") {
+    return {
+      kind: "unknown",
+      event,
+      data,
+      reason: "not_direct_payment_confirmed",
+      requirement_id: requirementId,
+      settlement_batch_id: stringOrNull(data.settlement_batch_id),
+      pricing_band: pricingBand,
+      settlement_status: settlementStatus,
+      finality,
+    };
+  }
+
+  if (data.mode === "metered_settlement_batch") {
+    const settlementBatchId = stringOrNull(data.settlement_batch_id);
+    const chainReceiptId = stringOrNull(data.chain_receipt_id);
+    const usageEventDigest = stringOrNull(data.usage_event_digest);
+    if (
+      settlementStatus === DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS &&
+      settlementBatchId &&
+      chainReceiptId &&
+      usageEventDigest
+    ) {
+      return {
+        kind: "metered_batch_settled",
+        event,
+        data,
+        settlement_batch_id: settlementBatchId,
+        chain_receipt_id: chainReceiptId,
+        usage_event_digest: usageEventDigest,
+        settled_at: stringOrNull(data.settled_at),
+      };
+    }
+    return {
+      kind: "unknown",
+      event,
+      data,
+      reason: "invalid_metered_settlement_confirmation",
+      requirement_id: requirementId,
+      settlement_batch_id: settlementBatchId,
+      pricing_band: pricingBand,
+      settlement_status: settlementStatus,
+      finality,
+    };
+  }
+
+  if (pricingBand === "standard") {
+    const chainReceiptId = stringOrNull(data.chain_receipt_id);
+    if (
+      finality === DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY &&
+      settlementStatus === DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS &&
+      requirementId &&
+      challengeHash &&
+      chainReceiptId
+    ) {
+      return {
+        kind: "standard_settled",
+        event,
+        data,
+        requirement_id: requirementId,
+        challenge_hash: challengeHash,
+        chain_receipt_id: chainReceiptId,
+        request_hash_v2: stringOrNull(data.request_hash_v2),
+      };
+    }
+    return {
+      kind: "unknown",
+      event,
+      data,
+      reason: "missing_standard_settlement_fields",
+      requirement_id: requirementId,
+      pricing_band: pricingBand,
+      settlement_status: settlementStatus,
+      finality,
+    };
+  }
+
+  if (pricingBand === "micro" || pricingBand === "nano") {
+    if (
+      finality === DIRECT_REQUEST_PAYMENT_METERED_FINALITY &&
+      settlementStatus === DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS &&
+      requirementId &&
+      challengeHash
+    ) {
+      return {
+        kind: "metered_usage_accepted",
+        event,
+        data,
+        pricing_band: pricingBand,
+        requirement_id: requirementId,
+        challenge_hash: challengeHash,
+        request_hash_v2: stringOrNull(data.request_hash_v2),
+      };
+    }
+    return {
+      kind: "unknown",
+      event,
+      data,
+      reason: "missing_metered_usage_fields",
+      requirement_id: requirementId,
+      pricing_band: pricingBand,
+      settlement_status: settlementStatus,
+      finality,
+    };
+  }
+
+  return {
+    kind: "unknown",
+    event,
+    data,
+    reason: "unknown_confirmation_shape",
+    requirement_id: requirementId,
+    settlement_batch_id: stringOrNull(data.settlement_batch_id),
+    pricing_band: pricingBand,
+    settlement_status: settlementStatus,
+    finality,
+  };
 }
 
 export async function verifyDirectRequestPaymentWebhook(

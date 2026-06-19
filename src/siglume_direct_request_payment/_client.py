@@ -25,7 +25,11 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.7"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.8"
+DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
+DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
+DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain"
+DIRECT_REQUEST_PAYMENT_METERED_FINALITY = "aggregated_onchain_settlement"
 MAX_SAFE_INTEGER = 9007199254740991
 _DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = {DIRECT_REQUEST_PAYMENT_MODE, "metered_settlement_batch"}
 
@@ -903,6 +907,130 @@ def parse_direct_request_payment_webhook_event(payload: Any) -> dict[str, Any]:
     return event
 
 
+def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, Any]:
+    data_raw = event.get("data")
+    data = data_raw if isinstance(data_raw, Mapping) else {}
+    requirement_id = _non_empty_str(data.get("requirement_id")) or _non_empty_str(
+        data.get("direct_payment_requirement_id")
+    )
+    challenge_hash = _non_empty_str(data.get("challenge_hash"))
+    pricing_band = _non_empty_str(data.get("pricing_band"))
+    finality = _non_empty_str(data.get("finality"))
+    settlement_status = _non_empty_str(data.get("settlement_status"))
+
+    if event.get("type") != "direct_payment.confirmed":
+        return {
+            "kind": "unknown",
+            "event": event,
+            "data": data,
+            "reason": "not_direct_payment_confirmed",
+            "requirement_id": requirement_id,
+            "settlement_batch_id": _non_empty_str(data.get("settlement_batch_id")),
+            "pricing_band": pricing_band,
+            "settlement_status": settlement_status,
+            "finality": finality,
+        }
+
+    if data.get("mode") == "metered_settlement_batch":
+        settlement_batch_id = _non_empty_str(data.get("settlement_batch_id"))
+        chain_receipt_id = _non_empty_str(data.get("chain_receipt_id"))
+        usage_event_digest = _non_empty_str(data.get("usage_event_digest"))
+        if (
+            settlement_status == DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS
+            and settlement_batch_id
+            and chain_receipt_id
+            and usage_event_digest
+        ):
+            return {
+                "kind": "metered_batch_settled",
+                "event": event,
+                "data": data,
+                "settlement_batch_id": settlement_batch_id,
+                "chain_receipt_id": chain_receipt_id,
+                "usage_event_digest": usage_event_digest,
+                "settled_at": _non_empty_str(data.get("settled_at")),
+            }
+        return {
+            "kind": "unknown",
+            "event": event,
+            "data": data,
+            "reason": "invalid_metered_settlement_confirmation",
+            "requirement_id": requirement_id,
+            "settlement_batch_id": settlement_batch_id,
+            "pricing_band": pricing_band,
+            "settlement_status": settlement_status,
+            "finality": finality,
+        }
+
+    if pricing_band == "standard":
+        chain_receipt_id = _non_empty_str(data.get("chain_receipt_id"))
+        if (
+            finality == DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY
+            and settlement_status == DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS
+            and requirement_id
+            and challenge_hash
+            and chain_receipt_id
+        ):
+            return {
+                "kind": "standard_settled",
+                "event": event,
+                "data": data,
+                "requirement_id": requirement_id,
+                "challenge_hash": challenge_hash,
+                "chain_receipt_id": chain_receipt_id,
+                "request_hash_v2": _non_empty_str(data.get("request_hash_v2")),
+            }
+        return {
+            "kind": "unknown",
+            "event": event,
+            "data": data,
+            "reason": "missing_standard_settlement_fields",
+            "requirement_id": requirement_id,
+            "pricing_band": pricing_band,
+            "settlement_status": settlement_status,
+            "finality": finality,
+        }
+
+    if pricing_band in {"micro", "nano"}:
+        if (
+            finality == DIRECT_REQUEST_PAYMENT_METERED_FINALITY
+            and settlement_status == DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS
+            and requirement_id
+            and challenge_hash
+        ):
+            return {
+                "kind": "metered_usage_accepted",
+                "event": event,
+                "data": data,
+                "pricing_band": pricing_band,
+                "requirement_id": requirement_id,
+                "challenge_hash": challenge_hash,
+                "request_hash_v2": _non_empty_str(data.get("request_hash_v2")),
+            }
+        return {
+            "kind": "unknown",
+            "event": event,
+            "data": data,
+            "reason": "missing_metered_usage_fields",
+            "requirement_id": requirement_id,
+            "pricing_band": pricing_band,
+            "settlement_status": settlement_status,
+            "finality": finality,
+        }
+
+    return {
+        "kind": "unknown",
+        "event": event,
+        "data": data,
+        "reason": "unknown_confirmation_shape",
+        "requirement_id": requirement_id,
+        "settlement_batch_id": _non_empty_str(data.get("settlement_batch_id")),
+        "pricing_band": pricing_band,
+        "settlement_status": settlement_status,
+        "finality": finality,
+    }
+
+
 def verify_direct_request_payment_webhook(
     signing_secret: str,
     body: bytes | str | Mapping[str, Any],
@@ -1002,6 +1130,13 @@ def _require_non_empty(value: Any, name: str) -> str:
     if not text:
         raise DirectRequestPaymentError(f"{name} is required.")
     return text
+
+
+def _non_empty_str(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
 
 
 def _is_hosted_checkout_unavailable(exc: SiglumeApiError) -> bool:

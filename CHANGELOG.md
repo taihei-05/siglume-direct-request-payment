@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.8 - 2026-06-19
+
+Webhook sample hardening release.
+
+- Added TypeScript and Python confirmation classifiers for Standard settled
+  payments, Micro / Nano accepted usage, and Micro / Nano settled batches.
+- Updated public webhook samples to require finality, settlement status, and
+  non-empty settlement identifiers before fulfilling or reconciling.
+- Routed unknown Micro / Nano challenge hashes and malformed settlement batch
+  confirmations to manual review in copy-paste samples.
+
 ## 0.4.7 - 2026-06-19
 
 Documentation-only patch release.

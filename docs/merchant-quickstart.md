@@ -392,7 +392,10 @@ signer and verifier only.
 Use the webhook as the durable signal, not just the browser return path.
 
 ```ts
-import { verifyDirectRequestPaymentWebhook } from "@siglume/direct-request-payment";
+import {
+  classifyDirectPaymentConfirmation,
+  verifyDirectRequestPaymentWebhook,
+} from "@siglume/direct-request-payment";
 
 const { event } = await verifyDirectRequestPaymentWebhook(
   process.env.SIGLUME_WEBHOOK_SECRET!,
@@ -404,57 +407,57 @@ if (event.type !== "direct_payment.confirmed") {
   return new Response(null, { status: 204 });
 }
 
-const data = event.data;
+const confirmation = classifyDirectPaymentConfirmation(event);
 
-if (data.mode === "metered_settlement_batch") {
+if (confirmation.kind === "metered_batch_settled") {
   // Aggregated Micro/Nano settlement events do not carry an order challenge.
-  if (data.settlement_status === "settled") {
-    await orders.reconcileMeteredSettlementOnce({
-      settlement_batch_id: String(data.settlement_batch_id ?? ""),
-      chain_receipt_id: String(data.chain_receipt_id ?? ""),
-      usage_event_digest: String(data.usage_event_digest ?? ""),
-      settled_at: String(data.settled_at ?? ""),
-    });
-  }
-  return new Response(null, { status: 204 });
-}
-
-if (
-  data.pricing_band === "standard" &&
-  data.finality === "per_payment_onchain" &&
-  data.settlement_status === "settled"
-) {
-  const order = await orders.findByChallengeHash(String(data.challenge_hash ?? ""));
-  if (!order) {
-    await orders.flagForPaymentStateReview({
-      reason: "unknown_challenge_hash",
-      requirement_id: String(data.requirement_id ?? data.direct_payment_requirement_id ?? ""),
-    });
-    return new Response(null, { status: 204 });
-  }
-  await orders.markPaidOnce(order.id, {
-    siglume_requirement_id: String(data.requirement_id ?? data.direct_payment_requirement_id ?? ""),
-    chain_receipt_id: String(data.chain_receipt_id ?? ""),
+  await orders.reconcileMeteredSettlementOnce({
+    settlement_batch_id: confirmation.settlement_batch_id,
+    chain_receipt_id: confirmation.chain_receipt_id,
+    usage_event_digest: confirmation.usage_event_digest,
+    settled_at: confirmation.settled_at ?? null,
   });
   return new Response(null, { status: 204 });
 }
 
-if (data.pricing_band === "micro" || data.pricing_band === "nano") {
-  const order = await orders.findByChallengeHash(String(data.challenge_hash ?? ""));
-  if (order) {
-    await orders.markFulfilledButUnsettledOnce(order.id, {
-      siglume_requirement_id: String(data.requirement_id ?? data.direct_payment_requirement_id ?? ""),
-      pricing_band: String(data.pricing_band),
+if (confirmation.kind === "standard_settled") {
+  const order = await orders.findByChallengeHash(confirmation.challenge_hash);
+  if (!order) {
+    await orders.flagForPaymentStateReview({
+      reason: "unknown_challenge_hash",
+      requirement_id: confirmation.requirement_id,
     });
+    return new Response(null, { status: 204 });
   }
+  await orders.markPaidOnce(order.id, {
+    siglume_requirement_id: confirmation.requirement_id,
+    chain_receipt_id: confirmation.chain_receipt_id,
+  });
+  return new Response(null, { status: 204 });
+}
+
+if (confirmation.kind === "metered_usage_accepted") {
+  const order = await orders.findByChallengeHash(confirmation.challenge_hash);
+  if (!order) {
+    await orders.flagForPaymentStateReview({
+      reason: "unknown_metered_challenge_hash",
+      requirement_id: confirmation.requirement_id,
+    });
+    return new Response(null, { status: 204 });
+  }
+  await orders.markFulfilledButUnsettledOnce(order.id, {
+    siglume_requirement_id: confirmation.requirement_id,
+    pricing_band: confirmation.pricing_band,
+  });
   return new Response(null, { status: 204 });
 }
 
 // Missing or unknown machine fields: do not mark the order paid from the event
 // name alone. Fetch the requirement or route it to manual review.
 await orders.flagForPaymentStateReview({
-  reason: "missing_settlement_machine_fields",
-  requirement_id: String(data.requirement_id ?? data.direct_payment_requirement_id ?? ""),
+  reason: confirmation.reason,
+  requirement_id: confirmation.requirement_id ?? "",
+  settlement_batch_id: confirmation.settlement_batch_id ?? null,
 });
 return new Response(null, { status: 204 });
 ```
@@ -464,7 +467,10 @@ Python:
 ```py
 import os
 
-from siglume_direct_request_payment import verify_direct_request_payment_webhook
+from siglume_direct_request_payment import (
+    classify_direct_payment_confirmation,
+    verify_direct_request_payment_webhook,
+)
 
 verified = verify_direct_request_payment_webhook(
     os.environ["SIGLUME_WEBHOOK_SECRET"],
@@ -475,53 +481,54 @@ verified = verify_direct_request_payment_webhook(
 if verified["event"]["type"] != "direct_payment.confirmed":
     return "", 204
 
-data = verified["event"]["data"]
+confirmation = classify_direct_payment_confirmation(verified["event"])
 
-if data.get("mode") == "metered_settlement_batch":
+if confirmation["kind"] == "metered_batch_settled":
     # Aggregated Micro/Nano settlement events do not carry an order challenge.
-    if data.get("settlement_status") == "settled":
-        orders.reconcile_metered_settlement_once(
-            settlement_batch_id=str(data.get("settlement_batch_id") or ""),
-            chain_receipt_id=str(data.get("chain_receipt_id") or ""),
-            usage_event_digest=str(data.get("usage_event_digest") or ""),
-            settled_at=str(data.get("settled_at") or ""),
-        )
+    orders.reconcile_metered_settlement_once(
+        settlement_batch_id=confirmation["settlement_batch_id"],
+        chain_receipt_id=confirmation["chain_receipt_id"],
+        usage_event_digest=confirmation["usage_event_digest"],
+        settled_at=confirmation.get("settled_at"),
+    )
     return "", 204
 
-if (
-    data.get("pricing_band") == "standard"
-    and data.get("finality") == "per_payment_onchain"
-    and data.get("settlement_status") == "settled"
-):
-    order = orders.find_by_challenge_hash(str(data.get("challenge_hash") or ""))
+if confirmation["kind"] == "standard_settled":
+    order = orders.find_by_challenge_hash(confirmation["challenge_hash"])
     if not order:
         orders.flag_for_payment_state_review(
             reason="unknown_challenge_hash",
-            requirement_id=str(data.get("requirement_id") or data.get("direct_payment_requirement_id") or ""),
+            requirement_id=confirmation["requirement_id"],
         )
         return "", 204
     orders.mark_paid_once(
         order["id"],
-        siglume_requirement_id=str(data.get("requirement_id") or data.get("direct_payment_requirement_id") or ""),
-        chain_receipt_id=str(data.get("chain_receipt_id") or ""),
+        siglume_requirement_id=confirmation["requirement_id"],
+        chain_receipt_id=confirmation["chain_receipt_id"],
     )
     return "", 204
 
-if data.get("pricing_band") in ("micro", "nano"):
-    order = orders.find_by_challenge_hash(str(data.get("challenge_hash") or ""))
-    if order:
-        orders.mark_fulfilled_but_unsettled_once(
-            order["id"],
-            siglume_requirement_id=str(data.get("requirement_id") or data.get("direct_payment_requirement_id") or ""),
-            pricing_band=str(data.get("pricing_band") or ""),
+if confirmation["kind"] == "metered_usage_accepted":
+    order = orders.find_by_challenge_hash(confirmation["challenge_hash"])
+    if not order:
+        orders.flag_for_payment_state_review(
+            reason="unknown_metered_challenge_hash",
+            requirement_id=confirmation["requirement_id"],
         )
+        return "", 204
+    orders.mark_fulfilled_but_unsettled_once(
+        order["id"],
+        siglume_requirement_id=confirmation["requirement_id"],
+        pricing_band=confirmation["pricing_band"],
+    )
     return "", 204
 
 # Missing or unknown machine fields: do not mark the order paid from the event
 # name alone. Fetch the requirement or route it to manual review.
 orders.flag_for_payment_state_review(
-    reason="missing_settlement_machine_fields",
-    requirement_id=str(data.get("requirement_id") or data.get("direct_payment_requirement_id") or ""),
+    reason=confirmation["reason"],
+    requirement_id=confirmation.get("requirement_id") or "",
+    settlement_batch_id=confirmation.get("settlement_batch_id"),
 )
 return "", 204
 ```
@@ -529,11 +536,12 @@ return "", 204
 ## Reconcile Micro / Nano Statements
 
 Standard Payment can be marked paid from the verified `direct_payment.confirmed`
-webhook only when `pricing_band === "standard"`,
-`finality === "per_payment_onchain"`, and `settlement_status === "settled"`.
-Micro Payment and Nano Payment are different: they are automatic amount bands
-and are settled later in aggregated on-chain batches. Use the statement APIs to
-answer:
+webhook only when `classifyDirectPaymentConfirmation(event)` returns
+`standard_settled`, which requires Standard pricing, per-payment on-chain
+finality, settled status, a challenge hash, a requirement id, and a chain
+receipt id. Micro Payment and Nano Payment are different: they are automatic
+amount bands and are settled later in aggregated on-chain batches. Use the
+statement APIs to answer:
 
 - how much Micro / Nano usage is open this week or month,
 - when the buyer's assigned period closes,

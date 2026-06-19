@@ -103,10 +103,10 @@ const session = await merchant.createCheckoutSession({
 });
 redirect(session.checkout_url); // -> https://siglume.com/pay/<session_id>
 
-// 3. Handle the signed direct_payment.confirmed webhook. Fulfill Standard only
-//    when pricing_band=standard, finality=per_payment_onchain, and
-//    settlement_status=settled. Treat Micro / Nano as accepted but unsettled
-//    until the later metered settlement batch is settled.
+// 3. Handle the signed direct_payment.confirmed webhook. Use
+//    classifyDirectPaymentConfirmation(event). Fulfill Standard only for
+//    standard_settled; treat metered_usage_accepted as fulfilled-unsettled
+//    until the later metered_batch_settled event arrives.
 //    Poll merchant.getCheckoutSession(session.session_id) if you also want to
 //    show status in your own UI.
 ```
@@ -138,10 +138,10 @@ session = merchant.create_checkout_session(
 )
 redirect(session["checkout_url"])  # -> https://siglume.com/pay/<session_id>
 
-# 3. Handle the signed direct_payment.confirmed webhook. Fulfill Standard only
-#    when pricing_band=standard, finality=per_payment_onchain, and
-#    settlement_status=settled. Treat Micro / Nano as accepted but unsettled
-#    until the later metered settlement batch is settled.
+# 3. Handle the signed direct_payment.confirmed webhook. Use
+#    classify_direct_payment_confirmation(event). Fulfill Standard only for
+#    standard_settled; treat metered_usage_accepted as fulfilled-unsettled
+#    until the later metered_batch_settled event arrives.
 #    Poll merchant.get_checkout_session(session["session_id"]) if you also want
 #    to show status in your own UI.
 ```
@@ -525,7 +525,10 @@ the payload. Create a marketplace webhook subscription with
 signing secret once.
 
 ```ts
-import { verifyDirectRequestPaymentWebhook } from "@siglume/direct-request-payment";
+import {
+  classifyDirectPaymentConfirmation,
+  verifyDirectRequestPaymentWebhook,
+} from "@siglume/direct-request-payment";
 
 const { event } = await verifyDirectRequestPaymentWebhook(
   process.env.SIGLUME_WEBHOOK_SECRET!,
@@ -534,18 +537,16 @@ const { event } = await verifyDirectRequestPaymentWebhook(
 );
 
 if (event.type === "direct_payment.confirmed") {
-  if (event.data.mode === "metered_settlement_batch") {
+  const confirmation = classifyDirectPaymentConfirmation(event);
+  if (confirmation.kind === "metered_batch_settled") {
     // Reconcile settled Micro / Nano batches by settlement_batch_id /
     // usage_event_digest; these events do not carry an order challenge hash.
-  } else if (
-    event.data.pricing_band === "standard" &&
-    event.data.finality === "per_payment_onchain" &&
-    event.data.settlement_status === "settled"
-  ) {
+  } else if (confirmation.kind === "standard_settled") {
     // Mark the order paid once if event.data.challenge_hash/order mapping matches.
-  } else if (event.data.pricing_band === "micro" || event.data.pricing_band === "nano") {
-    // Mark fulfilled-but-unsettled only if your business allows fulfillment
-    // before the aggregated Micro / Nano settlement succeeds.
+  } else if (confirmation.kind === "metered_usage_accepted") {
+    // Mark fulfilled-but-unsettled after matching confirmation.challenge_hash.
+  } else {
+    // Route confirmation.reason to manual review. Do not mark paid or fulfilled.
   }
 }
 ```
@@ -553,7 +554,10 @@ if (event.type === "direct_payment.confirmed") {
 ```py
 import os
 
-from siglume_direct_request_payment import verify_direct_request_payment_webhook
+from siglume_direct_request_payment import (
+    classify_direct_payment_confirmation,
+    verify_direct_request_payment_webhook,
+)
 
 verified = verify_direct_request_payment_webhook(
     os.environ["SIGLUME_WEBHOOK_SECRET"],
@@ -562,30 +566,30 @@ verified = verify_direct_request_payment_webhook(
 )
 
 if verified["event"]["type"] == "direct_payment.confirmed":
-    data = verified["event"]["data"]
-    if data.get("mode") == "metered_settlement_batch":
+    confirmation = classify_direct_payment_confirmation(verified["event"])
+    if confirmation["kind"] == "metered_batch_settled":
         # Reconcile settled Micro / Nano batches by settlement_batch_id /
         # usage_event_digest; these events do not carry an order challenge hash.
         pass
-    elif (
-        data.get("pricing_band") == "standard"
-        and data.get("finality") == "per_payment_onchain"
-        and data.get("settlement_status") == "settled"
-    ):
+    elif confirmation["kind"] == "standard_settled":
         # Mark the order paid once if event.data.challenge_hash/order mapping matches.
         pass
-    elif data.get("pricing_band") in ("micro", "nano"):
-        # Mark fulfilled-but-unsettled only if your business allows fulfillment
-        # before the aggregated Micro / Nano settlement succeeds.
+    elif confirmation["kind"] == "metered_usage_accepted":
+        # Mark fulfilled-but-unsettled after matching confirmation["challenge_hash"].
+        pass
+    else:
+        # Route confirmation["reason"] to manual review. Do not mark paid or fulfilled.
         pass
 ```
 
 New `direct_payment.confirmed` payloads include `pricing_band`,
 `settlement_cadence`, `finality`, `protocol_fee_minor`, `settlement_status`,
 `settlement_batch_id`, `chain_receipt_id`, `usage_event_digest`, `settled_at`,
-and when available `request_hash_v2`. Use these machine fields instead of
-inferring settlement semantics from the event name alone. Do not mark an order
-paid from the event type alone.
+and when available `request_hash_v2`. Use
+`classifyDirectPaymentConfirmation(event)` /
+`classify_direct_payment_confirmation(event)` or the same machine-field checks
+instead of inferring settlement semantics from the event name alone. Do not mark
+an order paid from the event type alone.
 
 ## Security Rules
 

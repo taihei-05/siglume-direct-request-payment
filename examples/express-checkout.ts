@@ -1,5 +1,6 @@
 import express from "express";
 import {
+  classifyDirectPaymentConfirmation,
   DirectRequestPaymentMerchantClient,
   verifyDirectRequestPaymentWebhook,
 } from "@siglume/direct-request-payment";
@@ -22,45 +23,54 @@ app.use((req, res, next) => {
 
 const orders = new Map<string, any>();
 
-async function handleDirectPaymentConfirmed(data: Record<string, any>): Promise<void> {
-  if (data.mode === "metered_settlement_batch") {
+async function flagForPaymentStateReview(payload: Record<string, any>): Promise<void> {
+  console.warn("payment state review required", payload);
+}
+
+async function handleDirectPaymentConfirmed(event: any): Promise<void> {
+  const classification = classifyDirectPaymentConfirmation(event);
+
+  if (classification.kind === "metered_batch_settled") {
     // Aggregated Micro/Nano settlement events do not carry an order challenge.
     // Reconcile them against statement / settlement batch data instead.
-    if (data.settlement_status === "settled") {
-      console.log("settled metered batch", data.settlement_batch_id || data.usage_event_digest);
-    }
+    console.log("settled metered batch", classification.settlement_batch_id, classification.chain_receipt_id);
     return;
   }
 
-  if (
-    data.pricing_band === "standard" &&
-    data.finality === "per_payment_onchain" &&
-    data.settlement_status === "settled"
-  ) {
-    const challengeHash = String(data.challenge_hash || "");
-    const order = [...orders.values()].find((item) => item.siglume_challenge_hash === challengeHash);
+  if (classification.kind === "standard_settled") {
+    const order = [...orders.values()].find((item) => item.siglume_challenge_hash === classification.challenge_hash);
     if (order) {
       order.siglume_payment_status = "paid";
-      order.siglume_requirement_id = data.requirement_id || data.direct_payment_requirement_id;
-      order.siglume_chain_receipt_id = data.chain_receipt_id || null;
+      order.siglume_requirement_id = classification.requirement_id;
+      order.siglume_chain_receipt_id = classification.chain_receipt_id;
+    } else {
+      await flagForPaymentStateReview({
+        reason: "unknown_challenge_hash",
+        requirement_id: classification.requirement_id,
+      });
     }
     return;
   }
 
-  if (data.pricing_band === "micro" || data.pricing_band === "nano") {
-    const challengeHash = String(data.challenge_hash || "");
-    const order = [...orders.values()].find((item) => item.siglume_challenge_hash === challengeHash);
+  if (classification.kind === "metered_usage_accepted") {
+    const order = [...orders.values()].find((item) => item.siglume_challenge_hash === classification.challenge_hash);
     if (order) {
       order.siglume_payment_status = "fulfilled_unsettled";
-      order.siglume_requirement_id = data.requirement_id || data.direct_payment_requirement_id;
+      order.siglume_requirement_id = classification.requirement_id;
+    } else {
+      await flagForPaymentStateReview({
+        reason: "unknown_metered_challenge_hash",
+        requirement_id: classification.requirement_id,
+      });
     }
     return;
   }
 
   // Unknown or older payload shape: do not mark paid from the event name alone.
-  console.warn("direct_payment.confirmed missing settlement machine fields", {
-    id: data.id,
-    requirement_id: data.requirement_id || data.direct_payment_requirement_id,
+  await flagForPaymentStateReview({
+    reason: classification.reason,
+    requirement_id: classification.requirement_id,
+    settlement_batch_id: classification.settlement_batch_id,
   });
 }
 
@@ -111,7 +121,7 @@ app.post("/siglume/webhook", express.raw({ type: "application/json" }), asyncRou
   );
 
   if (event.type === "direct_payment.confirmed") {
-    await handleDirectPaymentConfirmed(event.data);
+    await handleDirectPaymentConfirmed(event);
   }
 
   res.status(204).send();
