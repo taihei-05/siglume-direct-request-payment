@@ -25,7 +25,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.8"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.9"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
 DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain"
@@ -915,6 +915,7 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
     )
     challenge_hash = _non_empty_str(data.get("challenge_hash"))
     pricing_band = _non_empty_str(data.get("pricing_band"))
+    settlement_cadence = _non_empty_str(data.get("settlement_cadence"))
     finality = _non_empty_str(data.get("finality"))
     settlement_status = _non_empty_str(data.get("settlement_status"))
 
@@ -927,6 +928,7 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
             "requirement_id": requirement_id,
             "settlement_batch_id": _non_empty_str(data.get("settlement_batch_id")),
             "pricing_band": pricing_band,
+            "settlement_cadence": settlement_cadence,
             "settlement_status": settlement_status,
             "finality": finality,
         }
@@ -937,6 +939,9 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
         usage_event_digest = _non_empty_str(data.get("usage_event_digest"))
         if (
             settlement_status == DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS
+            and finality == DIRECT_REQUEST_PAYMENT_METERED_FINALITY
+            and pricing_band in {"micro", "nano"}
+            and settlement_cadence == ("weekly" if pricing_band == "micro" else "monthly")
             and settlement_batch_id
             and chain_receipt_id
             and usage_event_digest
@@ -945,6 +950,8 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
                 "kind": "metered_batch_settled",
                 "event": event,
                 "data": data,
+                "pricing_band": pricing_band,
+                "settlement_cadence": "weekly" if pricing_band == "micro" else "monthly",
                 "settlement_batch_id": settlement_batch_id,
                 "chain_receipt_id": chain_receipt_id,
                 "usage_event_digest": usage_event_digest,
@@ -958,6 +965,7 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
             "requirement_id": requirement_id,
             "settlement_batch_id": settlement_batch_id,
             "pricing_band": pricing_band,
+            "settlement_cadence": settlement_cadence,
             "settlement_status": settlement_status,
             "finality": finality,
         }
@@ -987,6 +995,7 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
             "reason": "missing_standard_settlement_fields",
             "requirement_id": requirement_id,
             "pricing_band": pricing_band,
+            "settlement_cadence": settlement_cadence,
             "settlement_status": settlement_status,
             "finality": finality,
         }
@@ -1014,6 +1023,7 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
             "reason": "missing_metered_usage_fields",
             "requirement_id": requirement_id,
             "pricing_band": pricing_band,
+            "settlement_cadence": settlement_cadence,
             "settlement_status": settlement_status,
             "finality": finality,
         }
@@ -1026,6 +1036,7 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
         "requirement_id": requirement_id,
         "settlement_batch_id": _non_empty_str(data.get("settlement_batch_id")),
         "pricing_band": pricing_band,
+        "settlement_cadence": settlement_cadence,
         "settlement_status": settlement_status,
         "finality": finality,
     }

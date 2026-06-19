@@ -166,6 +166,9 @@ def test_requires_settlement_batch_identifiers_before_classifying_metered_batch_
             "occurred_at": "2026-06-11T00:00:00Z",
             "data": {
                 "mode": "metered_settlement_batch",
+                "pricing_band": "micro",
+                "settlement_cadence": "weekly",
+                "finality": "aggregated_onchain_settlement",
                 "settlement_status": "settled",
                 "settlement_batch_id": "msb_123",
                 "chain_receipt_id": "chain_123",
@@ -175,6 +178,8 @@ def test_requires_settlement_batch_identifiers_before_classifying_metered_batch_
     )
 
     assert result["kind"] == "metered_batch_settled"
+    assert result["pricing_band"] == "micro"
+    assert result["settlement_cadence"] == "weekly"
     assert result["settlement_batch_id"] == "msb_123"
     assert result["chain_receipt_id"] == "chain_123"
     assert result["usage_event_digest"] == "sha256:usage"
@@ -187,6 +192,9 @@ def test_requires_settlement_batch_identifiers_before_classifying_metered_batch_
             "occurred_at": "2026-06-11T00:00:00Z",
             "data": {
                 "mode": "metered_settlement_batch",
+                "pricing_band": "micro",
+                "settlement_cadence": "weekly",
+                "finality": "aggregated_onchain_settlement",
                 "settlement_status": "settled",
                 "settlement_batch_id": "msb_123",
                 "usage_event_digest": "sha256:usage",
@@ -196,6 +204,42 @@ def test_requires_settlement_batch_identifiers_before_classifying_metered_batch_
 
     assert missing_receipt["kind"] == "unknown"
     assert missing_receipt["reason"] == "invalid_metered_settlement_confirmation"
+
+
+def test_requires_metered_batch_finality_band_and_cadence_before_classifying_settled() -> None:
+    valid_data = {
+        "mode": "metered_settlement_batch",
+        "pricing_band": "micro",
+        "settlement_cadence": "weekly",
+        "finality": "aggregated_onchain_settlement",
+        "settlement_status": "settled",
+        "settlement_batch_id": "msb_123",
+        "chain_receipt_id": "chain_123",
+        "usage_event_digest": "sha256:usage",
+    }
+    invalid_cases = [
+        ("missing finality", {"finality": None}),
+        ("standard finality", {"finality": "per_payment_onchain"}),
+        ("missing pricing band", {"pricing_band": None}),
+        ("micro monthly cadence", {"settlement_cadence": "monthly"}),
+        ("nano weekly cadence", {"pricing_band": "nano", "settlement_cadence": "weekly"}),
+    ]
+
+    for name, override in invalid_cases:
+        data = {**valid_data, **override}
+        data = {key: value for key, value in data.items() if value is not None}
+        result = classify_direct_payment_confirmation(
+            {
+                "id": f"evt_batch_{name.replace(' ', '_')}",
+                "type": "direct_payment.confirmed",
+                "api_version": "2026-06-11",
+                "occurred_at": "2026-06-11T00:00:00Z",
+                "data": data,
+            }
+        )
+
+        assert result["kind"] == "unknown", name
+        assert result["reason"] == "invalid_metered_settlement_confirmation", name
 
 
 def test_rejects_direct_payment_events_with_wrong_mode() -> None:

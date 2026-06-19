@@ -971,9 +971,11 @@ requirements; keep accepting `event.data.request_hash` for historical payloads.
 Recommended branch: call `classifyDirectPaymentConfirmation(event)` /
 `classify_direct_payment_confirmation(event)` and switch on `kind`:
 
-- `metered_batch_settled`: no order `challenge_hash` is expected. Reconcile the
-  batch with the returned non-empty `settlement_batch_id`, `chain_receipt_id`,
-  and `usage_event_digest`.
+- `metered_batch_settled`: no order `challenge_hash` is expected. This requires
+  Micro / Nano pricing, the matching settlement cadence (`micro` -> `weekly`,
+  `nano` -> `monthly`), `finality === "aggregated_onchain_settlement"`, settled
+  status, and non-empty `settlement_batch_id`, `chain_receipt_id`, and
+  `usage_event_digest`. Reconcile the batch with those returned identifiers.
 - `standard_settled`: mark the mapped order paid once. This requires Standard
   pricing, per-payment on-chain finality, settled status, non-empty
   `requirement_id`, non-empty `challenge_hash`, and non-empty
@@ -998,9 +1000,10 @@ Classifies a parsed `direct_payment.confirmed` event into:
 - `metered_batch_settled`
 - `unknown`
 
-The classifier is fail-closed: missing finality, missing settlement status,
-empty challenge hashes, empty requirement ids, and empty settlement batch
-receipt identifiers return `kind: "unknown"` with a machine-readable `reason`.
+The classifier is fail-closed: missing finality, missing pricing band, mismatched
+Micro / Nano settlement cadence, missing settlement status, empty challenge
+hashes, empty requirement ids, and empty settlement batch receipt identifiers
+return `kind: "unknown"` with a machine-readable `reason`.
 
 ### `verifyDirectRequestPaymentWebhook(secret, body, signature_header, options)` / `verify_direct_request_payment_webhook(secret, body, signature_header, *, tolerance_seconds=300, now=None)`
 

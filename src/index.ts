@@ -9,7 +9,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.8";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.9";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain";
@@ -499,6 +499,8 @@ export interface DirectPaymentMeteredBatchSettledClassification {
   kind: "metered_batch_settled";
   event: DirectRequestPaymentWebhookEvent;
   data: DirectRequestPaymentWebhookEvent["data"];
+  pricing_band: DirectRequestPaymentMeteredPlanType;
+  settlement_cadence: "weekly" | "monthly";
   settlement_batch_id: string;
   chain_receipt_id: string;
   usage_event_digest: string;
@@ -513,6 +515,7 @@ export interface DirectPaymentUnknownClassification {
   requirement_id?: string | null;
   settlement_batch_id?: string | null;
   pricing_band?: string | null;
+  settlement_cadence?: string | null;
   settlement_status?: string | null;
   finality?: string | null;
 }
@@ -1294,6 +1297,7 @@ export function classifyDirectPaymentConfirmation(
   const requirementId = stringOrNull(data.requirement_id) ?? stringOrNull(data.direct_payment_requirement_id);
   const challengeHash = stringOrNull(data.challenge_hash);
   const pricingBand = stringOrNull(data.pricing_band);
+  const settlementCadence = stringOrNull(data.settlement_cadence);
   const finality = stringOrNull(data.finality);
   const settlementStatus = stringOrNull(data.settlement_status);
 
@@ -1306,6 +1310,7 @@ export function classifyDirectPaymentConfirmation(
       requirement_id: requirementId,
       settlement_batch_id: stringOrNull(data.settlement_batch_id),
       pricing_band: pricingBand,
+      settlement_cadence: settlementCadence,
       settlement_status: settlementStatus,
       finality,
     };
@@ -1317,6 +1322,9 @@ export function classifyDirectPaymentConfirmation(
     const usageEventDigest = stringOrNull(data.usage_event_digest);
     if (
       settlementStatus === DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS &&
+      finality === DIRECT_REQUEST_PAYMENT_METERED_FINALITY &&
+      (pricingBand === "micro" || pricingBand === "nano") &&
+      settlementCadence === (pricingBand === "micro" ? "weekly" : "monthly") &&
       settlementBatchId &&
       chainReceiptId &&
       usageEventDigest
@@ -1325,6 +1333,8 @@ export function classifyDirectPaymentConfirmation(
         kind: "metered_batch_settled",
         event,
         data,
+        pricing_band: pricingBand,
+        settlement_cadence: pricingBand === "micro" ? "weekly" : "monthly",
         settlement_batch_id: settlementBatchId,
         chain_receipt_id: chainReceiptId,
         usage_event_digest: usageEventDigest,
@@ -1339,6 +1349,7 @@ export function classifyDirectPaymentConfirmation(
       requirement_id: requirementId,
       settlement_batch_id: settlementBatchId,
       pricing_band: pricingBand,
+      settlement_cadence: settlementCadence,
       settlement_status: settlementStatus,
       finality,
     };
@@ -1370,6 +1381,7 @@ export function classifyDirectPaymentConfirmation(
       reason: "missing_standard_settlement_fields",
       requirement_id: requirementId,
       pricing_band: pricingBand,
+      settlement_cadence: settlementCadence,
       settlement_status: settlementStatus,
       finality,
     };
@@ -1399,6 +1411,7 @@ export function classifyDirectPaymentConfirmation(
       reason: "missing_metered_usage_fields",
       requirement_id: requirementId,
       pricing_band: pricingBand,
+      settlement_cadence: settlementCadence,
       settlement_status: settlementStatus,
       finality,
     };
@@ -1412,6 +1425,7 @@ export function classifyDirectPaymentConfirmation(
     requirement_id: requirementId,
     settlement_batch_id: stringOrNull(data.settlement_batch_id),
     pricing_band: pricingBand,
+    settlement_cadence: settlementCadence,
     settlement_status: settlementStatus,
     finality,
   };

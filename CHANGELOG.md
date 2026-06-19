@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.9 - 2026-06-19
+
+Classifier consistency patch release.
+
+- Required Micro / Nano settlement batch confirmations to carry aggregated
+  on-chain finality, a valid Micro/Nano pricing band, and the expected weekly or
+  monthly settlement cadence before returning `metered_batch_settled`.
+- Added TypeScript and Python tests for missing finality, wrong finality,
+  missing pricing band, and Micro/Nano cadence mismatches.
+
 ## 0.4.8 - 2026-06-19
 
 Webhook sample hardening release.

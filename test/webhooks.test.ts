@@ -166,6 +166,9 @@ describe("Direct Request Payment webhooks", () => {
       occurred_at: "2026-06-11T00:00:00Z",
       data: {
         mode: "metered_settlement_batch",
+        pricing_band: "micro",
+        settlement_cadence: "weekly",
+        finality: "aggregated_onchain_settlement",
         settlement_status: "settled",
         settlement_batch_id: "msb_123",
         chain_receipt_id: "chain_123",
@@ -175,6 +178,8 @@ describe("Direct Request Payment webhooks", () => {
 
     expect(result.kind).toBe("metered_batch_settled");
     if (result.kind === "metered_batch_settled") {
+      expect(result.pricing_band).toBe("micro");
+      expect(result.settlement_cadence).toBe("weekly");
       expect(result.settlement_batch_id).toBe("msb_123");
       expect(result.chain_receipt_id).toBe("chain_123");
       expect(result.usage_event_digest).toBe("sha256:usage");
@@ -187,6 +192,9 @@ describe("Direct Request Payment webhooks", () => {
       occurred_at: "2026-06-11T00:00:00Z",
       data: {
         mode: "metered_settlement_batch",
+        pricing_band: "micro",
+        settlement_cadence: "weekly",
+        finality: "aggregated_onchain_settlement",
         settlement_status: "settled",
         settlement_batch_id: "msb_123",
         usage_event_digest: "sha256:usage",
@@ -196,6 +204,47 @@ describe("Direct Request Payment webhooks", () => {
     expect(missingReceipt.kind).toBe("unknown");
     if (missingReceipt.kind === "unknown") {
       expect(missingReceipt.reason).toBe("invalid_metered_settlement_confirmation");
+    }
+  });
+
+  it("requires metered batch finality, band, and cadence before classifying settled", () => {
+    const validData = {
+      mode: "metered_settlement_batch",
+      pricing_band: "micro",
+      settlement_cadence: "weekly",
+      finality: "aggregated_onchain_settlement",
+      settlement_status: "settled",
+      settlement_batch_id: "msb_123",
+      chain_receipt_id: "chain_123",
+      usage_event_digest: "sha256:usage",
+    };
+    const invalidCases: Array<[string, Record<string, unknown>]> = [
+      ["missing finality", { finality: undefined }],
+      ["standard finality", { finality: "per_payment_onchain" }],
+      ["missing pricing band", { pricing_band: undefined }],
+      ["micro monthly cadence", { settlement_cadence: "monthly" }],
+      ["nano weekly cadence", { pricing_band: "nano", settlement_cadence: "weekly" }],
+    ];
+
+    for (const [name, override] of invalidCases) {
+      const data = { ...validData, ...override };
+      for (const key of Object.keys(data)) {
+        if (data[key as keyof typeof data] === undefined) {
+          delete data[key as keyof typeof data];
+        }
+      }
+      const result = classifyDirectPaymentConfirmation({
+        id: `evt_batch_${name.replace(/\s+/g, "_")}`,
+        type: "direct_payment.confirmed",
+        api_version: "2026-06-11",
+        occurred_at: "2026-06-11T00:00:00Z",
+        data,
+      });
+
+      expect(result.kind, name).toBe("unknown");
+      if (result.kind === "unknown") {
+        expect(result.reason, name).toBe("invalid_metered_settlement_confirmation");
+      }
     }
   });
 
