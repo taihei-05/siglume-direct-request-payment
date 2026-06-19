@@ -66,6 +66,10 @@ def test_accepts_metered_settlement_confirmation_machine_fields() -> None:
             "finality": "aggregated_onchain_settlement",
             "protocol_fee_minor": "1.6",
             "settlement_status": "settled",
+            "settlement_batch_id": "msb_123",
+            "chain_receipt_id": "chain_123",
+            "usage_event_digest": "sha256:usage",
+            "settled_at": "2026-06-19T00:00:00Z",
         },
     }
     raw_body = json.dumps(event, separators=(",", ":"))
@@ -75,6 +79,11 @@ def test_accepts_metered_settlement_confirmation_machine_fields() -> None:
 
     assert verified["event"]["data"]["pricing_band"] == "micro"
     assert verified["event"]["data"]["settlement_status"] == "settled"
+    assert "challenge_hash" not in verified["event"]["data"]
+    assert verified["event"]["data"]["settlement_batch_id"] == "msb_123"
+    assert verified["event"]["data"]["chain_receipt_id"] == "chain_123"
+    assert verified["event"]["data"]["usage_event_digest"] == "sha256:usage"
+    assert verified["event"]["data"]["settled_at"] == "2026-06-19T00:00:00Z"
 
 
 def test_rejects_direct_payment_events_with_wrong_mode() -> None:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "siglume-direct-request-payment"
-version = "0.4.5"
+version = "0.4.6"
 description = "SDK for the Siglume Direct Request Payment SDRP payment protocol"
 readme = "README.md"
 license = "MIT"

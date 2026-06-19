@@ -65,6 +65,10 @@ describe("Direct Request Payment webhooks", () => {
         finality: "aggregated_onchain_settlement",
         protocol_fee_minor: "1.6",
         settlement_status: "settled",
+        settlement_batch_id: "msb_123",
+        chain_receipt_id: "chain_123",
+        usage_event_digest: "sha256:usage",
+        settled_at: "2026-06-19T00:00:00Z",
       },
     };
     const rawBody = JSON.stringify(event);
@@ -76,6 +80,11 @@ describe("Direct Request Payment webhooks", () => {
 
     expect(verified.event.data.pricing_band).toBe("micro");
     expect(verified.event.data.settlement_status).toBe("settled");
+    expect(verified.event.data.challenge_hash).toBeUndefined();
+    expect(verified.event.data.settlement_batch_id).toBe("msb_123");
+    expect(verified.event.data.chain_receipt_id).toBe("chain_123");
+    expect(verified.event.data.usage_event_digest).toBe("sha256:usage");
+    expect(verified.event.data.settled_at).toBe("2026-06-19T00:00:00Z");
   });
 
   it("rejects direct payment events with the wrong mode", async () => {

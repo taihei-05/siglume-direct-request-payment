@@ -9,7 +9,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.5";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.6";
 const DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = new Set([DIRECT_REQUEST_PAYMENT_MODE, "metered_settlement_batch"]);
 
 export type DirectRequestPaymentCurrency = "JPY" | "USD";
@@ -352,6 +352,12 @@ export interface HostedCheckoutSession {
   status: string;
   challenge_hash: string;
   requirement_id?: string | null;
+  pricing_band?: "standard" | DirectRequestPaymentMeteredPlanType | string | null;
+  settlement_cadence?: "per_payment" | "weekly" | "monthly" | string | null;
+  finality?: string | null;
+  protocol_fee_minor?: DirectRequestPaymentMinorAmount | null;
+  settlement_status?: string | null;
+  chain_receipt_id?: string | null;
   success_url: string;
   cancel_url: string;
   expires_at?: string | null;
@@ -443,6 +449,10 @@ export interface DirectRequestPaymentWebhookEvent {
     finality?: string | null;
     protocol_fee_minor?: DirectRequestPaymentMinorAmount | null;
     settlement_status?: string | null;
+    settlement_batch_id?: string | null;
+    chain_receipt_id?: string | null;
+    usage_event_digest?: string | null;
+    settled_at?: string | null;
     [key: string]: unknown;
   };
   [key: string]: unknown;

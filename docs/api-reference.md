@@ -26,9 +26,11 @@ card — and the merchant SDK never authenticates the buyer.
   runs are bounded by Siglume's approval gates / spending budgets (per-run /
   daily / monthly auto-pay budgets, or Works approval).
 
-In both systems the merchant fulfills on the same signed
-`direct_payment.confirmed` webhook. Hosted Checkout adds no new money movement
-and no new webhook.
+In both systems the merchant handles the same signed `direct_payment.confirmed`
+webhook. Hosted Checkout adds no new money movement and no new webhook. Inspect
+`pricing_band`, `finality`, and `settlement_status`: Standard can be marked paid
+only after settled per-payment finality, while Micro / Nano usage is accepted
+before the later aggregated settlement.
 
 ## Environment Variables
 
@@ -364,8 +366,9 @@ webhook-origin auto-allow apply.
 Beta / server rollout: Hosted Checkout is rolling out account by account. If the
 server endpoint is not enabled for the merchant yet, the SDK raises
 `HostedCheckoutNotAvailableError` (TS + Py) rather than leaking a raw rollout
-404/409. Fulfillment must still key off the signed `direct_payment.confirmed`
-webhook.
+404/409. Payment handling must still key off the signed
+`direct_payment.confirmed` webhook and its settlement machine fields, not the
+event name alone.
 
 Creates a single-use, expiring Hosted Checkout session for a human web shopper
 and returns the URL to redirect them to. Requires the merchant's Siglume bearer
@@ -447,11 +450,24 @@ Returns a `HostedCheckoutSession` status object with:
   `failed`
 - `challenge_hash`
 - `requirement_id` (nullable until a requirement is created)
+- `pricing_band` (nullable until a requirement is created): `standard`,
+  `micro`, or `nano`
+- `settlement_cadence` (nullable until a requirement is created):
+  `per_payment`, `weekly`, or `monthly`
+- `finality` (nullable until a requirement is created), for example
+  `per_payment_onchain` or `aggregated_onchain_settlement`
+- `protocol_fee_minor` (nullable; decimal string for Micro / Nano)
+- `settlement_status` (nullable until a requirement is created), for example
+  `pending_payment`, `provisional`, `settled`, or `pending_settlement`
+- `chain_receipt_id` (nullable)
 - `success_url`
 - `cancel_url`
 - `expires_at` (nullable)
 - `authenticated_at` (nullable; set when the shopper signs into Siglume)
-- `paid_at` (nullable; set when the payment confirms)
+- `paid_at` (nullable; set when Hosted Checkout has accepted the wallet
+  payment flow. For Micro / Nano, this is not the same as final provider
+  settlement; use `pricing_band`, `finality`, `settlement_status`, and the
+  statement APIs.)
 - `cancelled_at` (nullable; set when the shopper cancels)
 - `created_at` (nullable)
 - `metadata_jsonb`
@@ -564,6 +580,13 @@ nonce: derive `nonce` from a durable order payment attempt, store the returned
 `challenge_hash`, and use `request_hash_v2` when you need a canonical machine
 hash for the same payment request. Do not retry the same order by minting a new
 nonce unless you intentionally want a new payment attempt.
+
+For Siglume Marketplace paid capability execution / MCP tools, `idempotency_key`
+is a separate top-level JSON field on the execution payload or tool arguments.
+Use one stable key per logical paid operation, up to 128 characters, and do not
+reuse it for a different payload. A retry with the same key returns or reconciles
+the first recorded outcome instead of creating another chargeable usage event.
+The HTTP `Idempotency-Key` header is not the public requirement-create contract.
 
 The returned requirement includes both compatibility and machine-readable
 settlement fields:
@@ -937,11 +960,26 @@ argument is positional in both languages.
 
 For `direct_payment.confirmed`, inspect `event.data.pricing_band`,
 `event.data.settlement_cadence`, `event.data.finality`,
-`event.data.protocol_fee_minor`, and `event.data.settlement_status` instead of
-inferring whether the event means per-payment on-chain confirmation or an
-aggregated Micro / Nano settlement confirmation. `event.data.request_hash_v2`
-is present on new challenge-backed requirements; keep accepting
-`event.data.request_hash` for historical payloads.
+`event.data.protocol_fee_minor`, `event.data.settlement_status`,
+`event.data.settlement_batch_id`, `event.data.chain_receipt_id`,
+`event.data.usage_event_digest`, and `event.data.settled_at` instead of
+inferring whether the event means per-payment on-chain confirmation, Micro /
+Nano accepted-but-unsettled usage, or an aggregated Micro / Nano settlement
+confirmation. `event.data.request_hash_v2` is present on new challenge-backed
+requirements; keep accepting `event.data.request_hash` for historical payloads.
+
+Recommended branch:
+
+- `mode === "metered_settlement_batch"`: no order `challenge_hash` is expected.
+  Reconcile the batch only when `settlement_status === "settled"`.
+- `pricing_band === "standard"`, `finality === "per_payment_onchain"`, and
+  `settlement_status === "settled"`: mark the mapped order paid once.
+- `pricing_band === "micro" || pricing_band === "nano"`: treat the usage as
+  accepted but unsettled. Fulfill only if your business accepts delayed
+  settlement risk, and reconcile final revenue from statement APIs / settlement
+  batches.
+- Missing machine fields: do not mark paid from the event type alone; fetch the
+  requirement or route the event to manual review.
 
 ### `verifyDirectRequestPaymentWebhook(secret, body, signature_header, options)` / `verify_direct_request_payment_webhook(secret, body, signature_header, *, tolerance_seconds=300, now=None)`
 
@@ -959,7 +997,8 @@ const { event, verification } = await verifyDirectRequestPaymentWebhook(
   rawRequestBody,                       // the RAW body bytes/string, not re-stringified JSON
   request.headers["siglume-signature"],
 );
-// event.type === "direct_payment.confirmed" -> fulfill once; verification.timestamp is the signed time
+// event.type === "direct_payment.confirmed"; inspect pricing_band/finality/
+// settlement_status before marking an order paid.
 ```
 
 ```py
@@ -971,7 +1010,8 @@ verified = verify_direct_request_payment_webhook(
     siglume_signature_header,
 )
 event = verified["event"]
-# event["type"] == "direct_payment.confirmed" -> fulfill once
+# event["type"] == "direct_payment.confirmed"; inspect pricing_band/finality/
+# settlement_status before marking an order paid.
 ```
 
 ## Exported Constants

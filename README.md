@@ -67,12 +67,16 @@ card-style "instant" checkout for first-time buyers.
 Some merchant accounts may not have the server endpoint enabled yet. In that
 case `createCheckoutSession(...)` / `getCheckoutSession(...)` raises
 `HostedCheckoutNotAvailableError` instead of exposing the raw rollout 404/409.
-Keep fulfilling only from the signed `direct_payment.confirmed` webhook.
+Keep the signed `direct_payment.confirmed` webhook as the durable signal, and
+inspect its settlement machine fields before marking any order paid.
 
 Hosted Checkout is a Siglume-hosted page that turns a "Pay with Siglume" button
 into a completed wallet payment, then returns the shopper to your store. It
-orchestrates the same rails as the agent flow — there is no new money movement
-and the merchant fulfills on the same `direct_payment.confirmed` webhook.
+orchestrates the same rails as the agent flow — there is no new money movement.
+Fulfillment still starts from the signed `direct_payment.confirmed` webhook, but
+you must inspect the settlement machine fields before deciding whether the event
+means Standard settled payment, Micro / Nano accepted usage, or aggregated
+Micro / Nano settlement.
 
 ```ts
 import { DirectRequestPaymentMerchantClient } from "@siglume/direct-request-payment";
@@ -99,9 +103,12 @@ const session = await merchant.createCheckoutSession({
 });
 redirect(session.checkout_url); // -> https://siglume.com/pay/<session_id>
 
-// 3. Fulfill when the signed direct_payment.confirmed webhook arrives (the
-//    source of truth). Poll merchant.getCheckoutSession(session.session_id) if
-//    you also want to show status in your own UI.
+// 3. Handle the signed direct_payment.confirmed webhook. Fulfill Standard only
+//    when pricing_band=standard, finality=per_payment_onchain, and
+//    settlement_status=settled. Treat Micro / Nano as accepted but unsettled
+//    until the later metered settlement batch is settled.
+//    Poll merchant.getCheckoutSession(session.session_id) if you also want to
+//    show status in your own UI.
 ```
 
 ```py
@@ -131,9 +138,12 @@ session = merchant.create_checkout_session(
 )
 redirect(session["checkout_url"])  # -> https://siglume.com/pay/<session_id>
 
-# 3. Fulfill when the signed direct_payment.confirmed webhook arrives (the
-#    source of truth). Poll merchant.get_checkout_session(session["session_id"])
-#    if you also want to show status in your own UI.
+# 3. Handle the signed direct_payment.confirmed webhook. Fulfill Standard only
+#    when pricing_band=standard, finality=per_payment_onchain, and
+#    settlement_status=settled. Treat Micro / Nano as accepted but unsettled
+#    until the later metered settlement batch is settled.
+#    Poll merchant.get_checkout_session(session["session_id"]) if you also want
+#    to show status in your own UI.
 ```
 
 Siglume fixes the amount, currency, challenge, and return URLs **server-side** at
@@ -184,6 +194,9 @@ Provider revenue in the Micro and Nano bands is not settled revenue until the
 weekly or monthly on-chain settlement succeeds. Siglume keeps outstanding failed
 settlements for retry under the published policy, but does not advance or
 guarantee provider revenue before settlement succeeds.
+If your product cannot fulfill before provider revenue is settled, keep the
+price in the Standard band or agree a merchant-specific contract with Siglume
+before launch.
 Micro / Nano budget checks reserve spending capacity only; they do not lock,
 escrow, or guarantee the buyer's wallet balance, allowance, or settlement funds.
 Sub-minor-unit Nano fees are accumulated with decimal precision and rounded only
@@ -208,7 +221,8 @@ and CSV exports, see
 - buyer-authenticated payment requirement creation
 - prepared wallet transaction execution payloads
 - payment requirement verification
-- authenticated TypeScript JSON requests to Micro / Nano statement APIs
+- authenticated TypeScript JSON requests and named Python helpers for Micro /
+  Nano statement APIs
 - signed webhook verification
 
 It does not custody funds or manage customer wallets. Merchant setup runs through
@@ -250,9 +264,11 @@ Launch plan. The current public API does not expose a flag that forces a
 JPY 500-and-under / USD 3-and-under payment into Standard immediate settlement.
 If immediate on-chain settlement is a hard requirement, price the item in the
 Standard band or confirm a merchant-specific contract with Siglume before
-launch. For Standard Payment, `fee_bps` returned on a payment requirement is the
-authoritative fee rate for that payment in the merchant's settlement currency.
-For Micro / Nano, the statement APIs expose `protocol_fee_minor`,
+launch. Public Direct Payment / Hosted Checkout `amount_minor` is a positive
+integer in minor currency units, so public one-time Nano amounts start at JPY 1
+or USD 0.01. For Standard Payment, `fee_bps` returned on a payment requirement
+is the authoritative fee rate for that payment in the merchant's settlement
+currency. For Micro / Nano, the statement APIs expose `protocol_fee_minor`,
 `gross_buyer_debit_minor`, `buyer_debit_minor`, and `rounding_delta_minor`.
 The full fee table and the weekly / monthly settlement schedule live in
 [docs/pricing.md](./docs/pricing.md). Statement APIs for "how much was used,
@@ -513,7 +529,19 @@ const { event } = await verifyDirectRequestPaymentWebhook(
 );
 
 if (event.type === "direct_payment.confirmed") {
-  // Mark the order paid if event.data.challenge_hash/order mapping matches.
+  if (event.data.mode === "metered_settlement_batch") {
+    // Reconcile settled Micro / Nano batches by settlement_batch_id /
+    // usage_event_digest; these events do not carry an order challenge hash.
+  } else if (
+    event.data.pricing_band === "standard" &&
+    event.data.finality === "per_payment_onchain" &&
+    event.data.settlement_status === "settled"
+  ) {
+    // Mark the order paid once if event.data.challenge_hash/order mapping matches.
+  } else if (event.data.pricing_band === "micro" || event.data.pricing_band === "nano") {
+    // Mark fulfilled-but-unsettled only if your business allows fulfillment
+    // before the aggregated Micro / Nano settlement succeeds.
+  }
 }
 ```
 
@@ -529,14 +557,30 @@ verified = verify_direct_request_payment_webhook(
 )
 
 if verified["event"]["type"] == "direct_payment.confirmed":
-    # Mark the order paid if event.data.challenge_hash/order mapping matches.
-    pass
+    data = verified["event"]["data"]
+    if data.get("mode") == "metered_settlement_batch":
+        # Reconcile settled Micro / Nano batches by settlement_batch_id /
+        # usage_event_digest; these events do not carry an order challenge hash.
+        pass
+    elif (
+        data.get("pricing_band") == "standard"
+        and data.get("finality") == "per_payment_onchain"
+        and data.get("settlement_status") == "settled"
+    ):
+        # Mark the order paid once if event.data.challenge_hash/order mapping matches.
+        pass
+    elif data.get("pricing_band") in ("micro", "nano"):
+        # Mark fulfilled-but-unsettled only if your business allows fulfillment
+        # before the aggregated Micro / Nano settlement succeeds.
+        pass
 ```
 
 New `direct_payment.confirmed` payloads include `pricing_band`,
-`settlement_cadence`, `finality`, `protocol_fee_minor`, `settlement_status`, and
-when available `request_hash_v2`. Use these machine fields instead of inferring
-settlement semantics from the event name alone.
+`settlement_cadence`, `finality`, `protocol_fee_minor`, `settlement_status`,
+`settlement_batch_id`, `chain_receipt_id`, `usage_event_digest`, `settled_at`,
+and when available `request_hash_v2`. Use these machine fields instead of
+inferring settlement semantics from the event name alone. Do not mark an order
+paid from the event type alone.
 
 ## Security Rules
 
@@ -559,7 +603,8 @@ Read [docs/security.md](./docs/security.md) before going live.
 - Store `SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET` only on the merchant server.
 - Store the returned `SIGLUME_WEBHOOK_SECRET` only on the merchant server.
 - Persist `challenge_hash`, `requirement_id`, and fulfillment state per order.
-- Fulfill orders only from verified webhook data, with idempotency.
+- Fulfill orders only from verified webhook data, with idempotency, after
+  checking `pricing_band`, `finality`, and `settlement_status`.
 - Treat `fee_bps` returned by Siglume as the Standard Payment runtime fee source
   of truth; use statement API amount fields for Micro / Nano.
 

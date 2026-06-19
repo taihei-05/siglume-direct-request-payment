@@ -125,6 +125,13 @@ merchant-authored challenge nonce plus the returned `challenge_hash` /
 `request_hash_v2`. Reuse the same order-attempt nonce when reconciling a retry;
 mint a new nonce only for a new payment attempt.
 
+For Micro / Nano paid capability execution through Siglume Marketplace or MCP
+tools, use the top-level JSON field `idempotency_key` on the execution payload /
+tool arguments. Treat it as a stable retry key for one logical paid operation
+and do not reuse it for a different payload. The HTTP `Idempotency-Key` header is
+not the public contract for this requirement-create API; Siglume may use headers
+internally when calling providers.
+
 ## Micro / Nano Statement Privacy
 
 Micro Payment and Nano Payment introduce operational statement APIs and CSV

@@ -40,6 +40,11 @@ The current public API chooses the band from `amount_minor`; it does not expose
 `settlement_mode: "immediate"` or `require_immediate_finality: true`. If a
 merchant needs immediate on-chain finality, the payment amount must be in the
 Standard band or the merchant must have a separately agreed platform contract.
+For public one-time Direct Payment / Hosted Checkout, `amount_minor` is a
+positive integer in minor currency units. That means the smallest public
+one-time checkout amount is JPY 1 or USD 0.01. Nano Payment on this public path
+therefore means JPY 1-49 or USD 0.01-0.30. Sub-minor Nano protocol fees are
+settlement-accounting amounts, not externally submitted one-time item prices.
 
 For the operational statement APIs, CSV export, buyer past-due blocks, and the
 field-by-field meaning of `scheduled_debit_at`, `not_before_attempt_at`,
@@ -183,8 +188,11 @@ For low-count Nano batches, the integer ceiling can make the effective buyer
 burden per usage higher than the headline USD 0.001 / usage protocol fee. The
 decimal protocol fee remains visible as `protocol_fee_minor`; the difference
 created by integer-token settlement is visible as `rounding_delta_minor` on the
-batch. JavaScript integrations should not sum Micro / Nano minor amounts with
-`number`; use a decimal library. Python integrations should use `Decimal`.
+batch. Each settlement batch can add a positive rounding adjustment of less than
+1 token minor unit. If a buyer uses many providers / payees in one period, that
+adjustment can occur once per settlement batch. JavaScript integrations should
+not sum Micro / Nano minor amounts with `number`; use a decimal library. Python
+integrations should use `Decimal`.
 
 ## Statement APIs and Notices
 

@@ -109,7 +109,10 @@ rounding_delta_minor = buyer_debit_minor - gross_buyer_debit_minor
 For low-count Nano batches, the ceiling can make the effective buyer burden per
 usage higher than the headline "USD 0.001 / usage" protocol fee. The protocol
 fee remains the decimal statement amount; the extra integer-minor-unit
-adjustment is recorded as `rounding_delta_minor` on the settlement batch.
+adjustment is recorded as `rounding_delta_minor` on the settlement batch. Each
+settlement batch can add a positive rounding adjustment of less than 1 token
+minor unit; if a buyer uses many providers / payees in one period, that
+adjustment can occur once per settlement batch.
 
 `rounding_delta_minor` belongs to the buyer debit and Siglume's rounding
 adjustment accounting for that batch. It is not provider revenue. Provider
@@ -377,9 +380,20 @@ or support staff. Do not depend on raw platform failure messages.
 
 ## Usage Accounting by Result
 
-Use idempotency keys for every paid operation. Siglume records one chargeable
-usage event per idempotency key within the same buyer / listing / operation
-scope.
+Use idempotency keys for every paid operation. For Siglume Marketplace paid
+capability execution and MCP tools, pass `idempotency_key` as a top-level JSON
+field on the execution payload / tool arguments. Do not rely on an HTTP
+`Idempotency-Key` header for this public paid-operation contract; Siglume may
+also use that header internally when it calls providers.
+
+The key should be a stable retry key for one logical paid operation, such as
+`order:<order_id>:attempt:<n>` or `<provider_event_id>`, and should not be reused
+for a different payload. The current public contract stores up to 128
+characters. Siglume records one chargeable usage event per idempotency key within
+the same buyer / listing / capability scope; a retry with the same key returns or
+reconciles the first recorded outcome rather than creating another chargeable
+event. If a provider times out after doing work, retry or reconcile with the
+same key before repeating side effects.
 
 | Case | Provider API executed? | Usage counted? | Integration rule |
 | --- | --- | --- | --- |
@@ -446,7 +460,9 @@ separate from settled revenue.
 ## Go-Live Checklist
 
 - Your order fulfillment is idempotent by order id and requirement id.
-- Standard Payment fulfillment still uses verified `direct_payment.confirmed`.
+- Standard Payment fulfillment still uses verified `direct_payment.confirmed`
+  only when `pricing_band`, `finality`, and `settlement_status` show settled
+  per-payment finality.
 - Micro / Nano accounting uses statement APIs or CSV, not only webhooks.
 - Your dashboard separates settled, unsettled, and past-due provider amounts.
 - Your support UI shows sanitized failure fields and `support_reference`.

@@ -22,6 +22,48 @@ app.use((req, res, next) => {
 
 const orders = new Map<string, any>();
 
+async function handleDirectPaymentConfirmed(data: Record<string, any>): Promise<void> {
+  if (data.mode === "metered_settlement_batch") {
+    // Aggregated Micro/Nano settlement events do not carry an order challenge.
+    // Reconcile them against statement / settlement batch data instead.
+    if (data.settlement_status === "settled") {
+      console.log("settled metered batch", data.settlement_batch_id || data.usage_event_digest);
+    }
+    return;
+  }
+
+  if (
+    data.pricing_band === "standard" &&
+    data.finality === "per_payment_onchain" &&
+    data.settlement_status === "settled"
+  ) {
+    const challengeHash = String(data.challenge_hash || "");
+    const order = [...orders.values()].find((item) => item.siglume_challenge_hash === challengeHash);
+    if (order) {
+      order.siglume_payment_status = "paid";
+      order.siglume_requirement_id = data.requirement_id || data.direct_payment_requirement_id;
+      order.siglume_chain_receipt_id = data.chain_receipt_id || null;
+    }
+    return;
+  }
+
+  if (data.pricing_band === "micro" || data.pricing_band === "nano") {
+    const challengeHash = String(data.challenge_hash || "");
+    const order = [...orders.values()].find((item) => item.siglume_challenge_hash === challengeHash);
+    if (order) {
+      order.siglume_payment_status = "fulfilled_unsettled";
+      order.siglume_requirement_id = data.requirement_id || data.direct_payment_requirement_id;
+    }
+    return;
+  }
+
+  // Unknown or older payload shape: do not mark paid from the event name alone.
+  console.warn("direct_payment.confirmed missing settlement machine fields", {
+    id: data.id,
+    requirement_id: data.requirement_id || data.direct_payment_requirement_id,
+  });
+}
+
 const asyncRoute =
   (handler: express.RequestHandler): express.RequestHandler =>
   (req, res, next) => {
@@ -69,12 +111,7 @@ app.post("/siglume/webhook", express.raw({ type: "application/json" }), asyncRou
   );
 
   if (event.type === "direct_payment.confirmed") {
-    const challengeHash = String(event.data.challenge_hash || "");
-    const order = [...orders.values()].find((item) => item.siglume_challenge_hash === challengeHash);
-    if (order) {
-      order.siglume_payment_status = "paid";
-      order.siglume_requirement_id = event.data.requirement_id || event.data.direct_payment_requirement_id;
-    }
+    await handleDirectPaymentConfirmed(event.data);
   }
 
   res.status(204).send();

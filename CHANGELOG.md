@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.6 - 2026-06-19
+
+Patch release for the external webhook-state re-review.
+
+- Changed webhook examples to branch Standard settled payments, Micro / Nano
+  accepted-but-unsettled usage, and metered settlement batches separately.
+- Added Hosted Checkout settlement machine fields and metered settlement batch
+  webhook fields to TypeScript types and API docs.
+- Clarified public Nano one-time amount limits, Micro / Nano idempotency key
+  placement, and per-batch rounding adjustment behavior.
+- Added `pytest python_tests` to the PyPI Trusted Publishing release workflow.
+
 ## 0.4.5 - 2026-06-19
 
 Patch release for the public beta re-review.
