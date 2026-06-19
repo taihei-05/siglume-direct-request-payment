@@ -294,18 +294,30 @@ def test_requires_metered_batch_finality_band_and_cadence_before_classifying_set
         assert result["reason"] == "invalid_metered_settlement_confirmation", name
 
 
-def test_rejects_direct_payment_events_with_wrong_mode() -> None:
+def test_classifies_direct_payment_events_with_unsupported_mode_as_unknown() -> None:
     raw_body = json.dumps(
         {
             "id": "evt_123",
             "type": "direct_payment.confirmed",
             "api_version": "2026-06-11",
             "occurred_at": "2026-06-11T00:00:00Z",
-            "data": {"mode": "wrong_mode"},
+            "data": {
+                "mode": "wrong_mode",
+                "pricing_band": "standard",
+                "finality": "per_payment_onchain",
+                "settlement_status": "settled",
+                "requirement_id": "dpr_standard",
+                "challenge_hash": "sha256:challenge",
+                "chain_receipt_id": "chain_standard",
+            },
         },
         separators=(",", ":"),
     )
     header = build_webhook_signature_header("whsec_test", raw_body, timestamp=1800000000)
 
-    with pytest.raises(SiglumeWebhookPayloadError):
-        verify_direct_request_payment_webhook("whsec_test", raw_body, header, now=1800000000)
+    verified = verify_direct_request_payment_webhook("whsec_test", raw_body, header, now=1800000000)
+    classification = classify_direct_payment_confirmation(verified["event"])
+
+    assert classification["kind"] == "unknown"
+    assert classification["reason"] == "unsupported_confirmation_mode"
+    assert classification["requirement_id"] == "dpr_standard"

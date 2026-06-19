@@ -107,6 +107,28 @@ describe("DirectRequestPaymentClient", () => {
     });
   });
 
+  it("normalizes API base URLs, allows localhost http, and does not expose auth_token", () => {
+    const fetchImpl = (async () => new Response("{}")) as typeof fetch;
+    const client = new DirectRequestPaymentClient({
+      auth_token: "buyer_token",
+      base_url: "http://localhost:8787/v1/",
+      fetch: fetchImpl,
+    });
+
+    expect(client.base_url).toBe("http://localhost:8787/v1");
+    expect((client as unknown as { auth_token?: string }).auth_token).toBeUndefined();
+    expect(() => new DirectRequestPaymentClient({
+      auth_token: "buyer_token",
+      base_url: "http://siglume.example/v1",
+      fetch: fetchImpl,
+    })).toThrow(/base_url must use https/);
+    expect(() => new DirectRequestPaymentClient({
+      auth_token: "buyer_token",
+      base_url: "https://user@siglume.example/v1",
+      fetch: fetchImpl,
+    })).toThrow(/userinfo/);
+  });
+
   it("rejects non-integer payment amounts before making a request", async () => {
     let called = false;
     const client = new DirectRequestPaymentClient({
@@ -529,6 +551,20 @@ describe("DirectRequestPaymentMerchantClient", () => {
     await expect(
       client.setupMerchant({ merchant: "shop", checkout_allowed_origins: ["ftp://shop.example.com"] }),
     ).rejects.toThrow(/must use https/);
+  });
+
+  it("rejects unsafe webhook callback URLs", async () => {
+    const client = new DirectRequestPaymentMerchantClient({
+      auth_token: "merchant_jwt",
+      fetch: (async () => new Response("{}")) as typeof fetch,
+    });
+
+    await expect(
+      client.setupMerchant({ merchant: "shop", webhook_callback_url: "http://shop.example.com/webhook" }),
+    ).rejects.toThrow(/webhook_callback_url must use https/);
+    await expect(
+      client.createWebhookSubscription({ callback_url: "http://shop.example.com/webhook" }),
+    ).rejects.toThrow(/callback_url must use https/);
   });
 
   it("rejects a hosted checkout nonce containing the challenge separator", async () => {

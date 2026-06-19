@@ -24,6 +24,24 @@ jobs:
           cache: pip
       - run: python -m pip install -U pip
       - run: python -m pip install -e ".[test]" build twine
+      - name: Assert tag and package versions
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import tomllib
+
+          npm_version = json.loads(pathlib.Path("package.json").read_text(encoding="utf-8"))["version"]
+          python_version = tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          if npm_version != python_version:
+              raise SystemExit(f"package.json {npm_version} does not match pyproject.toml {python_version}.")
+          if tag != f"v{python_version}":
+              raise SystemExit(f"Tag {tag} does not match package version {python_version}.")
+          PY
       - run: pytest python_tests
       - run: python -m build
       - run: python -m twine check dist/*.whl dist/*.tar.gz

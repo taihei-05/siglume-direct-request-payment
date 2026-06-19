@@ -19,8 +19,8 @@ Siglume applies the settlement band from the amount.
 
 | Band | Cadence | Period close | First debit attempt | Revenue recognition |
 | --- | --- | --- | --- | --- |
-| Micro Payment | Weekly, with early threshold settlement | Account-assigned fixed weekly slot in the buyer settlement timezone; can close early once the buyer/payee/token batch reaches JPY 10,000 or USD 100.00 | After final debit notice delivery and the fixed close-plus-3-day window | Only after the aggregated settlement confirms on-chain |
-| Nano Payment | Monthly, with early threshold settlement | Account-assigned fixed monthly slot in the buyer settlement timezone; can close early once the buyer/payee/token batch reaches JPY 10,000 or USD 100.00 | After final debit notice delivery and the fixed close-plus-3-day window | Only after the aggregated settlement confirms on-chain |
+| Micro Payment | Weekly, with early threshold settlement | Account-assigned fixed weekly slot in the buyer settlement timezone; can close early once the same buyer / provider / token / pricing band reaches JPY 10,000 or USD 100.00 | After final debit notice delivery and the fixed close-plus-3-day window | Only after the aggregated settlement confirms on-chain |
+| Nano Payment | Monthly, with early threshold settlement | Account-assigned fixed monthly slot in the buyer settlement timezone; can close early once the same buyer / provider / token / pricing band reaches JPY 10,000 or USD 100.00 | After final debit notice delivery and the fixed close-plus-3-day window | Only after the aggregated settlement confirms on-chain |
 
 The schedule is platform-managed. Buyers and providers can see the resulting
 batch period and scheduled attempt times through the statement APIs, but cannot

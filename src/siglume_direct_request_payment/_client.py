@@ -25,7 +25,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.16"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.17"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
 DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain"
@@ -80,11 +80,14 @@ class DirectRequestPaymentClient:
                 "A buyer or provider Siglume user bearer token is required for Direct Request Payment API calls. "
                 "Developer Portal API keys are not accepted."
             )
-        self.auth_token = token
-        self.base_url = (base_url or _env_value("SIGLUME_API_BASE") or DEFAULT_SIGLUME_API_BASE).rstrip("/")
+        self._auth_token = token
+        self.base_url = _normalize_api_base_url(base_url or _env_value("SIGLUME_API_BASE") or DEFAULT_SIGLUME_API_BASE)
         self.timeout = max(float(timeout), 0.001)
         self.user_agent = user_agent
         self._client = client
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(base_url={self.base_url!r}, timeout={self.timeout!r})"
 
     def create_payment_requirement(
         self,
@@ -304,7 +307,7 @@ class DirectRequestPaymentClient:
     def _request(self, method: str, path: str, *, json_body: Any | None = None) -> dict[str, Any]:
         headers = {
             "Accept": "application/json",
-            "Authorization": f"Bearer {self.auth_token}",
+            "Authorization": f"Bearer {self._auth_token}",
             "User-Agent": self.user_agent,
         }
         close_client = self._client is None
@@ -359,11 +362,14 @@ class DirectRequestPaymentMerchantClient:
                 "A merchant Siglume bearer token is required for Direct Request Payment merchant setup. "
                 "Developer Portal API keys are not accepted."
             )
-        self.auth_token = token
-        self.base_url = (base_url or _env_value("SIGLUME_API_BASE") or DEFAULT_SIGLUME_API_BASE).rstrip("/")
+        self._auth_token = token
+        self.base_url = _normalize_api_base_url(base_url or _env_value("SIGLUME_API_BASE") or DEFAULT_SIGLUME_API_BASE)
         self.timeout = max(float(timeout), 0.001)
         self.user_agent = user_agent
         self._client = client
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(base_url={self.base_url!r}, timeout={self.timeout!r})"
 
     def setup_merchant(
         self,
@@ -388,7 +394,7 @@ class DirectRequestPaymentMerchantClient:
         if allowed_currencies is not None:
             payload["allowed_currencies"] = _normalize_allowed_currencies(allowed_currencies)
         if webhook_callback_url is not None:
-            payload["webhook_callback_url"] = _require_non_empty(webhook_callback_url, "webhook_callback_url")
+            payload["webhook_callback_url"] = _normalize_https_url(webhook_callback_url, "webhook_callback_url")
         if billing_mandate_cap_minor is not None:
             payload["billing_mandate_cap_minor"] = _positive_int(billing_mandate_cap_minor, "billing_mandate_cap_minor")
         if max_amount_minor is not None:
@@ -475,7 +481,7 @@ class DirectRequestPaymentMerchantClient:
         metadata: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "callback_url": _require_non_empty(callback_url, "callback_url"),
+            "callback_url": _normalize_https_url(callback_url, "callback_url"),
             "event_types": [
                 _require_non_empty(event_type, "event_type")
                 for event_type in (event_types or ("direct_payment.confirmed", "direct_payment.spent"))
@@ -549,7 +555,7 @@ class DirectRequestPaymentMerchantClient:
     def _request(self, method: str, path: str, *, json_body: Any | None = None) -> dict[str, Any]:
         headers = {
             "Accept": "application/json",
-            "Authorization": f"Bearer {self.auth_token}",
+            "Authorization": f"Bearer {self._auth_token}",
             "User-Agent": self.user_agent,
         }
         close_client = self._client is None
@@ -897,13 +903,6 @@ def parse_direct_request_payment_webhook_event(payload: Any) -> dict[str, Any]:
     event["api_version"] = _require_non_empty(str(payload.get("api_version") or ""), "webhook api_version")
     event["occurred_at"] = _require_non_empty(str(payload.get("occurred_at") or ""), "webhook occurred_at")
     event["data"] = dict(data)
-    if (
-        event["type"] == "direct_payment.confirmed"
-        and str(event["data"].get("mode") or "") not in _DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES
-    ):
-        raise SiglumeWebhookPayloadError(
-            "direct_payment.confirmed webhook must carry a supported Direct Request Payment mode."
-        )
     return event
 
 
@@ -918,6 +917,7 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
     settlement_cadence = _non_empty_str(data.get("settlement_cadence"))
     finality = _non_empty_str(data.get("finality"))
     settlement_status = _non_empty_str(data.get("settlement_status"))
+    mode = _non_empty_str(data.get("mode"))
 
     if event.get("type") != "direct_payment.confirmed":
         return {
@@ -933,7 +933,21 @@ def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, 
             "finality": finality,
         }
 
-    if data.get("mode") == "metered_settlement_batch":
+    if mode not in _DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES:
+        return {
+            "kind": "unknown",
+            "event": event,
+            "data": data,
+            "reason": "unsupported_confirmation_mode",
+            "requirement_id": requirement_id,
+            "settlement_batch_id": _non_empty_str(data.get("settlement_batch_id")),
+            "pricing_band": pricing_band,
+            "settlement_cadence": settlement_cadence,
+            "settlement_status": settlement_status,
+            "finality": finality,
+        }
+
+    if mode == "metered_settlement_batch":
         settlement_batch_id = _non_empty_str(data.get("settlement_batch_id"))
         chain_receipt_id = _non_empty_str(data.get("chain_receipt_id"))
         usage_event_digest = _non_empty_str(data.get("usage_event_digest"))
@@ -1129,6 +1143,34 @@ def _default_token_for_currency(currency: str) -> str:
     return "JPYC" if currency == "JPY" else "USDC"
 
 
+def _normalize_api_base_url(value: str) -> str:
+    raw = _require_non_empty(value, "base_url")
+    parts = urlsplit(raw)
+    scheme = parts.scheme.lower()
+    hostname = (parts.hostname or "").lower()
+    if not scheme or not parts.netloc:
+        raise DirectRequestPaymentError("base_url must be an absolute URL such as https://siglume.com/v1.")
+    if parts.username or parts.password:
+        raise DirectRequestPaymentError("base_url must not include userinfo.")
+    if not _is_allowed_url_scheme(scheme, hostname):
+        raise DirectRequestPaymentError(
+            "base_url must use https, except http is allowed for localhost, 127.0.0.1, or [::1]."
+        )
+    return raw.rstrip("/")
+
+
+def _normalize_https_url(value: str, name: str) -> str:
+    raw = _require_non_empty(value, name)
+    parts = urlsplit(raw)
+    if not parts.scheme or not parts.netloc:
+        raise DirectRequestPaymentError(f"{name} must be an absolute https URL.")
+    if parts.username or parts.password:
+        raise DirectRequestPaymentError(f"{name} must not include userinfo.")
+    if parts.scheme.lower() != "https" or not parts.hostname:
+        raise DirectRequestPaymentError(f"{name} must use https.")
+    return raw
+
+
 def _positive_int(value: int, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise DirectRequestPaymentError(f"{name} must be a positive safe integer.")
@@ -1194,6 +1236,10 @@ def _normalize_origin_list(value: list[str] | tuple[str, ...]) -> list[str]:
 
 
 def _is_allowed_checkout_origin_scheme(scheme: str, hostname: str) -> bool:
+    return _is_allowed_url_scheme(scheme, hostname)
+
+
+def _is_allowed_url_scheme(scheme: str, hostname: str) -> bool:
     if scheme == "https":
         return bool(hostname)
     if scheme != "http":

@@ -307,18 +307,31 @@ describe("Direct Request Payment webhooks", () => {
     }
   });
 
-  it("rejects direct payment events with the wrong mode", async () => {
+  it("classifies direct payment events with an unsupported mode as unknown", async () => {
     const rawBody = JSON.stringify({
       id: "evt_123",
       type: "direct_payment.confirmed",
       api_version: "2026-06-11",
       occurred_at: "2026-06-11T00:00:00Z",
-      data: { mode: "wrong_mode" },
+      data: {
+        mode: "wrong_mode",
+        pricing_band: "standard",
+        finality: "per_payment_onchain",
+        settlement_status: "settled",
+        requirement_id: "dpr_standard",
+        challenge_hash: "sha256:challenge",
+        chain_receipt_id: "chain_standard",
+      },
     });
     const header = await buildWebhookSignatureHeader("whsec_test", rawBody, { timestamp: 1800000000 });
 
-    await expect(
-      verifyDirectRequestPaymentWebhook("whsec_test", rawBody, header, { now: 1800000000 }),
-    ).rejects.toBeInstanceOf(SiglumeWebhookPayloadError);
+    const verified = await verifyDirectRequestPaymentWebhook("whsec_test", rawBody, header, { now: 1800000000 });
+    const classification = classifyDirectPaymentConfirmation(verified.event);
+
+    expect(classification.kind).toBe("unknown");
+    if (classification.kind === "unknown") {
+      expect(classification.reason).toBe("unsupported_confirmation_mode");
+      expect(classification.requirement_id).toBe("dpr_standard");
+    }
   });
 });

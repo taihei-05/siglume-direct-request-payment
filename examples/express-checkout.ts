@@ -130,7 +130,9 @@ app.post("/siglume/webhook", express.raw({ type: "application/json" }), asyncRou
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   // Log the detail server-side; never return raw error messages to the client —
   // a payment error can otherwise leak internal API details or configuration.
-  console.error("checkout error:", error);
+  console.error("checkout error:", {
+    name: error instanceof Error ? error.name : "Error",
+  });
   res.status(500).json({ error: "internal_error" });
 });
 

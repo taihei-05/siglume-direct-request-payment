@@ -1,7 +1,7 @@
 # Pricing
 
 This page documents the trial-phase merchant pricing for Siglume Direct Request
-Payment as of 2026-06-18. Pricing can change by agreement or future product
+Payment as of SDK v0.4.17. Pricing can change by agreement or future product
 release; the Siglume platform response is the source of truth for per-payment
 fee data returned at runtime.
 
@@ -14,12 +14,13 @@ delayed aggregated settlement whenever they offer amounts in those bands.
 ## Settlement Currencies
 
 Siglume Direct Request Payment launches in the US and Japan, and both settlement
-currencies are first-class:
+currencies are first-class where enabled:
 
 - **JPY**, settled on-chain in **JPYC**
 - **USD**, settled on-chain in **USDC**
 
-A merchant settles in a single currency, chosen at onboarding. The settlement fee
+A merchant settles in a single currency, chosen at onboarding. Some accounts may
+require agreed USD/USDC terms before USD is enabled. The settlement fee
 percentage (the payment fee column below) is identical in both currencies. Only
 the flat amounts — the monthly base fee and the per-payment minimum fee — are
 quoted per currency.
@@ -34,8 +35,8 @@ charging.
 | Public one-time payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
 | JPY 501+ / USD 3.01+ | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
-| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | JPY 2 / USD 0.01 per SDRP Tx | Aggregated and settled **weekly**, or earlier once the buyer/payee batch reaches JPY 10,000 / USD 100.00 (see [Settlement schedule](#settlement-schedule)) |
-| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | JPY 0.2 / USD 0.001 per SDRP Tx | Aggregated and settled **monthly**, or earlier once the buyer/payee batch reaches JPY 10,000 / USD 100.00 (see [Settlement schedule](#settlement-schedule)) |
+| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | JPY 2 / USD 0.01 per SDRP Tx | Aggregated and settled **weekly**, or earlier once the same buyer / provider / token / pricing band reaches JPY 10,000 / USD 100.00 (see [Settlement schedule](#settlement-schedule)) |
+| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | JPY 0.2 / USD 0.001 per SDRP Tx | Aggregated and settled **monthly**, or earlier once the same buyer / provider / token / pricing band reaches JPY 10,000 / USD 100.00 (see [Settlement schedule](#settlement-schedule)) |
 
 In this table, `Tx` means one accepted SDRP payment, not an on-chain settlement
 transaction. Micro / Nano settlement batches are aggregated on-chain after the
@@ -43,8 +44,8 @@ weekly or monthly close, or earlier when the fixed amount threshold is reached.
 
 Standard Payment settles per payment. Micro Payment and Nano Payment are
 aggregated and settled in account-assigned weekly / monthly slots, with early
-settlement when the same buyer/payee/token/period batch reaches JPY 10,000 or
-USD 100.00. See [Settlement schedule](#settlement-schedule) for how each band
+settlement when the same buyer / provider / token / pricing band reaches JPY
+10,000 or USD 100.00. See [Settlement schedule](#settlement-schedule) for how each band
 closes, when the pre-debit notice window elapses, when revenue becomes settled,
 and how rejected requests behave.
 
@@ -65,8 +66,9 @@ field-by-field meaning of `scheduled_debit_at`, `not_before_attempt_at`,
 `execution_status`, and `buyer_period_ref`, see
 [Micro / Nano Statements and Notices](./metered-statements.md).
 
-USD pricing is the JPY tier converted at roughly 160 JPY/USD and rounded to
-clean price points that keep the same 1:3:10 tier ratio.
+USD plan prices are set as separate public price points. The JPY 10,000 and USD
+100.00 Micro / Nano early-settlement thresholds are fixed market thresholds,
+not FX conversions of one another.
 
 If no paid plan is selected during merchant setup, the merchant account uses the
 Launch plan. A merchant billing mandate is still required before accepting
@@ -95,25 +97,25 @@ confirmed payment turns into money in your settlement wallet.
 | Band | Cadence | Period | You are paid |
 | --- | --- | --- | --- |
 | Standard Payment | Per payment | n/a | On-chain, immediately after each payment confirms |
-| Micro Payment | Weekly, with early threshold settlement | Account-assigned fixed weekly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs. If a buyer/payee/token/period batch reaches JPY 10,000 or USD 100.00 first, Siglume can close that batch early. | After the period closes or the fixed amount threshold is reached, and the roughly 3-day pre-debit notice window has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
-| Nano Payment | Monthly, with early threshold settlement | Account-assigned fixed monthly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs. If a buyer/payee/token/period batch reaches JPY 10,000 or USD 100.00 first, Siglume can close that batch early. | After the period closes or the fixed amount threshold is reached, and the roughly 3-day pre-debit notice window has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
+| Micro Payment | Weekly, with early threshold settlement | Account-assigned fixed weekly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs. If the same buyer / provider / token / pricing band reaches JPY 10,000 or USD 100.00 first, Siglume can close that batch early. | After the period closes or the fixed amount threshold is reached, and the roughly 3-day pre-debit notice window has elapsed, in aggregated on-chain settlement(s) grouped per buyer, provider, token, pricing band, and period |
+| Nano Payment | Monthly, with early threshold settlement | Account-assigned fixed monthly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs. If the same buyer / provider / token / pricing band reaches JPY 10,000 or USD 100.00 first, Siglume can close that batch early. | After the period closes or the fixed amount threshold is reached, and the roughly 3-day pre-debit notice window has elapsed, in aggregated on-chain settlement(s) grouped per buyer, provider, token, pricing band, and period |
 
 ### Micro weekly settlement
 
 - **Closing period.** Micro-band payments accrue across one weekly period. The
   specific closing weekday and time are assigned as a fixed slot per account to
   spread settlement load.
-- **Early threshold settlement.** If a buyer/payee/token batch reaches JPY
-  10,000 or USD 100.00 before the weekly close, Siglume can close that batch
-  early and start the same final-notice and settlement flow. JPY 10,000 and USD
-  100.00 are market-specific fixed thresholds, not FX conversions of one
-  another.
+- **Early threshold settlement.** If the same buyer / provider / token /
+  pricing band reaches JPY 10,000 or USD 100.00 before the weekly close,
+  Siglume can close that batch early and start the same final-notice and
+  settlement flow. JPY 10,000 and USD 100.00 are market-specific fixed
+  thresholds, not FX conversions of one another.
 - **Timezone.** Period boundaries are evaluated in the buyer's configured
   settlement timezone, defaulting to UTC. Assigned slots are persisted and are
   not recalculated on the fly.
 - **Settlement.** After the week closes or the early threshold is reached,
   Siglume aggregates the Micro
-  payments — grouped per buyer, payee, token, and period — into on-chain
+  payments — grouped per buyer, provider, token, pricing band, and period — into on-chain
   settlement(s). Siglume sends the final debit notice first; the on-chain debit
   is not attempted until the scheduled attempt time after an approximately
   3-day pre-debit notice window (`not_before_attempt_at`).
@@ -125,17 +127,17 @@ confirmed payment turns into money in your settlement wallet.
 - **Closing period.** Nano-band payments accrue across one monthly period. The
   specific closing day and time are assigned as a fixed slot per account to
   spread settlement load.
-- **Early threshold settlement.** If a buyer/payee/token batch reaches JPY
-  10,000 or USD 100.00 before the monthly close, Siglume can close that batch
-  early and start the same final-notice and settlement flow. JPY 10,000 and USD
-  100.00 are market-specific fixed thresholds, not FX conversions of one
-  another.
+- **Early threshold settlement.** If the same buyer / provider / token /
+  pricing band reaches JPY 10,000 or USD 100.00 before the monthly close,
+  Siglume can close that batch early and start the same final-notice and
+  settlement flow. JPY 10,000 and USD 100.00 are market-specific fixed
+  thresholds, not FX conversions of one another.
 - **Timezone.** As with Micro, period boundaries use the buyer's configured
   settlement timezone, defaulting to UTC. Assigned slots are persisted and are
   not recalculated on the fly.
 - **Settlement.** After the month closes or the early threshold is reached,
   Siglume aggregates the Nano
-  payments — grouped per buyer, payee, token, and period — into on-chain
+  payments — grouped per buyer, provider, token, pricing band, and period — into on-chain
   settlement(s). Siglume sends the final debit notice first; the on-chain debit
   is not attempted until the scheduled attempt time after an approximately
   3-day pre-debit notice window (`not_before_attempt_at`).

@@ -24,9 +24,11 @@ This quickstart uses Standard-band example amounts. Micro Payment and Nano
 Payment are applied automatically by amount through the same Hosted Checkout or
 agent/API flow; you do not create a separate Micro/Nano object or manually
 select the amount band. Micro/Nano are settled on account-assigned weekly /
-monthly slots after the final notice and close-plus-3-day window (see
-[Pricing](./pricing.md#settlement-schedule)), and provider revenue remains
-unsettled until the later on-chain settlement succeeds. Completing merchant
+monthly slots, or earlier when the same buyer / provider / token / pricing band
+reaches the fixed market threshold, after the final notice and
+close-plus-3-day window (see [Pricing](./pricing.md#settlement-schedule)), and
+provider revenue remains unsettled until the later on-chain settlement succeeds.
+Completing merchant
 setup and the billing mandate means accepting this Micro/Nano delayed aggregated
 settlement model for low-price items. If your product requires immediate
 on-chain settlement, keep its price above the Micro/Nano thresholds instead of
@@ -616,7 +618,8 @@ manual, including buyer past-due blocks and public failure fields.
   before new payments can be accepted.
 - `METERED_SETTLEMENT_PAST_DUE` (Micro / Nano only): a previous Micro / Nano
   metered settlement for this buyer is unresolved, so new Micro / Nano usage in
-  the same fee band is paused until it settles. Siglume retries settlement
+  the same buyer / provider / token / pricing band is paused until it settles.
+  Siglume retries settlement
   automatically every 6 hours, up to 28 attempts, before it requires manual
   resolution. The provider's Micro / Nano revenue stays unsettled until the
   settlement succeeds. This is a settlement-side state, not a per-request

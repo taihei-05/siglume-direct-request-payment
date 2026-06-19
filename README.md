@@ -24,7 +24,7 @@ reflects this 402 lineage.
 Use this package when an external EC site, booking service, membership service,
 or paid API wants to accept Siglume wallet payments without taking custody of
 customer funds. The SDK creates and verifies one-time and recurring wallet
-payments; it does not hold customer funds or wallets.
+payment authorizations; it does not hold customer funds or wallets.
 
 **Current public beta scope.** SDRP currently settles JPYC / USDC on **Polygon
 PoS only**. The public SDK does not expose chain selection, cross-chain payment,
@@ -199,11 +199,11 @@ setup, and after that the applied fee and the settlement timing follow the
 - **Standard Payment** — most payments. Your selected plan's percentage fee,
   settled on-chain immediately after each payment confirms.
 - **Micro Payment** — small payments, applied automatically by amount. A flat
-  per-SDRP-Tx protocol fee, settled weekly or earlier when the buyer/payee
-  batch reaches JPY 10,000 / USD 100.00.
+  per-SDRP-Tx protocol fee, settled weekly or earlier when the same buyer /
+  provider / token / pricing band reaches JPY 10,000 / USD 100.00.
 - **Nano Payment** — very small payments, applied automatically by amount. A
-  flat per-SDRP-Tx protocol fee, settled monthly or earlier when the buyer/payee
-  batch reaches JPY 10,000 / USD 100.00.
+  flat per-SDRP-Tx protocol fee, settled monthly or earlier when the same buyer
+  / provider / token / pricing band reaches JPY 10,000 / USD 100.00.
 
 Here, `Tx` means one accepted SDRP payment, not the later on-chain settlement
 transaction. Micro / Nano settlement batches are aggregated on-chain after the
@@ -277,10 +277,11 @@ Pricing has one structure: choose a Standard Payment plan, then Siglume applies
 the fee for each payment by amount. Micro / Nano are automatic amount bands, not
 extra setup choices.
 
-Both launch settlement currencies are first-class: JPY settled in JPYC, and USD
-settled in USDC. A merchant settles in one currency, chosen at onboarding. The
-settlement fee percentage is identical in both currencies; only the flat
-amounts differ.
+Both launch settlement currencies are first-class where enabled: JPY settled in
+JPYC, and USD settled in USDC. Some accounts may require agreed USD/USDC terms
+before USD is enabled. A merchant settles in one currency, chosen at
+onboarding. The settlement fee percentage is identical in both currencies; only
+the flat amounts differ.
 
 | Public one-time payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |

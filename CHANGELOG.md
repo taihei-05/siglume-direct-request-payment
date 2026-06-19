@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.17 - 2026-06-19
+
+Public-surface cleanup for the v0.4.15 external review.
+
+- Classified signed `direct_payment.confirmed` webhooks with unsupported
+  `data.mode` as `unknown` with `unsupported_confirmation_mode`, instead of
+  failing raw webhook parsing.
+- Added stricter TypeScript settlement/open-period summary types and public
+  webhook amount/threshold fields.
+- Rejected unsafe API base URLs and webhook callback URLs in both TypeScript
+  and Python helpers.
+- Added release workflow checks that tag names match package versions before
+  publishing.
+- Aligned README and docs wording around the buyer / provider / token / pricing
+  band exposure scope and fixed JPY / USD threshold wording.
+
 ## 0.4.16 - 2026-06-19
 
 SDRP Micro / Nano terminal-risk and idempotency hardening release.

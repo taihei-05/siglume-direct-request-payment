@@ -9,7 +9,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.16";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.17";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain";
@@ -19,6 +19,7 @@ const DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = new Set([DIRECT_REQUEST_P
 export type DirectRequestPaymentCurrency = "JPY" | "USD";
 export type DirectRequestPaymentToken = "JPYC" | "USDC";
 export type DirectRequestPaymentMeteredPlanType = "micro" | "nano";
+export type DirectRequestPaymentSettlementTrigger = "amount_threshold" | "scheduled_close";
 export type DirectRequestPaymentMinorAmount = string;
 export type DirectRequestPaymentRawWebhookBody = Uint8Array | ArrayBuffer | string;
 export type DirectRequestPaymentWebhookSignatureBody = DirectRequestPaymentRawWebhookBody | Record<string, unknown>;
@@ -108,7 +109,7 @@ export interface DirectRequestPaymentSettlementBatch {
   plan_type: string;
   settlement_cadence: string;
   status: string;
-  settlement_trigger?: "amount_threshold" | "scheduled_close" | string | null;
+  settlement_trigger?: DirectRequestPaymentSettlementTrigger | null;
   settlement_threshold_minor?: DirectRequestPaymentMinorAmount | null;
   threshold_reached_at?: string | null;
   total_unsettled_exposure_minor?: DirectRequestPaymentMinorAmount | null;
@@ -149,12 +150,63 @@ export interface DirectRequestPaymentSettlementBatch {
   [key: string]: unknown;
 }
 
+export interface DirectRequestPaymentMeteredOpenPeriod {
+  plan_type?: DirectRequestPaymentMeteredPlanType | string;
+  settlement_cadence?: "weekly" | "monthly" | string;
+  currency?: DirectRequestPaymentCurrency | string;
+  token_symbol?: DirectRequestPaymentToken | string;
+  period_start?: string | null;
+  period_end?: string | null;
+  close_at?: string | null;
+  settlement_trigger?: DirectRequestPaymentSettlementTrigger | null;
+  settlement_threshold_minor?: DirectRequestPaymentMinorAmount | null;
+  threshold_reached_at?: string | null;
+  provider_gross_amount_minor?: DirectRequestPaymentMinorAmount;
+  provider_usage_amount_minor?: DirectRequestPaymentMinorAmount;
+  protocol_fee_minor?: DirectRequestPaymentMinorAmount;
+  provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  buyer_debit_minor?: DirectRequestPaymentMinorAmount;
+  total_unsettled_exposure_minor?: DirectRequestPaymentMinorAmount | null;
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentPastDueBlock {
+  settlement_batch_id?: string;
+  plan_type?: DirectRequestPaymentMeteredPlanType | string;
+  currency?: DirectRequestPaymentCurrency | string;
+  token_symbol?: DirectRequestPaymentToken | string;
+  total_unsettled_exposure_minor?: DirectRequestPaymentMinorAmount | null;
+  past_due_provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  failure_reason_code?: string | null;
+  support_reference?: string | null;
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentBalanceSufficiency {
+  sufficient?: boolean;
+  currency?: DirectRequestPaymentCurrency | string;
+  token_symbol?: DirectRequestPaymentToken | string;
+  required_minor?: DirectRequestPaymentMinorAmount;
+  available_minor?: DirectRequestPaymentMinorAmount;
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentProviderMeteredTotals {
+  settled_provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  unsettled_provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  past_due_provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  terminal_provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  uncollectible_provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  written_off_provider_receivable_minor?: DirectRequestPaymentMinorAmount;
+  [key: string]: DirectRequestPaymentMinorAmount | undefined;
+}
+
 export interface DirectRequestPaymentBuyerMeteredSummary {
   role: "buyer";
-  open_periods: Array<Record<string, unknown>>;
+  open_periods: DirectRequestPaymentMeteredOpenPeriod[];
   settlement_batches: DirectRequestPaymentSettlementBatch[];
-  past_due_blocks: Array<Record<string, unknown>>;
-  balance_sufficiency?: Record<string, unknown>;
+  past_due_blocks: DirectRequestPaymentPastDueBlock[];
+  balance_sufficiency?: DirectRequestPaymentBalanceSufficiency;
   [key: string]: unknown;
 }
 
@@ -162,9 +214,9 @@ export interface DirectRequestPaymentProviderMeteredSummary {
   role: "provider";
   timezone?: string | null;
   filters?: Record<string, unknown>;
-  open_periods: Array<Record<string, unknown>>;
+  open_periods: DirectRequestPaymentMeteredOpenPeriod[];
   periods: DirectRequestPaymentSettlementBatch[];
-  totals: Record<string, DirectRequestPaymentMinorAmount>;
+  totals: DirectRequestPaymentProviderMeteredTotals;
   [key: string]: unknown;
 }
 
@@ -472,6 +524,14 @@ export interface DirectRequestPaymentWebhookEvent {
     settlement_cadence?: "per_payment" | "weekly" | "monthly" | string | null;
     finality?: string | null;
     protocol_fee_minor?: DirectRequestPaymentMinorAmount | null;
+    provider_gross_amount_minor?: DirectRequestPaymentMinorAmount | null;
+    provider_usage_amount_minor?: DirectRequestPaymentMinorAmount | null;
+    provider_receivable_minor?: DirectRequestPaymentMinorAmount | null;
+    buyer_debit_minor?: DirectRequestPaymentMinorAmount | null;
+    settlement_trigger?: DirectRequestPaymentSettlementTrigger | string | null;
+    settlement_threshold_minor?: DirectRequestPaymentMinorAmount | null;
+    threshold_reached_at?: string | null;
+    total_unsettled_exposure_minor?: DirectRequestPaymentMinorAmount | null;
     settlement_status?: string | null;
     settlement_batch_id?: string | null;
     chain_receipt_id?: string | null;
@@ -490,6 +550,7 @@ export type DirectPaymentConfirmationKind =
 
 export type DirectPaymentConfirmationUnknownReason =
   | "not_direct_payment_confirmed"
+  | "unsupported_confirmation_mode"
   | "invalid_metered_settlement_confirmation"
   | "missing_standard_settlement_fields"
   | "missing_metered_usage_fields"
@@ -590,7 +651,7 @@ export class SiglumeWebhookPayloadError extends SiglumeDirectRequestPaymentError
 }
 
 export class DirectRequestPaymentClient {
-  readonly auth_token: string;
+  readonly #authToken: string;
   readonly base_url: string;
   readonly timeout_ms: number;
   readonly user_agent: string;
@@ -607,8 +668,8 @@ export class DirectRequestPaymentClient {
     if (!fetchImpl) {
       throw new SiglumeDirectRequestPaymentError("A fetch implementation is required in this runtime.");
     }
-    this.auth_token = authToken;
-    this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
+    this.#authToken = authToken;
+    this.base_url = normalizeApiBaseUrl(options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE);
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
     this.user_agent = options.user_agent ?? `@siglume/direct-request-payment/${DIRECT_REQUEST_PAYMENT_SDK_VERSION}`;
     this.fetch_impl = fetchImpl;
@@ -751,7 +812,7 @@ export class DirectRequestPaymentClient {
     try {
       const headers: Record<string, string> = {
         "Accept": "application/json",
-        "Authorization": `Bearer ${this.auth_token}`,
+        "Authorization": `Bearer ${this.#authToken}`,
         "User-Agent": this.user_agent,
       };
       let body: string | undefined;
@@ -784,7 +845,7 @@ export class DirectRequestPaymentClient {
 }
 
 export class DirectRequestPaymentMerchantClient {
-  readonly auth_token: string;
+  readonly #authToken: string;
   readonly base_url: string;
   readonly timeout_ms: number;
   readonly user_agent: string;
@@ -801,8 +862,8 @@ export class DirectRequestPaymentMerchantClient {
     if (!fetchImpl) {
       throw new SiglumeDirectRequestPaymentError("A fetch implementation is required in this runtime.");
     }
-    this.auth_token = authToken;
-    this.base_url = (options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE).replace(/\/+$/, "");
+    this.#authToken = authToken;
+    this.base_url = normalizeApiBaseUrl(options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE);
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
     this.user_agent = options.user_agent ?? `@siglume/direct-request-payment/${DIRECT_REQUEST_PAYMENT_SDK_VERSION}`;
     this.fetch_impl = fetchImpl;
@@ -821,7 +882,7 @@ export class DirectRequestPaymentMerchantClient {
       payload.allowed_currencies = normalizeAllowedCurrencies(input.allowed_currencies);
     }
     if (input.webhook_callback_url !== undefined) {
-      payload.webhook_callback_url = requireNonEmpty(input.webhook_callback_url, "webhook_callback_url");
+      payload.webhook_callback_url = normalizeHttpsUrl(input.webhook_callback_url, "webhook_callback_url");
     }
     if (input.billing_mandate_cap_minor !== undefined) {
       payload.billing_mandate_cap_minor = positiveInteger(input.billing_mandate_cap_minor, "billing_mandate_cap_minor");
@@ -912,7 +973,7 @@ export class DirectRequestPaymentMerchantClient {
     input: DirectRequestPaymentWebhookSubscriptionInput,
   ): Promise<DirectRequestPaymentWebhookSubscription> {
     const payload: Record<string, unknown> = {
-      callback_url: requireNonEmpty(input.callback_url, "callback_url"),
+      callback_url: normalizeHttpsUrl(input.callback_url, "callback_url"),
       event_types: input.event_types?.length
         ? input.event_types.map((eventType) => requireNonEmpty(eventType, "event_type"))
         : ["direct_payment.confirmed", "direct_payment.spent"],
@@ -963,7 +1024,7 @@ export class DirectRequestPaymentMerchantClient {
     try {
       const headers: Record<string, string> = {
         "Accept": "application/json",
-        "Authorization": `Bearer ${this.auth_token}`,
+        "Authorization": `Bearer ${this.#authToken}`,
         "User-Agent": this.user_agent,
       };
       let body: string | undefined;
@@ -1301,14 +1362,6 @@ export function parseDirectRequestPaymentWebhookEvent(payload: unknown): DirectR
     occurred_at: requireNonEmpty(stringOrNull(event.occurred_at) ?? "", "webhook occurred_at"),
     data: { ...data },
   } as DirectRequestPaymentWebhookEvent;
-  if (
-    parsed.type === "direct_payment.confirmed" &&
-    !DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES.has(String(parsed.data.mode ?? ""))
-  ) {
-    throw new SiglumeWebhookPayloadError(
-      "direct_payment.confirmed webhook must carry a supported Direct Request Payment mode.",
-    );
-  }
   return parsed;
 }
 
@@ -1322,6 +1375,7 @@ export function classifyDirectPaymentConfirmation(
   const settlementCadence = stringOrNull(data.settlement_cadence);
   const finality = stringOrNull(data.finality);
   const settlementStatus = stringOrNull(data.settlement_status);
+  const mode = stringOrNull(data.mode);
 
   if (event.type !== "direct_payment.confirmed") {
     return {
@@ -1338,7 +1392,22 @@ export function classifyDirectPaymentConfirmation(
     };
   }
 
-  if (data.mode === "metered_settlement_batch") {
+  if (!DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES.has(mode ?? "")) {
+    return {
+      kind: "unknown",
+      event,
+      data,
+      reason: "unsupported_confirmation_mode",
+      requirement_id: requirementId,
+      settlement_batch_id: stringOrNull(data.settlement_batch_id),
+      pricing_band: pricingBand,
+      settlement_cadence: settlementCadence,
+      settlement_status: settlementStatus,
+      finality,
+    };
+  }
+
+  if (mode === "metered_settlement_batch") {
     const settlementBatchId = stringOrNull(data.settlement_batch_id);
     const chainReceiptId = stringOrNull(data.chain_receipt_id);
     const usageEventDigest = stringOrNull(data.usage_event_digest);
@@ -1547,6 +1616,40 @@ function normalizeAllowedCurrencies(value: Record<string, string> | Array<Direct
 
 function defaultTokenForCurrency(currency: DirectRequestPaymentCurrency): DirectRequestPaymentToken {
   return currency === "JPY" ? "JPYC" : "USDC";
+}
+
+function normalizeApiBaseUrl(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(requireNonEmpty(value, "base_url"));
+  } catch {
+    throw new SiglumeDirectRequestPaymentError("base_url must be an absolute URL such as https://siglume.com/v1.");
+  }
+  if (url.username || url.password) {
+    throw new SiglumeDirectRequestPaymentError("base_url must not include userinfo.");
+  }
+  if (!isAllowedCheckoutOriginScheme(url)) {
+    throw new SiglumeDirectRequestPaymentError(
+      "base_url must use https, except http is allowed for localhost, 127.0.0.1, or [::1].",
+    );
+  }
+  return url.toString().replace(/\/+$/, "");
+}
+
+function normalizeHttpsUrl(value: string, name: string): string {
+  let url: URL;
+  try {
+    url = new URL(requireNonEmpty(value, name));
+  } catch {
+    throw new SiglumeDirectRequestPaymentError(`${name} must be an absolute https URL.`);
+  }
+  if (url.username || url.password) {
+    throw new SiglumeDirectRequestPaymentError(`${name} must not include userinfo.`);
+  }
+  if (url.protocol !== "https:" || !url.hostname) {
+    throw new SiglumeDirectRequestPaymentError(`${name} must use https.`);
+  }
+  return url.toString();
 }
 
 function normalizeOriginList(value: string[]): string[] {

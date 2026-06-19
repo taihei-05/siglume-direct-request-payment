@@ -76,6 +76,18 @@ def test_creates_external_402_payment_requirement() -> None:
     assert request_body["merchant"] == "example_merchant"
 
 
+def test_normalizes_api_base_urls_allows_localhost_http_and_redacts_repr() -> None:
+    client = DirectRequestPaymentClient(auth_token="buyer_jwt", base_url="http://localhost:8787/v1/")
+
+    assert client.base_url == "http://localhost:8787/v1"
+    assert not hasattr(client, "auth_token")
+    assert "buyer_jwt" not in repr(client)
+    with pytest.raises(DirectRequestPaymentError, match="base_url must use https"):
+        DirectRequestPaymentClient(auth_token="buyer_jwt", base_url="http://siglume.example/v1")
+    with pytest.raises(DirectRequestPaymentError, match="userinfo"):
+        DirectRequestPaymentClient(auth_token="buyer_jwt", base_url="https://user@siglume.example/v1")
+
+
 def test_rejects_non_integer_payment_amounts_before_request() -> None:
     with pytest.raises(DirectRequestPaymentError, match="positive safe integer"):
         DirectRequestPaymentClient(auth_token="buyer_jwt").create_payment_requirement(
@@ -434,6 +446,15 @@ def test_merchant_client_rejects_unsafe_origins() -> None:
         client.setup_merchant(merchant="shop", checkout_allowed_origins=["https://user@shop.example.com"])
     with pytest.raises(DirectRequestPaymentError, match="must use https"):
         client.setup_merchant(merchant="shop", checkout_allowed_origins=["ftp://shop.example.com"])
+
+
+@respx.mock
+def test_merchant_client_rejects_unsafe_webhook_callback_urls() -> None:
+    client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
+    with pytest.raises(DirectRequestPaymentError, match="webhook_callback_url must use https"):
+        client.setup_merchant(merchant="shop", webhook_callback_url="http://shop.example.com/webhook")
+    with pytest.raises(DirectRequestPaymentError, match="callback_url must use https"):
+        client.create_webhook_subscription(callback_url="http://shop.example.com/webhook")
 
 
 def test_merchant_client_rejects_checkout_nonce_separator() -> None:

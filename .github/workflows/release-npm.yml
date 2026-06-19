@@ -24,6 +24,15 @@ jobs:
       - run: npm install -g npm@latest
       - run: node --version && npm --version
       - run: npm ci
+      - name: Assert tag matches package version
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "v${PACKAGE_VERSION}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${PACKAGE_VERSION}."
+            exit 1
+          fi
       - run: npm run typecheck
       - run: npm test
       - name: Check whether this npm version already exists
