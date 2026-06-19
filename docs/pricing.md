@@ -31,11 +31,11 @@ charging.
 
 ## Pricing Table
 
-| Payment amount | Applied automatically | What you select | Fee | Settlement |
+| Public one-time payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
-| Over JPY 500 / over USD 3.00 | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
-| JPY 50-500 / over USD 0.30 and up to USD 3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Aggregated and settled **weekly** (see [Settlement schedule](#settlement-schedule)) |
-| Under JPY 50 / up to USD 0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Aggregated and settled **monthly** (see [Settlement schedule](#settlement-schedule)) |
+| JPY 501+ / USD 3.01+ | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
+| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Aggregated and settled **weekly** (see [Settlement schedule](#settlement-schedule)) |
+| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Aggregated and settled **monthly** (see [Settlement schedule](#settlement-schedule)) |
 
 Standard Payment settles per payment. Micro Payment and Nano Payment are
 aggregated and settled in account-assigned weekly / monthly slots - see
@@ -51,7 +51,7 @@ USD 3-and-under items for a product that cannot accept Micro / Nano delayed
 aggregated settlement. For public one-time Direct Payment / Hosted Checkout,
 `amount_minor` is a positive integer in minor currency units. That means the
 smallest public one-time checkout amount is JPY 1 or USD 0.01. Nano Payment on
-this public path therefore means JPY 1-49 or USD 0.01-0.30. Sub-minor Nano
+this public path therefore means JPY 1-49 / USD 0.01-0.30. Sub-minor Nano
 protocol fees are settlement-accounting amounts, not externally submitted
 one-time item prices.
 

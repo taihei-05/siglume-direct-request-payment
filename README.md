@@ -261,11 +261,11 @@ settled in USDC. A merchant settles in one currency, chosen at onboarding. The
 settlement fee percentage is identical in both currencies; only the flat
 amounts differ.
 
-| Payment amount | Applied automatically | What you select | Fee | Settlement |
+| Public one-time payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
-| Over JPY 500 / over USD 3.00 | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
-| JPY 50-500 / over USD 0.30 and up to USD 3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Weekly settlement - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
-| Under JPY 50 / up to USD 0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Monthly settlement - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
+| JPY 501+ / USD 3.01+ | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
+| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Weekly settlement - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
+| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Monthly settlement - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
 
 A merchant billing mandate is required before accepting payments, even on the
 Launch plan. The current public API chooses the payment band from

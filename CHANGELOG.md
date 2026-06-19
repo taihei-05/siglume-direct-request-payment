@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.11 - 2026-06-19
+
+Documentation-only pricing correction.
+
+- Clarified that the public one-time payment table uses positive minor-unit
+  amounts: Standard is JPY 501+ / USD 3.01+, Micro is JPY 50-500 / USD
+  0.31-3.00, and Nano is JPY 1-49 / USD 0.01-0.30.
+- Removed ambiguous "under JPY 50 / up to USD 0.30" wording from public pricing
+  tables.
+
 ## 0.4.10 - 2026-06-19
 
 Public beta scope and metered usage hardening patch.
