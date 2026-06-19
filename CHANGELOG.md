@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.18 - 2026-06-19
+
+Developer-onboarding cleanup for the v0.4.17 public review.
+
+- Added a scoped 10-minute first-test guide for one Standard Payment Hosted
+  Checkout flow, with explicit prerequisites and non-goals.
+- Added payment lifecycle and troubleshooting docs covering Hosted Checkout
+  readiness, webhook failure handling, retries, support references, and refund
+  escalation boundaries.
+- Added README glossary and use-case fit tables so merchant / provider /
+  publisher / payee wording and 10-minute claims are less ambiguous.
+- Added minimal Hosted Checkout TypeScript and Python starter directories with
+  `.env.example`, seeded test order, checkout start route, and webhook handler.
+- Replaced "Stripe Checkout equivalent" wording with Siglume wallet hosted
+  checkout wording in public docs and SDK comments.
+- Exported Python `TypedDict` response names for Hosted Checkout, Micro / Nano
+  summaries, settlement batches, webhook verification, and confirmation
+  classification.
+- Marked the existing Express checkout example as demo-only and not
+  production-safe.
+
 ## 0.4.17 - 2026-06-19
 
 Public-surface cleanup for the v0.4.15 external review.

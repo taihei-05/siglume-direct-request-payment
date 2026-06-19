@@ -1,7 +1,7 @@
 # Pricing
 
 This page documents the trial-phase merchant pricing for Siglume Direct Request
-Payment as of SDK v0.4.17. Pricing can change by agreement or future product
+Payment as of SDK v0.4.18. Pricing can change by agreement or future product
 release; the Siglume platform response is the source of truth for per-payment
 fee data returned at runtime.
 
@@ -192,11 +192,11 @@ once provider gross reaches JPY 10,000 or USD 100.00. These are fixed
 market-specific thresholds, not FX conversions of one another. A payment is
 final only after its on-chain settlement confirms. Micro and Nano are automatic
 amount bands, not customer-selected options. The account-assigned period
-boundaries, roughly 3-day pre-debit notice window, early settlement threshold,
-and current retry policy above are the public behavior as of 2026-06-19. Treat
-the platform's statement status, `not_before_attempt_at`, Standard `fee_bps`,
-and Micro / Nano statement amount fields as authoritative rather than
-hard-coding local revenue recognition.
+boundaries, roughly 3-day pre-debit notice window, and current retry policy above
+are platform-managed public behavior as of 2026-06-19. Treat the platform's
+statement status, `not_before_attempt_at`, Standard `fee_bps`, and Micro / Nano
+statement amount fields as authoritative rather than hard-coding local revenue
+recognition.
 
 ## Micro / Nano Seller-borne Amounts
 

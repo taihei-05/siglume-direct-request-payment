@@ -9,7 +9,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.17";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.18";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain";
@@ -897,8 +897,8 @@ export class DirectRequestPaymentMerchantClient {
   }
 
   /**
-   * Create a Hosted Checkout session (Stripe-Checkout-equivalent for human web
-   * shoppers). Siglume authors the challenge server-side, persists a single-use
+   * Create a Hosted Checkout session for human web shoppers. Siglume authors
+   * the challenge server-side, persists a single-use
    * expiring session, and returns a `checkout_url`. Redirect the shopper there;
    * they log into Siglume, approve, and pay from their own wallet, then return
    * to your `success_url`. Fulfill on the `direct_payment.confirmed` webhook

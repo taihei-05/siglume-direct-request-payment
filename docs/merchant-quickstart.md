@@ -3,6 +3,13 @@
 This guide shows the minimum safe Siglume Direct Request Payment flow for an
 external merchant.
 
+For the shortest first-test path, use
+[10-Minute First Test Payment](./quickstart-10-minutes.md). That guide covers
+only one Standard Payment test after account, Hosted Checkout, billing mandate,
+HTTPS webhook, and buyer wallet prerequisites are ready. This merchant
+quickstart is broader and includes the agent/API path plus Micro / Nano
+reconciliation notes.
+
 ## Actors
 
 - Merchant server: owns the order, amount, currency, challenge secret, webhook
@@ -44,8 +51,8 @@ There are two ways a buyer reaches you, and you integrate each differently:
 
 - **Human web shopper → Hosted Checkout (Beta; server rollout in progress).** Create a checkout session and
   redirect the shopper to the Siglume-hosted page (the
-  [section below](#hosted-checkout-human-web-shoppers)). This is the path that
-  resembles a Stripe-style hosted checkout.
+  [section below](#hosted-checkout-human-web-shoppers)). This is the Siglume
+  wallet hosted checkout path for human web shoppers.
 - **AI agent / agent-to-agent (AtoA) → direct API / tools.** An autonomous
   buyer pays through `DirectRequestPaymentClient` or the marketplace tool
   `market_confirm_direct_payment_and_execute`, as in sections 2-4 below.
@@ -59,6 +66,10 @@ the merchant SDK never authenticates the buyer, and you fulfill on the same
 **Beta / server rollout:** Hosted Checkout is rolling out account by account.
 Some merchant accounts may not have the server endpoint enabled yet. The SDK
 raises `HostedCheckoutNotAvailableError` for rollout 404/409 responses.
+Confirm readiness before building the flow; see
+[Hosted Checkout readiness](./troubleshooting.md#hosted-checkout-readiness).
+If the account is not enabled, do not continue with a human web checkout until
+Siglume enables it for that merchant account.
 
 When a person clicks "Pay with Siglume" on your site, create a session and
 redirect them to the returned `checkout_url`. They sign into Siglume on the
@@ -600,8 +611,15 @@ Do not book Micro / Nano provider revenue as settled revenue until the batch is
 `settled` and `chain_receipt_id` is present. See
 [Micro / Nano Statements and Notices](./metered-statements.md) for the full
 manual, including buyer past-due blocks and public failure fields.
+For a compact state-machine view across Standard, Micro, and Nano, see
+[Payment lifecycle](./payment-lifecycle.md).
 
 ## Failure Handling
+
+For retry policy, buyer-safe copy, webhook signature failures, Hosted Checkout
+readiness, and support escalation, see
+[Troubleshooting](./troubleshooting.md). The short list below is only the common
+payment-domain errors.
 
 - `EXTERNAL_402_CHALLENGE_REQUIRED`: the merchant server did not provide a
   challenge.

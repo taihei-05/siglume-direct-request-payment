@@ -8,7 +8,7 @@ import re
 import time
 import uuid
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal, TypedDict
 from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
@@ -25,7 +25,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.17"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.18"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
 DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain"
@@ -34,6 +34,162 @@ MAX_SAFE_INTEGER = 9007199254740991
 _DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = {DIRECT_REQUEST_PAYMENT_MODE, "metered_settlement_batch"}
 
 _MERCHANT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,95}$")
+
+DirectRequestPaymentMinorAmount = str
+
+
+class DirectRequestPaymentSettlementBatch(TypedDict, total=False):
+    settlement_batch_id: str
+    plan_type: str
+    settlement_cadence: str
+    status: str
+    settlement_trigger: Literal["amount_threshold", "scheduled_close"] | str | None
+    settlement_threshold_minor: DirectRequestPaymentMinorAmount | None
+    threshold_reached_at: str | None
+    total_unsettled_exposure_minor: DirectRequestPaymentMinorAmount | None
+    period_start: str | None
+    period_end: str | None
+    close_at: str | None
+    expected_scheduled_debit_at: str | None
+    scheduled_debit_at: str | None
+    not_before_attempt_at: str | None
+    execution_status: str | None
+    latest_execution_attempt_status: str | None
+    attempt_count: int | None
+    next_attempt_at: str | None
+    chain_receipt_id: str | None
+    usage_event_digest: str | None
+    provider_gross_amount_minor: DirectRequestPaymentMinorAmount
+    provider_usage_amount_minor: DirectRequestPaymentMinorAmount
+    protocol_fee_minor: DirectRequestPaymentMinorAmount
+    provider_receivable_minor: DirectRequestPaymentMinorAmount
+    buyer_debit_minor: DirectRequestPaymentMinorAmount
+    gross_buyer_debit_minor: DirectRequestPaymentMinorAmount
+    rounding_delta_minor: DirectRequestPaymentMinorAmount
+    settled_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    unsettled_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    past_due_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    terminal_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    uncollectible_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    written_off_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    terminal_status: Literal["uncollectible", "written_off"] | str | None
+    terminal_marked_at: str | None
+    terminal_reason_code: str | None
+    failure_reason_code: str | None
+    failure_reason_label: str | None
+    failure_reason_help: str | None
+    support_reference: str | None
+
+
+class DirectRequestPaymentMeteredOpenPeriod(TypedDict, total=False):
+    plan_type: Literal["micro", "nano"] | str
+    settlement_cadence: Literal["weekly", "monthly"] | str
+    currency: Literal["JPY", "USD"] | str
+    token_symbol: Literal["JPYC", "USDC"] | str
+    period_start: str | None
+    period_end: str | None
+    close_at: str | None
+    settlement_trigger: Literal["amount_threshold", "scheduled_close"] | str | None
+    settlement_threshold_minor: DirectRequestPaymentMinorAmount | None
+    threshold_reached_at: str | None
+    provider_gross_amount_minor: DirectRequestPaymentMinorAmount
+    provider_usage_amount_minor: DirectRequestPaymentMinorAmount
+    protocol_fee_minor: DirectRequestPaymentMinorAmount
+    provider_receivable_minor: DirectRequestPaymentMinorAmount
+    buyer_debit_minor: DirectRequestPaymentMinorAmount
+    total_unsettled_exposure_minor: DirectRequestPaymentMinorAmount | None
+
+
+class DirectRequestPaymentPastDueBlock(TypedDict, total=False):
+    settlement_batch_id: str
+    plan_type: Literal["micro", "nano"] | str
+    currency: Literal["JPY", "USD"] | str
+    token_symbol: Literal["JPYC", "USDC"] | str
+    total_unsettled_exposure_minor: DirectRequestPaymentMinorAmount | None
+    past_due_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    failure_reason_code: str | None
+    support_reference: str | None
+
+
+class DirectRequestPaymentProviderMeteredTotals(TypedDict, total=False):
+    settled_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    unsettled_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    past_due_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    terminal_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    uncollectible_provider_receivable_minor: DirectRequestPaymentMinorAmount
+    written_off_provider_receivable_minor: DirectRequestPaymentMinorAmount
+
+
+class DirectRequestPaymentBuyerMeteredSummary(TypedDict, total=False):
+    role: Literal["buyer"]
+    open_periods: list[DirectRequestPaymentMeteredOpenPeriod]
+    settlement_batches: list[DirectRequestPaymentSettlementBatch]
+    past_due_blocks: list[DirectRequestPaymentPastDueBlock]
+    balance_sufficiency: dict[str, Any]
+
+
+class DirectRequestPaymentProviderMeteredSummary(TypedDict, total=False):
+    role: Literal["provider"]
+    timezone: str | None
+    filters: dict[str, Any]
+    open_periods: list[DirectRequestPaymentMeteredOpenPeriod]
+    periods: list[DirectRequestPaymentSettlementBatch]
+    totals: DirectRequestPaymentProviderMeteredTotals
+
+
+class DirectRequestPaymentListResponse(TypedDict, total=False):
+    items: list[dict[str, Any]]
+    next_cursor: str | None
+
+
+class HostedCheckoutSession(TypedDict, total=False):
+    checkout_url: str
+    session_id: str
+    merchant: str
+    amount_minor: int
+    currency: Literal["JPY", "USD"] | str
+    token_symbol: Literal["JPYC", "USDC"] | str
+    status: Literal["open", "authenticated", "paid", "expired", "cancelled", "failed"] | str
+    challenge_hash: str
+    requirement_id: str | None
+    pricing_band: Literal["standard", "micro", "nano"] | str | None
+    settlement_cadence: Literal["per_payment", "weekly", "monthly"] | str | None
+    finality: str | None
+    protocol_fee_minor: DirectRequestPaymentMinorAmount | None
+    settlement_status: str | None
+    chain_receipt_id: str | None
+    success_url: str
+    cancel_url: str
+    expires_at: str | None
+    authenticated_at: str | None
+    paid_at: str | None
+    cancelled_at: str | None
+    created_at: str | None
+    metadata_jsonb: dict[str, Any]
+
+
+class DirectRequestPaymentMerchantSetupResponse(TypedDict, total=False):
+    merchant: dict[str, Any]
+    billing_mandate: dict[str, Any]
+    webhook_subscription: dict[str, Any]
+    env: dict[str, str]
+
+
+class DirectRequestPaymentWebhookVerification(TypedDict, total=False):
+    event: dict[str, Any]
+    verification: dict[str, Any]
+
+
+class DirectRequestPaymentConfirmationClassification(TypedDict, total=False):
+    kind: Literal["standard_settled", "metered_usage_accepted", "metered_batch_settled", "unknown"]
+    reason: str
+    requirement_id: str
+    challenge_hash: str
+    settlement_batch_id: str
+    chain_receipt_id: str
+    usage_event_digest: str
+    settled_at: str | None
+    pricing_band: Literal["standard", "micro", "nano"] | str
 
 
 class DirectRequestPaymentError(Exception):
@@ -170,7 +326,7 @@ class DirectRequestPaymentClient:
         *,
         plan_type: str | None = None,
         token_symbol: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> DirectRequestPaymentBuyerMeteredSummary:
         return self._request(
             "GET",
             _metered_query_path("/sdrp/metered/my-summary", plan_type=plan_type, token_symbol=token_symbol),
@@ -184,7 +340,7 @@ class DirectRequestPaymentClient:
         status: str | None = None,
         cursor: str | None = None,
         limit: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> DirectRequestPaymentListResponse:
         return self._request(
             "GET",
             _metered_query_path(
@@ -205,7 +361,7 @@ class DirectRequestPaymentClient:
         status: str | None = None,
         cursor: str | None = None,
         limit: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> DirectRequestPaymentListResponse:
         return self._request(
             "GET",
             _metered_query_path(
@@ -225,7 +381,7 @@ class DirectRequestPaymentClient:
         token_symbol: str | None = None,
         listing_id: str | None = None,
         capability_key: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> DirectRequestPaymentProviderMeteredSummary:
         return self._request(
             "GET",
             _metered_query_path(
@@ -247,7 +403,7 @@ class DirectRequestPaymentClient:
         capability_key: str | None = None,
         cursor: str | None = None,
         limit: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> DirectRequestPaymentListResponse:
         return self._request(
             "GET",
             _metered_query_path(
@@ -272,7 +428,7 @@ class DirectRequestPaymentClient:
         capability_key: str | None = None,
         cursor: str | None = None,
         limit: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> DirectRequestPaymentListResponse:
         return self._request(
             "GET",
             _metered_query_path(
@@ -293,7 +449,7 @@ class DirectRequestPaymentClient:
         *,
         listing_id: str | None = None,
         capability_key: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> DirectRequestPaymentSettlementBatch:
         batch_id = quote(_require_non_empty(settlement_batch_id, "settlement_batch_id"), safe="")
         return self._request(
             "GET",
@@ -383,7 +539,7 @@ class DirectRequestPaymentMerchantClient:
         billing_mandate_cap_minor: int | None = None,
         max_amount_minor: int | None = None,
         checkout_allowed_origins: list[str] | tuple[str, ...] | None = None,
-    ) -> dict[str, Any]:
+    ) -> DirectRequestPaymentMerchantSetupResponse:
         payload: dict[str, Any] = {
             "merchant": _normalize_self_service_merchant(merchant),
             "billing_plan": _normalize_billing_plan(billing_plan),
@@ -413,9 +569,9 @@ class DirectRequestPaymentMerchantClient:
         success_url: str,
         cancel_url: str,
         metadata: Mapping[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Create a Hosted Checkout session (Stripe-Checkout-equivalent for human
-        web shoppers). Siglume authors the challenge server-side, persists a
+    ) -> HostedCheckoutSession:
+        """Create a Hosted Checkout session for human web shoppers. Siglume
+        authors the challenge server-side, persists a
         single-use expiring session, and returns ``checkout_url``. Redirect the
         shopper there; they log into Siglume, approve, and pay from their own
         wallet, then return to ``success_url``. Fulfill on the
@@ -436,7 +592,7 @@ class DirectRequestPaymentMerchantClient:
             payload["metadata"] = _clone_json_object(metadata, "metadata")
         return self._request_hosted_checkout("POST", "/sdrp/direct-payments/checkout-sessions", json_body=payload)
 
-    def get_checkout_session(self, session_id: str) -> dict[str, Any]:
+    def get_checkout_session(self, session_id: str) -> HostedCheckoutSession:
         """Read a Hosted Checkout session's status (open / authenticated / paid /
         expired / cancelled / failed)."""
         sid = _require_non_empty(session_id, "session_id")
@@ -509,7 +665,7 @@ class DirectRequestPaymentMerchantClient:
         prepare_billing_mandate: bool = True,
         webhook_event_types: list[str] | tuple[str, ...] | None = None,
         webhook_description: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> DirectRequestPaymentMerchantSetupResponse:
         merchant_setup = self.setup_merchant(
             merchant=merchant,
             display_name=display_name,
@@ -610,7 +766,7 @@ def create_direct_request_payment_challenge(
     currency: str,
     secret: str,
     nonce: str | None = None,
-) -> dict[str, Any]:
+    ) -> DirectRequestPaymentListResponse:
     normalized_merchant = _normalize_merchant(merchant)
     normalized_amount = _positive_int(amount_minor, "amount_minor")
     normalized_currency = _normalize_currency(currency)
@@ -671,7 +827,7 @@ def create_direct_request_payment_recurring_challenge(
     cadence: str,
     secret: str,
     nonce: str | None = None,
-) -> dict[str, Any]:
+    ) -> DirectRequestPaymentListResponse:
     """Merchant-side, ONE-TIME approval of a recurring authorization: amount +
     currency + cadence are bound into the HMAC. Recurring charges afterwards
     are deliberately challenge-free; the recurring authorization and the
@@ -801,7 +957,7 @@ def build_payment_execution_payload(
     *,
     await_finality: bool = False,
     metadata: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
+    ) -> DirectRequestPaymentSettlementBatch:
     return build_prepared_transaction_execution_payload(
         requirement,
         requirement.get("transaction_request"),
@@ -906,7 +1062,7 @@ def parse_direct_request_payment_webhook_event(payload: Any) -> dict[str, Any]:
     return event
 
 
-def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> dict[str, Any]:
+def classify_direct_payment_confirmation(event: Mapping[str, Any]) -> DirectRequestPaymentConfirmationClassification:
     data_raw = event.get("data")
     data = data_raw if isinstance(data_raw, Mapping) else {}
     requirement_id = _non_empty_str(data.get("requirement_id")) or _non_empty_str(
@@ -1065,7 +1221,7 @@ def verify_direct_request_payment_webhook(
     *,
     tolerance_seconds: int = DEFAULT_WEBHOOK_TOLERANCE_SECONDS,
     now: int | None = None,
-) -> dict[str, Any]:
+) -> DirectRequestPaymentWebhookVerification:
     verification = verify_webhook_signature(
         signing_secret,
         body,

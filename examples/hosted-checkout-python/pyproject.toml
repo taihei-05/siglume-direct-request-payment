@@ -1,0 +1,9 @@
+[project]
+name = "siglume-hosted-checkout-python-starter"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "Flask>=3.0,<4",
+  "python-dotenv>=1.0,<2",
+  "siglume-direct-request-payment>=0.4.18,<0.5",
+]

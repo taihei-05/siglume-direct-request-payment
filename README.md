@@ -56,7 +56,7 @@ buyer**.
    redirect them to the returned `checkout_url`. They sign into Siglume (passkey
    or email code — the login *is* the wallet), review the amount, approve once,
    and pay from their own wallet, then return to your `success_url`. This is the
-   Stripe-Checkout-equivalent path.
+   Siglume wallet hosted checkout path.
 
 2. **AI agent / agent-to-agent (AtoA) → direct API / tools.** An autonomous
    buyer agent pays through `DirectRequestPaymentClient` (your app holds the
@@ -78,6 +78,39 @@ Honest framing: the part that integrates quickly is the **merchant plumbing**
 shopper to have — or create — a Siglume wallet and pay from it; it is not a
 card-style "instant" checkout for first-time buyers.
 
+## Fast Path
+
+If your merchant account, Hosted Checkout enablement, billing mandate, HTTPS
+webhook URL, and buyer test wallet are already ready, use
+[10-Minute First Test Payment](./docs/quickstart-10-minutes.md) to connect one
+Standard Payment test. That page is intentionally scoped to a first test
+payment, not a production launch.
+
+Before implementation, confirm Hosted Checkout readiness in
+[Troubleshooting](./docs/troubleshooting.md#hosted-checkout-readiness). For
+state handling, read [Payment lifecycle](./docs/payment-lifecycle.md) before
+fulfilling orders.
+
+## Who Is Who
+
+| Term | Meaning for public integrations |
+| --- | --- |
+| Buyer | The Siglume wallet user who pays. The merchant SDK does not log this user in. |
+| Merchant | The external product or store that starts checkout, owns the order, and verifies webhooks. |
+| Provider | The revenue recipient in Micro / Nano statements. In a simple EC integration this is usually the same business as the merchant. |
+| Publisher / listing owner | Marketplace-facing owner of a listing or capability. Most Hosted Checkout merchants do not need to handle this term directly. |
+| Payee | Internal settlement-grouping language. Public integration guides avoid this term unless a statement API field includes it. |
+
+## Use-Case Fit
+
+| Use case | Recommended path | 10-minute demo? | Production work still required |
+| --- | --- | --- | --- |
+| EC one-time Standard payment | Hosted Checkout | Yes, if prerequisites are ready | Durable order DB, webhook dedupe, refund/support process, monitoring |
+| Game consumables | Hosted Checkout or agent/API | Conditional | Idempotent entitlement grants, disconnect recovery, Micro / Nano unsettled-risk handling |
+| Paid API / AtoA | Direct API or Siglume marketplace tool | Conditional | Request idempotency, buyer auth context, reconciliation |
+| SaaS subscription | Recurring challenge plus raw API | No | Renewal, cancellation, failed renewal, plan-change lifecycle |
+| Scheduled autopay | Recurring challenge plus schedule token | No | Scheduler, token custody, budget failure handling |
+
 ## Hosted Checkout (Human Web Shoppers)
 
 **Beta / server rollout:** Hosted Checkout is rolling out account by account.
@@ -86,6 +119,8 @@ case `createCheckoutSession(...)` / `getCheckoutSession(...)` raises
 `HostedCheckoutNotAvailableError` instead of exposing the raw rollout 404/409.
 Keep the signed `direct_payment.confirmed` webhook as the durable signal, and
 inspect its settlement machine fields before marking any order paid.
+Check readiness before you build the flow; see
+[Hosted Checkout readiness](./docs/troubleshooting.md#hosted-checkout-readiness).
 
 Hosted Checkout is a Siglume-hosted page that turns a "Pay with Siglume" button
 into a completed wallet payment, then returns the shopper to your store. It
@@ -286,8 +321,8 @@ the flat amounts differ.
 | Public one-time payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
 | JPY 501+ / USD 3.01+ | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
-| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | JPY 2 / USD 0.01 per SDRP Tx | Weekly settlement, or earlier at JPY 10,000 / USD 100.00 - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
-| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | JPY 0.2 / USD 0.001 per SDRP Tx | Monthly settlement, or earlier at JPY 10,000 / USD 100.00 - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
+| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | JPY 2 / USD 0.01 per SDRP Tx | Closes weekly, or earlier when provider gross reaches JPY 10,000 / USD 100.00. See [Settlement schedule](./docs/pricing.md#settlement-schedule). |
+| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | JPY 0.2 / USD 0.001 per SDRP Tx | Closes monthly, or earlier when provider gross reaches JPY 10,000 / USD 100.00. See [Settlement schedule](./docs/pricing.md#settlement-schedule). |
 
 In this table, `Tx` means one accepted SDRP payment, not an on-chain settlement
 transaction.
@@ -641,7 +676,9 @@ an order paid from the event type alone.
 - Do not treat Direct Request Payment as stored value, prepaid points, escrow, or
   a platform balance.
 
-Read [docs/security.md](./docs/security.md) before going live.
+Read [docs/security.md](./docs/security.md) before going live. Use
+[docs/troubleshooting.md](./docs/troubleshooting.md) for operational error
+handling and support escalation.
 
 ## Go-Live Checklist
 
@@ -670,12 +707,17 @@ Read [docs/security.md](./docs/security.md) before going live.
 ## Documentation
 
 - [Merchant quickstart](./docs/merchant-quickstart.md)
+- [10-minute first test payment](./docs/quickstart-10-minutes.md)
+- [Payment lifecycle](./docs/payment-lifecycle.md)
+- [Troubleshooting](./docs/troubleshooting.md)
 - [API reference](./docs/api-reference.md)
 - [Pricing](./docs/pricing.md)
 - [Micro / Nano statements and notices](./docs/metered-statements.md)
 - [Security guide](./docs/security.md)
 - [Merchant setup example](./examples/setup-merchant.ts)
 - [Express checkout example](./examples/express-checkout.ts)
+- [Hosted Checkout TypeScript starter](./examples/hosted-checkout-typescript)
+- [Hosted Checkout Python starter](./examples/hosted-checkout-python)
 - [Japanese launch announcement draft](./docs/announcement-ja.md)
 - [Changelog](./CHANGELOG.md)
 

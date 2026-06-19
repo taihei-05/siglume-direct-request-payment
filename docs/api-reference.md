@@ -382,6 +382,10 @@ server endpoint is not enabled for the merchant yet, the SDK raises
 404/409. Payment handling must still key off the signed
 `direct_payment.confirmed` webhook and its settlement machine fields, not the
 event name alone.
+Confirm Hosted Checkout readiness before implementation; see
+[Troubleshooting](./troubleshooting.md#hosted-checkout-readiness). A human web
+checkout does not have a drop-in fallback if this account-level feature is not
+enabled yet.
 
 Creates a single-use, expiring Hosted Checkout session for a human web shopper
 and returns the URL to redirect them to. Requires the merchant's Siglume bearer
@@ -1003,7 +1007,11 @@ rejected because re-stringifying changes the signed bytes.
 ### `parseDirectRequestPaymentWebhookEvent(payload)` / `parse_direct_request_payment_webhook_event(payload)`
 
 Validates and normalizes a parsed webhook event object (requires `id`, `type`,
-`api_version`, `occurred_at`, and an object `data`). Throws
+`api_version`, `occurred_at`, and an object `data`). This parser does not verify
+the `Siglume-Signature` header; use
+`verifyDirectRequestPaymentWebhook(...)` /
+`verify_direct_request_payment_webhook(...)` for signature verification and
+parsing together. Throws
 `SiglumeWebhookPayloadError` on a malformed event, or when a
 `direct_payment.confirmed` event does not carry a supported Direct Request
 Payment mode (`external_402` or `metered_settlement_batch`). The `payload`
@@ -1056,6 +1064,8 @@ The classifier is fail-closed: missing finality, missing pricing band, mismatche
 Micro / Nano settlement cadence, missing settlement status, empty challenge
 hashes, empty requirement ids, and empty settlement batch receipt identifiers
 return `kind: "unknown"` with a machine-readable `reason`.
+For order and revenue state transitions, see
+[Payment lifecycle](./payment-lifecycle.md).
 
 ### `verifyDirectRequestPaymentWebhook(secret, body, signature_header, options)` / `verify_direct_request_payment_webhook(secret, body, signature_header, *, tolerance_seconds=300, now=None)`
 
@@ -1129,6 +1139,29 @@ def siglume_webhook(request):
     )
     return JsonResponse({"received": verified["event"]["id"]})
 ```
+
+## Python Response Types
+
+Python responses remain plain dictionaries for runtime compatibility, but the
+package exports `TypedDict` names for the high-risk response shapes:
+
+- `HostedCheckoutSession`
+- `DirectRequestPaymentBuyerMeteredSummary`
+- `DirectRequestPaymentProviderMeteredSummary`
+- `DirectRequestPaymentSettlementBatch`
+- `DirectRequestPaymentMeteredOpenPeriod`
+- `DirectRequestPaymentPastDueBlock`
+- `DirectRequestPaymentProviderMeteredTotals`
+- `DirectRequestPaymentListResponse`
+- `DirectRequestPaymentMerchantSetupResponse`
+- `DirectRequestPaymentWebhookVerification`
+- `DirectRequestPaymentConfirmationClassification`
+
+Use these names for annotations when reconciling Micro / Nano accounting fields
+such as `provider_gross_amount_minor`, `protocol_fee_minor`,
+`provider_receivable_minor`, `buyer_debit_minor`,
+`settled_provider_receivable_minor`, `unsettled_provider_receivable_minor`, and
+`past_due_provider_receivable_minor`.
 
 ## Exported Constants
 

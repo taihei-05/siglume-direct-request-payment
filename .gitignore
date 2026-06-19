@@ -14,6 +14,8 @@ htmlcov/
 # Secrets — never commit
 .env
 .env.*
+!.env.example
+!examples/**/.env.example
 .npmrc
 .pypirc
 

@@ -17,6 +17,11 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: npm run build
+      - run: npm install --no-package-lock
+        working-directory: examples/hosted-checkout-typescript
+      - run: npm run typecheck
+        working-directory: examples/hosted-checkout-typescript
       - run: npm publish --dry-run --access public
 
   python:
@@ -30,5 +35,6 @@ jobs:
       - run: python -m pip install -U pip
       - run: python -m pip install -e ".[test]" build twine
       - run: pytest python_tests
+      - run: python -m py_compile examples/hosted-checkout-python/app.py examples/hosted-checkout-python/order_store.py
       - run: python -m build
       - run: python -m twine check dist/*.whl dist/*.tar.gz

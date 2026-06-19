@@ -1,3 +1,17 @@
+/**
+ * DEMO ONLY.
+ *
+ * This file shows the minimum Hosted Checkout webhook shape, but it is not
+ * production-safe:
+ * - in-memory order storage
+ * - no buyer authentication or order ownership checks
+ * - no database transaction around fulfillment
+ * - no durable webhook event deduplication
+ * - no production refund or support workflow
+ *
+ * For production, persist orders and processed webhook ids in a database,
+ * authorize every checkout start request, and make fulfillment idempotent.
+ */
 import express from "express";
 import {
   classifyDirectPaymentConfirmation,
