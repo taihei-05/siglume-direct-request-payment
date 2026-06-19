@@ -9,7 +9,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.12";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.13";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain";
@@ -82,6 +82,7 @@ export interface DirectRequestPaymentProviderUsageEvent {
   operation_key?: string | null;
   currency: string;
   token_symbol: string;
+  provider_usage_amount_minor: DirectRequestPaymentMinorAmount;
   provider_receivable_minor: DirectRequestPaymentMinorAmount;
   protocol_fee_minor: DirectRequestPaymentMinorAmount;
   gross_buyer_debit_minor: DirectRequestPaymentMinorAmount;
@@ -1093,7 +1094,7 @@ export async function createDirectRequestPaymentRecurringChallengeSignature(
   const cadence = normalizeRecurringCadence(input.cadence);
   const nonce = normalizeChallengeNonce(input.nonce);
   // MUST stay byte-identical to the server's
-  // _external_402_recurring_challenge_signature — both sides change together.
+  // _external_402_recurring_challenge_signature  Eboth sides change together.
   const material = `${merchant}:${amount}:${currency}:${cadence}:${nonce}`;
   return hmacSha256Hex(normalizedSecret, new TextEncoder().encode(material));
 }

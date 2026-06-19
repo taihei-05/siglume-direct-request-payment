@@ -71,11 +71,12 @@ If no paid plan is selected during merchant setup, the merchant account uses the
 Launch plan. A merchant billing mandate is still required before accepting
 payments so Siglume can collect the monthly base fee automatically.
 
-Standard Payment fees are deducted at settlement, so the merchant receives the
-net amount for each Standard payment. Micro / Nano protocol fees are different:
-they are added to the buyer debit, are reported as `protocol_fee_minor`, and are
-not provider revenue. Monthly base fees are collected separately through the
-merchant billing mandate.
+All SDRP payment fees are seller-borne. Standard Payment fees are deducted at
+settlement, so the merchant receives the net amount for each Standard payment.
+Micro / Nano protocol fees are deducted from provider receivable at aggregated
+settlement, are reported as `protocol_fee_minor`, and are not added to the buyer
+debit. Monthly base fees are collected separately through the merchant billing
+mandate.
 
 The same Standard Payment percentage schedule applies in JPY and USD. For
 Standard Payment, the Siglume platform returns `fee_bps` in the merchant's
@@ -150,8 +151,9 @@ confirmed payment turns into money in your settlement wallet.
 
 Micro and Nano run a budget check before the buyer's paid request is fulfilled:
 
-- A buyer's wallet budget reservation is consumed at the **gross amount** (your
-  price plus the protocol fee) from acceptance until settlement confirms. This
+- A buyer's wallet budget reservation is consumed at the **gross buyer debit
+  amount** (your usage price, before any provider-borne protocol fee) from
+  acceptance until settlement confirms. This
   is a reservation against Siglume spending limits; it does not lock, escrow,
   preserve, or guarantee the buyer's token balance, allowance, BudgetVault
   authorization, or payment source.
@@ -184,7 +186,8 @@ current settlement rule is:
 ```text
 provider_usage_amount_minor = sum(provider price minor units for accepted metered rows)
 protocol_fee_minor = sum(Micro/Nano fixed protocol fee minor units for accepted metered rows)
-gross_buyer_debit_minor = provider_usage_amount_minor + protocol_fee_minor
+provider_receivable_minor = max(provider_usage_amount_minor - protocol_fee_minor, 0)
+gross_buyer_debit_minor = provider_usage_amount_minor
 buyer_debit_minor = ceil(gross_buyer_debit_minor)
 rounding_delta_minor = buyer_debit_minor - gross_buyer_debit_minor
 ```
@@ -195,20 +198,23 @@ The rounding mode is ceiling to the next integer token minor unit because
 on-chain settlement cannot debit fractional JPYC/USDC minor units. The positive
 `rounding_delta_minor` is part of the buyer debit for that batch and is retained
 as a rounding adjustment in Siglume's settlement accounting; it is not provider
-revenue. Providers should reconcile their revenue with
+revenue. `protocol_fee_minor` is provider-borne and is deducted from provider
+receivable, not added to the buyer debit. Providers should reconcile their
+revenue with
 `provider_receivable_minor`, `settled_provider_receivable_minor`,
 `unsettled_provider_receivable_minor`, and
 `past_due_provider_receivable_minor`, not with `buyer_debit_minor`.
 
 For low-count Nano batches, the integer ceiling can make the effective buyer
-burden per SDRP Tx higher than the headline USD 0.001 / SDRP Tx protocol fee. The
-decimal protocol fee remains visible as `protocol_fee_minor`; the difference
-created by integer-token settlement is visible as `rounding_delta_minor` on the
-batch. Each settlement batch can add a positive rounding adjustment of less than
-1 token minor unit. If a buyer uses many providers / payees in one period, that
-adjustment can occur once per settlement batch. JavaScript integrations should
-not sum Micro / Nano minor amounts with `number`; use a decimal library. Python
-integrations should use `Decimal`.
+rounded debit per SDRP Tx higher than the decimal provider usage amount. The
+decimal protocol fee remains visible as `protocol_fee_minor` and is deducted
+from provider receivable; the difference created by integer-token settlement is
+visible as `rounding_delta_minor` on the batch. Each settlement batch can add a
+positive rounding adjustment of less than 1 token minor unit. If a buyer uses
+many providers / payees in one period, that adjustment can occur once per
+settlement batch. JavaScript integrations should not sum Micro / Nano minor
+amounts with `number`; use a decimal library. Python integrations should use
+`Decimal`.
 
 ## Statement APIs and Notices
 

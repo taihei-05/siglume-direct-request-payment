@@ -25,7 +25,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.12"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.13"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
 DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain"
@@ -709,7 +709,7 @@ def create_direct_request_payment_recurring_challenge_signature(
 ) -> str:
     normalized_secret = _require_non_empty(secret, "secret")
     # MUST stay byte-identical to the server's
-    # _external_402_recurring_challenge_signature — both sides change together.
+    # _external_402_recurring_challenge_signature  Eboth sides change together.
     material = (
         f"{_normalize_merchant(merchant)}:"
         f"{_positive_int(amount_minor, 'amount_minor')}:"

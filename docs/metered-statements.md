@@ -101,23 +101,25 @@ Rounding happens once when a settlement batch is created:
 ```text
 provider_usage_amount_minor = sum(provider price minor units for accepted metered rows)
 protocol_fee_minor = sum(Micro/Nano fixed protocol fee minor units for accepted metered rows)
-gross_buyer_debit_minor = provider_usage_amount_minor + protocol_fee_minor
+provider_receivable_minor = max(provider_usage_amount_minor - protocol_fee_minor, 0)
+gross_buyer_debit_minor = provider_usage_amount_minor
 buyer_debit_minor = ceil(gross_buyer_debit_minor)
 rounding_delta_minor = buyer_debit_minor - gross_buyer_debit_minor
 ```
 
-For low-count Nano batches, the ceiling can make the effective buyer burden per
-SDRP Tx higher than the headline "USD 0.001 / SDRP Tx" protocol fee. Here,
-`Tx` means one accepted SDRP payment, not an on-chain settlement transaction.
-The protocol fee remains the decimal statement amount; the extra integer-minor-unit
-adjustment is recorded as `rounding_delta_minor` on the settlement batch. Each
-settlement batch can add a positive rounding adjustment of less than 1 token
-minor unit; if a buyer uses many providers / payees in one period, that
-adjustment can occur once per settlement batch.
+For low-count Nano batches, the ceiling can make the effective rounded debit per
+SDRP Tx higher than the decimal provider usage amount. Here, `Tx` means one
+accepted SDRP payment, not an on-chain settlement transaction. The protocol fee
+remains the decimal statement amount and is deducted from provider receivable;
+the extra integer-minor-unit adjustment is recorded as `rounding_delta_minor` on
+the settlement batch. Each settlement batch can add a positive rounding
+adjustment of less than 1 token minor unit; if a buyer uses many providers /
+payees in one period, that adjustment can occur once per settlement batch.
 
 `rounding_delta_minor` belongs to the buyer debit and Siglume's rounding
-adjustment accounting for that batch. It is not provider revenue. Provider
-reports should use `provider_receivable_minor`,
+adjustment accounting for that batch. It is not provider revenue.
+`protocol_fee_minor` is provider-borne and is not added to the buyer debit.
+Provider reports should use `provider_receivable_minor`,
 `settled_provider_receivable_minor`, `unsettled_provider_receivable_minor`, and
 `past_due_provider_receivable_minor`.
 
@@ -145,8 +147,8 @@ They return `{items, next_cursor}`.
 Buyer usage event amount fields:
 
 - `provider_usage_amount_minor`: provider price for the usage event
-- `protocol_fee_minor`: metered protocol fee
-- `gross_buyer_debit_minor`: expected buyer debit for the event
+- `protocol_fee_minor`: provider-borne metered protocol fee
+- `gross_buyer_debit_minor`: provider usage amount before integer-token rounding
 - `expected_scheduled_debit_at`: derived schedule for an open period before a
   settlement batch exists
 
@@ -172,7 +174,7 @@ Buyer batch amount fields:
 
 - `estimated_buyer_debit_minor`: total buyer debit for the batch
 - `provider_usage_amount_minor`: provider usage amount before protocol fee
-- `gross_buyer_debit_minor`: provider usage amount plus protocol fee
+- `gross_buyer_debit_minor`: provider usage amount before integer-token rounding
 - `buyer_debit_minor`: amount scheduled for the debit transaction
 
 Past-due batches include:
@@ -305,12 +307,13 @@ Important batch fields:
 | `latest_execution_attempt_status` | Latest non-sensitive execution attempt status |
 | `chain_receipt_id` | On-chain receipt id when available |
 | `usage_event_digest` | Digest of usage rows included in the batch |
-| `provider_receivable_minor` | Provider amount for the batch |
-| `settled_provider_receivable_minor` | Provider amount that is settled on-chain |
-| `unsettled_provider_receivable_minor` | Provider amount not yet settled |
-| `past_due_provider_receivable_minor` | Provider amount blocked on past-due settlement |
-| `gross_buyer_debit_minor` | Provider amount plus protocol fee |
-| `protocol_fee_minor` | Micro / Nano protocol fee |
+| `provider_usage_amount_minor` | Provider usage amount before protocol fee |
+| `provider_receivable_minor` | Provider amount for the batch after provider-borne protocol fee |
+| `settled_provider_receivable_minor` | Provider receivable that is settled on-chain |
+| `unsettled_provider_receivable_minor` | Provider receivable not yet settled |
+| `past_due_provider_receivable_minor` | Provider receivable blocked on past-due settlement |
+| `gross_buyer_debit_minor` | Provider usage amount before integer-token rounding |
+| `protocol_fee_minor` | Micro / Nano protocol fee deducted from provider receivable |
 | `buyer_debit_minor` | Amount scheduled for the buyer debit |
 | `attempt_count`, `next_attempt_at` | Retry state |
 | `failure_reason_code`, `failure_reason_label`, `failure_reason_help` | Sanitized public failure reason |
@@ -330,7 +333,7 @@ curl https://siglume.com/v1/sdrp/metered/provider/settlement-batches/<batch-id>/
 The CSV contains exactly these columns:
 
 ```text
-metered_usage_id,created_at,plan_type,settlement_cadence,period_start,period_end,listing_id,capability_key,operation_key,currency,token_symbol,provider_receivable_minor,protocol_fee_minor,gross_buyer_debit_minor,rounding_delta_minor,buyer_debit_minor,status,settlement_batch_id,buyer_period_ref
+metered_usage_id,created_at,plan_type,settlement_cadence,period_start,period_end,listing_id,capability_key,operation_key,currency,token_symbol,provider_usage_amount_minor,provider_receivable_minor,protocol_fee_minor,gross_buyer_debit_minor,rounding_delta_minor,buyer_debit_minor,status,settlement_batch_id,buyer_period_ref
 ```
 
 The CSV uses `buyer_period_ref`, not `buyer_user_id`.

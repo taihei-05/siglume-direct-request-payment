@@ -10,6 +10,17 @@ that want to accept Siglume wallet payments. The merchant fixes the order,
 amount, and currency on its server; the buyer pays with a Siglume wallet;
 Siglume applies the correct pricing and settlement path from the payment amount.
 
+**Relationship to HTTP 402.** SDRP is built around the HTTP **402 Payment
+Required** status: the Siglume platform returns **402 Payment Required** when a
+payment is required but not yet completed (for example, attempting to consume a
+payment requirement before it is confirmed). SDRP is **not wire-compatible with
+Coinbase's x402** — the challenge and payment-payload design is different. SDRP
+binds a signed `scheme:nonce:signature` challenge to the merchant, amount, and
+currency, settles through a Siglume wallet (JPYC / USDC), and confirms via a
+signed webhook; it does **not** use x402's HTTP-header payment payload or its
+single-request pay-and-retry handshake. The internal mode name `external_402`
+reflects this 402 lineage.
+
 Use this package when an external EC site, booking service, membership service,
 or paid API wants to accept Siglume wallet payments without taking custody of
 customer funds. The SDK creates and verifies one-time and recurring wallet
@@ -215,10 +226,11 @@ Sub-minor-unit Nano fees are accumulated with decimal precision and rounded only
 when a settlement batch is created; see [Pricing](./docs/pricing.md) for the
 rounding formula and `rounding_delta_minor` semantics.
 For low-count Nano batches, integer-token settlement can make the effective
-buyer burden per SDRP Tx higher than the headline USD 0.001 / SDRP Tx protocol fee; the
-difference is reported as batch `rounding_delta_minor`. Treat Micro / Nano
-minor amounts as decimal strings and use a decimal library or `Decimal` for
-accounting.
+rounded debit per SDRP Tx higher than the decimal provider usage amount; the
+difference is reported as batch `rounding_delta_minor`. Micro / Nano protocol
+fees are provider-borne and are not added to the buyer debit. Treat Micro /
+Nano minor amounts as decimal strings and use a decimal library or `Decimal`
+for accounting.
 For operational reconciliation, expected revenue, settled revenue, retry state,
 and CSV exports, see
 [docs/metered-statements.md](./docs/metered-statements.md).
@@ -288,8 +300,10 @@ returned on a payment requirement is the authoritative fee rate for that payment
 in the merchant's settlement currency. For Micro / Nano, the statement APIs
 expose `protocol_fee_minor`, `gross_buyer_debit_minor`, `buyer_debit_minor`, and
 `rounding_delta_minor`.
-Standard Payment fees are deducted from the merchant settlement amount. Micro /
-Nano protocol fees are added to the buyer debit and are not provider revenue.
+All SDRP payment fees are seller-borne. Standard Payment fees are deducted from
+the merchant settlement amount. Micro / Nano protocol fees are deducted from
+provider receivable at aggregated settlement and are not added to the buyer
+debit.
 The full fee table and the weekly / monthly settlement schedule live in
 [docs/pricing.md](./docs/pricing.md). Statement APIs for "how much was used,
 when will it close, when can it debit, and what is settled" are documented in
@@ -637,11 +651,12 @@ Read [docs/security.md](./docs/security.md) before going live.
 
 - The Direct Request Payment HTTP endpoints live under
   `/v1/sdrp/direct-payments/...`; the SDK targets them for you.
-- For wire compatibility the platform still tags these payments with the legacy
-  mode value `external_402`, and the merchant registry may still expose the
-  legacy billing-plan key `free` for the Launch tier. The SDK sets and reads
-  these values for you — treat them as compatibility identifiers, not public
-  product names.
+- The platform tags these payments with the internal mode value `external_402`,
+  which reflects SDRP's HTTP 402 Payment Required lineage (it is **not**
+  x402-wire-compatible — see "Relationship to HTTP 402"). The merchant registry
+  may also still expose the legacy billing-plan key `free` for the Launch tier.
+  The SDK sets and reads these values for you; `external_402` is an internal
+  mode identifier, not a public product name.
 
 ## Documentation
 

@@ -568,9 +568,10 @@ Calls:
 POST /v1/sdrp/direct-payments/requirements
 ```
 
-The SDK sets the platform-required mode value for you; you do not pass it. (For
-wire compatibility this is still the legacy `external_402` value — see the
-README "Compatibility Notes".)
+The SDK sets the platform-required mode value for you; you do not pass it. (This
+is the internal `external_402` mode value, reflecting SDRP's HTTP 402 Payment
+Required lineage — see the README "Relationship to HTTP 402". It does not imply
+x402 wire compatibility.)
 
 Input:
 
@@ -831,6 +832,7 @@ back as `cursor` to fetch the next page.
 
 Provider-facing amount names:
 
+- `provider_usage_amount_minor`
 - `provider_receivable_minor`
 - `gross_buyer_debit_minor`
 - `buyer_debit_minor`
@@ -881,7 +883,7 @@ curl https://siglume.com/v1/sdrp/metered/provider/settlement-batches/<batch-id>/
 Columns:
 
 ```text
-metered_usage_id,created_at,plan_type,settlement_cadence,period_start,period_end,listing_id,capability_key,operation_key,currency,token_symbol,provider_receivable_minor,protocol_fee_minor,gross_buyer_debit_minor,rounding_delta_minor,buyer_debit_minor,status,settlement_batch_id,buyer_period_ref
+metered_usage_id,created_at,plan_type,settlement_cadence,period_start,period_end,listing_id,capability_key,operation_key,currency,token_symbol,provider_usage_amount_minor,provider_receivable_minor,protocol_fee_minor,gross_buyer_debit_minor,rounding_delta_minor,buyer_debit_minor,status,settlement_batch_id,buyer_period_ref
 ```
 
 The CSV uses `buyer_period_ref`, not raw buyer account identifiers.
@@ -1067,8 +1069,11 @@ Both packages export these importable constants:
 | `DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY` | `per_payment_onchain` |
 | `DIRECT_REQUEST_PAYMENT_METERED_FINALITY` | `aggregated_onchain_settlement` |
 
-The `external_402` / `siglume-external-402-*` values are legacy wire-compat
-identifiers, not public product names (see the README "Compatibility Notes").
+The `external_402` / `siglume-external-402-*` values are internal identifiers
+that reflect SDRP's HTTP 402 Payment Required lineage; they are not public
+product names, and they do **not** imply x402 wire compatibility (SDRP uses a
+different challenge/payment-payload design — see the README "Relationship to
+HTTP 402"). The SDK sets and reads them for you.
 
 ## Aliases
 

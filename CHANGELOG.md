@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.13 - 2026-06-19
+
+Seller-borne Micro / Nano protocol fee correction.
+
+- Added `provider_usage_amount_minor` to provider usage events so provider usage
+  amount and provider receivable can be reconciled separately.
+- Clarified that all SDRP payment fees are seller-borne: Micro / Nano protocol
+  fees are deducted from provider receivable and are not added to buyer debit.
+- Updated metered statement formulas, CSV documentation, and API reference amount
+  names to match the seller-borne settlement model.
+
 ## 0.4.12 - 2026-06-19
 
 Documentation-only fee-unit correction.
@@ -28,9 +39,9 @@ Public beta scope and metered usage hardening patch.
 - Clarified that the current public beta supports JPYC / USDC settlement on
   Polygon PoS only and does not support multi-chain, cross-chain, or
   multi-wallet settlement routing through the public SDK.
-- Clarified that Standard Payment fees are deducted from merchant settlement,
-  while Micro / Nano protocol fees are added to buyer debit and are not provider
-  revenue.
+- Clarified Standard Payment fee deduction and Micro / Nano fee reporting. The
+  Micro / Nano fee-burden wording from that release was superseded by the
+  seller-borne correction in 0.4.13.
 
 ## 0.4.9 - 2026-06-19
 
@@ -136,7 +147,7 @@ public capability is now documented and every signature verified against code.
   `buildPreparedTransactionExecutionPayload`, and `computeWebhookSignature` (plus
   full per-function webhook-verification entries with examples).
 - Added an **Exported Constants** table (all 8 importable constants with values)
-  and an **Aliases** table (the `external_402*` legacy aliases → preferred
+  and an **Aliases** table (the `external_402*` legacy aliases ↁEpreferred
   `DirectRequestPayment*` names).
 - Replaced the "Python uses snake_case" hand-wave with the **actual Python
   keyword-only signatures** for the challenge / webhook / signature verifiers.
@@ -175,7 +186,7 @@ and humans pay through a Siglume-hosted checkout page.
   challenge server-side and returns a `checkout_url`; redirect the shopper there.
   The shopper logs into Siglume, approves, and pays from their own Siglume wallet
   (JPYC / USDC), then returns to your `success_url`. Fulfill on the existing
-  `direct_payment.confirmed` webhook — the source of truth — exactly as with the
+  `direct_payment.confirmed` webhook  Ethe source of truth  Eexactly as with the
   agent flow. The merchant SDK still does not authenticate the buyer.
 - **`getCheckoutSession(session_id)`** (TS + Py): read a session's status
   (`open` / `authenticated` / `paid` / `expired` / `cancelled` / `failed`).
@@ -186,7 +197,7 @@ and humans pay through a Siglume-hosted checkout page.
 - Docs: documented the **two buyer systems** (human Web = Hosted Checkout; AI
   agent / AtoA = direct API / tools), the AtoA **prerequisite** that the buyer
   agent is pre-connected to Siglume (MCP/OAuth, or a custom app holding the
-  buyer's Siglume JWT), and the merchant / Siglume / buyer **boundaries** —
+  buyer's Siglume JWT), and the merchant / Siglume / buyer **boundaries**  E
   including that the buyer needs a Siglume wallet and this is **not** a card
   payment.
 
@@ -203,7 +214,7 @@ challenges and clients from 0.3.x interoperate unchanged.
   pricing guide: Micro settles weekly, Nano settles monthly, with the closing
   period, timezone, revenue-recognition point, retry / carry-over, and
   rejected / no-charge behavior spelled out. The exact close time, default
-  timezone, and settlement lag are marked platform-managed — the platform
+  timezone, and settlement lag are marked platform-managed  Ethe platform
   response is the source of truth.
 - Clarified that Micro / Nano provider revenue stays unsettled until the weekly /
   monthly on-chain settlement succeeds, that failed settlements are retried and
@@ -226,8 +237,8 @@ challenges and clients from 0.3.x interoperate unchanged.
 
 ## 0.3.4 - 2026-06-18
 
-- Docs: clarified the SDRP pricing structure — a Standard plan is selected, and
-  Micro / Nano are applied automatically by amount — across the README and
+- Docs: clarified the SDRP pricing structure  Ea Standard plan is selected, and
+  Micro / Nano are applied automatically by amount  Eacross the README and
   pricing guide.
 
 ## 0.3.3 - 2026-06-18
@@ -245,7 +256,7 @@ challenges and clients from 0.3.x interoperate unchanged.
   tag, not a once-per-day run limit. Siglume no longer caps scheduled autopay
   at one charge per day; occurrences are bounded by the buyer's per-run,
   daily, and monthly auto-pay budget plus the authorization's `max_runs` /
-  expiry. No code or wire-format changes — challenges signed by 0.3.0 verify
+  expiry. No code or wire-format changes  Echallenges signed by 0.3.0 verify
   unchanged.
 - Release automation now uses npm and PyPI Trusted Publishing from GitHub
   Actions, so normal releases do not require local npm OTP or PyPI credentials.
@@ -269,7 +280,7 @@ Recurring payment approval release.
 - Documented the recurring payment flow (subscription and scheduled autopay)
   in the README.
 - Updated pricing docs: the Launch plan's free monthly allowance of 100
-  payments is retired — Launch is now a flat 1.8% payment fee; the per-payment
+  payments is retired  ELaunch is now a flat 1.8% payment fee; the per-payment
   minimum fee is JPY 30 (USD merchants: USD 0.20); JPY/JPYC and USD/USDC
   settlement are both documented as first-class.
 
