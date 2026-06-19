@@ -16,6 +16,9 @@ SDK manual and public helpers.
   result accounting, and operational status handling.
 - Added typed TypeScript and named Python helpers for Micro / Nano statement
   APIs.
+- Added `request_hash_v2` helpers/docs and documented the new
+  requirement/webhook machine fields for pricing band, settlement cadence,
+  finality, protocol fee, and settlement status.
 - Hardened TS/Python integer and `checkout_allowed_origins` validation.
 
 ## 0.4.3 - 2026-06-19

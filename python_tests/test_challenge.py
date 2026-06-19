@@ -7,6 +7,7 @@ from siglume_direct_request_payment import (
     create_direct_request_payment_recurring_challenge,
     direct_request_payment_challenge_hash,
     direct_request_payment_request_hash,
+    direct_request_payment_request_hash_v2,
     parse_direct_request_payment_challenge,
     verify_direct_request_payment_challenge,
     verify_direct_request_payment_recurring_challenge,
@@ -75,6 +76,12 @@ def test_matches_backend_challenge_and_request_hash_material() -> None:
         currency="JPY",
         challenge=challenge,
     ) == "sha256:9c608440740079bc051b0ac820811738ffc497007b9ab7816aea5f29526d0003"
+    assert direct_request_payment_request_hash_v2(
+        merchant="example_merchant",
+        amount_minor=1200,
+        currency="JPY",
+        challenge=challenge,
+    ) == "sha256:fcf0aedc6668bb136e40964547692f09ff5426e62fba7533f0f2c2018b1def8b"
 
 
 def test_rejects_colon_delimited_nonces_that_backend_cannot_parse() -> None:

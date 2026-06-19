@@ -6,6 +6,7 @@ import {
   createDirectRequestPaymentRecurringChallenge,
   directRequestPaymentChallengeHash,
   directRequestPaymentRequestHash,
+  directRequestPaymentRequestHashV2,
   parseDirectRequestPaymentChallenge,
   verifyDirectRequestPaymentChallenge,
   verifyDirectRequestPaymentRecurringChallenge,
@@ -76,6 +77,14 @@ describe("Direct Request Payment challenges", () => {
         challenge,
       }),
     ).resolves.toBe("sha256:9c608440740079bc051b0ac820811738ffc497007b9ab7816aea5f29526d0003");
+    await expect(
+      directRequestPaymentRequestHashV2({
+        merchant: "example_merchant",
+        amount_minor: 1200,
+        currency: "JPY",
+        challenge,
+      }),
+    ).resolves.toBe("sha256:fcf0aedc6668bb136e40964547692f09ff5426e62fba7533f0f2c2018b1def8b");
   });
 
   it("rejects colon-delimited nonces that the backend cannot parse", async () => {

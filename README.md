@@ -527,6 +527,11 @@ if verified["event"]["type"] == "direct_payment.confirmed":
     pass
 ```
 
+New `direct_payment.confirmed` payloads include `pricing_band`,
+`settlement_cadence`, `finality`, `protocol_fee_minor`, `settlement_status`, and
+when available `request_hash_v2`. Use these machine fields instead of inferring
+settlement semantics from the event name alone.
+
 ## Security Rules
 
 - Keep the challenge secret on the merchant server only.

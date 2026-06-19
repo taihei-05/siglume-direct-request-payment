@@ -10,6 +10,7 @@ export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_paymen
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
 export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.4";
+const DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = new Set([DIRECT_REQUEST_PAYMENT_MODE, "metered_settlement_batch"]);
 
 export type DirectRequestPaymentCurrency = "JPY" | "USD";
 export type DirectRequestPaymentToken = "JPYC" | "USDC";
@@ -216,11 +217,17 @@ export interface DirectPaymentRequirement {
   capability_key: string;
   requirement_hash: string;
   request_hash: string;
+  request_hash_v2?: string | null;
   siglume_signature: string;
   token_symbol: string;
   currency: string;
   amount_minor: number;
   fee_bps: number;
+  pricing_band?: "standard" | DirectRequestPaymentMeteredPlanType | string | null;
+  settlement_cadence?: "per_payment" | "weekly" | "monthly" | string | null;
+  finality?: string | null;
+  protocol_fee_minor?: DirectRequestPaymentMinorAmount | null;
+  settlement_status?: string | null;
   status: string;
   expires_at?: string | null;
   confirmed_at?: string | null;
@@ -426,6 +433,12 @@ export interface DirectRequestPaymentWebhookEvent {
     currency?: string;
     token_symbol?: string;
     status?: string;
+    request_hash_v2?: string | null;
+    pricing_band?: "standard" | DirectRequestPaymentMeteredPlanType | string | null;
+    settlement_cadence?: "per_payment" | "weekly" | "monthly" | string | null;
+    finality?: string | null;
+    protocol_fee_minor?: DirectRequestPaymentMinorAmount | null;
+    settlement_status?: string | null;
     [key: string]: unknown;
   };
   [key: string]: unknown;
@@ -1062,6 +1075,22 @@ export async function directRequestPaymentRequestHash(input: {
   return sha256Prefixed(material);
 }
 
+export async function directRequestPaymentRequestHashV2(input: {
+  merchant: string;
+  amount_minor: number;
+  currency: DirectRequestPaymentCurrency | string;
+  challenge: string;
+}): Promise<string> {
+  const material = JSON.stringify({
+    amount_minor: positiveInteger(input.amount_minor, "amount_minor"),
+    challenge: requireNonEmpty(input.challenge, "challenge"),
+    currency: normalizeCurrency(input.currency),
+    merchant: normalizeMerchant(input.merchant),
+    version: 2,
+  });
+  return sha256Prefixed(material);
+}
+
 export function buildPaymentExecutionPayload(
   requirement: DirectPaymentRequirement,
   options: { await_finality?: boolean; metadata?: Record<string, unknown> } = {},
@@ -1168,8 +1197,13 @@ export function parseDirectRequestPaymentWebhookEvent(payload: unknown): DirectR
     occurred_at: requireNonEmpty(stringOrNull(event.occurred_at) ?? "", "webhook occurred_at"),
     data: { ...data },
   } as DirectRequestPaymentWebhookEvent;
-  if (parsed.type === "direct_payment.confirmed" && parsed.data.mode !== DIRECT_REQUEST_PAYMENT_MODE) {
-    throw new SiglumeWebhookPayloadError("direct_payment.confirmed webhook must carry data.mode='external_402'.");
+  if (
+    parsed.type === "direct_payment.confirmed" &&
+    !DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES.has(String(parsed.data.mode ?? ""))
+  ) {
+    throw new SiglumeWebhookPayloadError(
+      "direct_payment.confirmed webhook must carry a supported Direct Request Payment mode.",
+    );
   }
   return parsed;
 }

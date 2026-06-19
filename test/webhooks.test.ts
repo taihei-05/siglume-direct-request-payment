@@ -51,6 +51,33 @@ describe("Direct Request Payment webhooks", () => {
     );
   });
 
+  it("accepts metered settlement confirmation machine fields", async () => {
+    const event = {
+      id: "evt_metered",
+      type: "direct_payment.confirmed",
+      api_version: "2026-06-11",
+      occurred_at: "2026-06-11T00:00:00Z",
+      data: {
+        mode: "metered_settlement_batch",
+        requirement_id: "dpr_metered",
+        pricing_band: "micro",
+        settlement_cadence: "weekly",
+        finality: "aggregated_onchain_settlement",
+        protocol_fee_minor: "1.6",
+        settlement_status: "settled",
+      },
+    };
+    const rawBody = JSON.stringify(event);
+    const header = await buildWebhookSignatureHeader("whsec_test", rawBody, { timestamp: 1800000000 });
+
+    const verified = await verifyDirectRequestPaymentWebhook("whsec_test", rawBody, header, {
+      now: 1800000000,
+    });
+
+    expect(verified.event.data.pricing_band).toBe("micro");
+    expect(verified.event.data.settlement_status).toBe("settled");
+  });
+
   it("rejects direct payment events with the wrong mode", async () => {
     const rawBody = JSON.stringify({
       id: "evt_123",

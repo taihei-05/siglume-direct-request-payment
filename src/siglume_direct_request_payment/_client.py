@@ -27,6 +27,7 @@ DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
 DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.4"
 MAX_SAFE_INTEGER = 9007199254740991
+_DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = {DIRECT_REQUEST_PAYMENT_MODE, "metered_settlement_batch"}
 
 _MERCHANT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,95}$")
 
@@ -765,6 +766,18 @@ def direct_request_payment_request_hash(*, merchant: str, amount_minor: int, cur
     return _sha256_prefixed(material)
 
 
+def direct_request_payment_request_hash_v2(*, merchant: str, amount_minor: int, currency: str, challenge: str) -> str:
+    material = {
+        "amount_minor": _positive_int(amount_minor, "amount_minor"),
+        "challenge": _require_non_empty(challenge, "challenge"),
+        "currency": _normalize_currency(currency),
+        "merchant": _normalize_merchant(merchant),
+        "version": 2,
+    }
+    encoded = json.dumps(material, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return _sha256_prefixed(encoded)
+
+
 def build_payment_execution_payload(
     requirement: Mapping[str, Any],
     *,
@@ -872,8 +885,13 @@ def parse_direct_request_payment_webhook_event(payload: Any) -> dict[str, Any]:
     event["api_version"] = _require_non_empty(str(payload.get("api_version") or ""), "webhook api_version")
     event["occurred_at"] = _require_non_empty(str(payload.get("occurred_at") or ""), "webhook occurred_at")
     event["data"] = dict(data)
-    if event["type"] == "direct_payment.confirmed" and event["data"].get("mode") != DIRECT_REQUEST_PAYMENT_MODE:
-        raise SiglumeWebhookPayloadError("direct_payment.confirmed webhook must carry data.mode='external_402'.")
+    if (
+        event["type"] == "direct_payment.confirmed"
+        and str(event["data"].get("mode") or "") not in _DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES
+    ):
+        raise SiglumeWebhookPayloadError(
+            "direct_payment.confirmed webhook must carry a supported Direct Request Payment mode."
+        )
     return event
 
 

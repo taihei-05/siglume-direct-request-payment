@@ -267,7 +267,15 @@ Returns the `sha256:`-prefixed hash for an existing challenge string.
 ## `directRequestPaymentRequestHash(input)` / `direct_request_payment_request_hash(...)`
 
 Returns the SDK-side request hash material for merchant, amount, currency, and
-challenge. This is mostly useful for tests and internal assertions.
+challenge. This is the legacy v1 hash retained for wire compatibility and
+existing idempotency assertions.
+
+## `directRequestPaymentRequestHashV2(input)` / `direct_request_payment_request_hash_v2(...)`
+
+Returns the v2 request hash for the same fields using canonical JSON before
+hashing. New tests and server-side assertions should prefer this value when the
+API response includes `request_hash_v2`; keep accepting `request_hash` for older
+requirements and historical webhook payloads.
 
 ## `DirectRequestPaymentMerchantClient`
 
@@ -547,6 +555,22 @@ Input:
 - `token_symbol`: optional `JPYC` or `USDC` when enabled for the merchant account
 - `allowance_amount_minor`: optional positive integer
 - `metadata`: optional JSON object
+
+The returned requirement includes both compatibility and machine-readable
+settlement fields:
+
+- `request_hash`: legacy v1 request hash, retained for existing requirements
+  and integrations.
+- `request_hash_v2`: canonical-JSON v2 request hash when the server can compute
+  one for the challenge-backed request.
+- `pricing_band`: `standard`, `micro`, or `nano`.
+- `settlement_cadence`: `per_payment`, `weekly`, or `monthly`.
+- `finality`: machine-readable finality class such as
+  `per_payment_onchain` or `aggregated_onchain_settlement`.
+- `protocol_fee_minor`: Micro / Nano protocol fee when applicable; `null` for
+  Standard Payment.
+- `settlement_status`: `pending_payment`, `provisional`, `settled`,
+  `pending_settlement`, or another explicit operational state.
 
 ### `getPaymentRequirement(requirement_id)` / `get_payment_requirement(requirement_id)`
 
@@ -889,8 +913,17 @@ Returns `{ timestamp, signature }`.
 Validates and normalizes a parsed webhook event object (requires `id`, `type`,
 `api_version`, `occurred_at`, and an object `data`). Throws
 `SiglumeWebhookPayloadError` on a malformed event, or when a
-`direct_payment.confirmed` event does not carry `data.mode = "external_402"`. The
-`payload` argument is positional in both languages.
+`direct_payment.confirmed` event does not carry a supported Direct Request
+Payment mode (`external_402` or `metered_settlement_batch`). The `payload`
+argument is positional in both languages.
+
+For `direct_payment.confirmed`, inspect `event.data.pricing_band`,
+`event.data.settlement_cadence`, `event.data.finality`,
+`event.data.protocol_fee_minor`, and `event.data.settlement_status` instead of
+inferring whether the event means per-payment on-chain confirmation or an
+aggregated Micro / Nano settlement confirmation. `event.data.request_hash_v2`
+is present on new challenge-backed requirements; keep accepting
+`event.data.request_hash` for historical payloads.
 
 ### `verifyDirectRequestPaymentWebhook(secret, body, signature_header, options)` / `verify_direct_request_payment_webhook(secret, body, signature_header, *, tolerance_seconds=300, now=None)`
 
