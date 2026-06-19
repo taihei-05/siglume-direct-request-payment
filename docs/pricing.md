@@ -34,8 +34,12 @@ charging.
 | Public one-time payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
 | JPY 501+ / USD 3.01+ | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
-| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / Tx, about JPY 2 | Aggregated and settled **weekly** (see [Settlement schedule](#settlement-schedule)) |
-| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / usage, about JPY 0.2 | Aggregated and settled **monthly** (see [Settlement schedule](#settlement-schedule)) |
+| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / SDRP Tx, about JPY 2 | Aggregated and settled **weekly** (see [Settlement schedule](#settlement-schedule)) |
+| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / SDRP Tx, about JPY 0.2 | Aggregated and settled **monthly** (see [Settlement schedule](#settlement-schedule)) |
+
+In this table, `Tx` means one accepted SDRP payment, not an on-chain settlement
+transaction. Micro / Nano settlement batches are aggregated on-chain after the
+weekly or monthly close.
 
 Standard Payment settles per payment. Micro Payment and Nano Payment are
 aggregated and settled in account-assigned weekly / monthly slots - see
@@ -174,18 +178,19 @@ recognition.
 ## Micro / Nano Amount Rounding
 
 Micro / Nano fees are stored internally as decimal minor-unit values so
-sub-yen and sub-cent Nano fees are not silently rounded per usage event. The
+sub-yen and sub-cent Nano fees are not silently rounded per accepted SDRP Tx. The
 current settlement rule is:
 
 ```text
-provider_usage_amount_minor = sum(provider price minor units for accepted usage)
-protocol_fee_minor = sum(Micro/Nano fixed protocol fee minor units for accepted usage)
+provider_usage_amount_minor = sum(provider price minor units for accepted metered rows)
+protocol_fee_minor = sum(Micro/Nano fixed protocol fee minor units for accepted metered rows)
 gross_buyer_debit_minor = provider_usage_amount_minor + protocol_fee_minor
 buyer_debit_minor = ceil(gross_buyer_debit_minor)
 rounding_delta_minor = buyer_debit_minor - gross_buyer_debit_minor
 ```
 
-Rounding happens once when the settlement batch is created, not per usage event.
+Rounding happens once when the settlement batch is created, not per accepted
+SDRP Tx.
 The rounding mode is ceiling to the next integer token minor unit because
 on-chain settlement cannot debit fractional JPYC/USDC minor units. The positive
 `rounding_delta_minor` is part of the buyer debit for that batch and is retained
@@ -196,7 +201,7 @@ revenue. Providers should reconcile their revenue with
 `past_due_provider_receivable_minor`, not with `buyer_debit_minor`.
 
 For low-count Nano batches, the integer ceiling can make the effective buyer
-burden per usage higher than the headline USD 0.001 / usage protocol fee. The
+burden per SDRP Tx higher than the headline USD 0.001 / SDRP Tx protocol fee. The
 decimal protocol fee remains visible as `protocol_fee_minor`; the difference
 created by integer-token settlement is visible as `rounding_delta_minor` on the
 batch. Each settlement batch can add a positive rounding adjustment of less than

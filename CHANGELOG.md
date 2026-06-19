@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.12 - 2026-06-19
+
+Documentation-only fee-unit correction.
+
+- Unified Micro and Nano protocol fee units as `/ SDRP Tx`.
+- Clarified that `Tx` means one accepted SDRP payment, not the later on-chain
+  settlement transaction.
+
 ## 0.4.11 - 2026-06-19
 
 Documentation-only pricing correction.

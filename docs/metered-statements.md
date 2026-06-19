@@ -93,22 +93,23 @@ guarantee.
 ## Amount Rounding
 
 Micro / Nano usage rows keep provider price and protocol fee values as decimal
-minor-unit amounts. This allows Nano fees such as about JPY 0.2 per usage to be
-accounted without rounding every event.
+minor-unit amounts. This allows Nano fees such as about JPY 0.2 per SDRP Tx to
+be accounted without rounding every accepted payment.
 
 Rounding happens once when a settlement batch is created:
 
 ```text
-provider_usage_amount_minor = sum(provider price minor units for accepted usage)
-protocol_fee_minor = sum(Micro/Nano fixed protocol fee minor units for accepted usage)
+provider_usage_amount_minor = sum(provider price minor units for accepted metered rows)
+protocol_fee_minor = sum(Micro/Nano fixed protocol fee minor units for accepted metered rows)
 gross_buyer_debit_minor = provider_usage_amount_minor + protocol_fee_minor
 buyer_debit_minor = ceil(gross_buyer_debit_minor)
 rounding_delta_minor = buyer_debit_minor - gross_buyer_debit_minor
 ```
 
 For low-count Nano batches, the ceiling can make the effective buyer burden per
-usage higher than the headline "USD 0.001 / usage" protocol fee. The protocol
-fee remains the decimal statement amount; the extra integer-minor-unit
+SDRP Tx higher than the headline "USD 0.001 / SDRP Tx" protocol fee. Here,
+`Tx` means one accepted SDRP payment, not an on-chain settlement transaction.
+The protocol fee remains the decimal statement amount; the extra integer-minor-unit
 adjustment is recorded as `rounding_delta_minor` on the settlement batch. Each
 settlement batch can add a positive rounding adjustment of less than 1 token
 minor unit; if a buyer uses many providers / payees in one period, that
