@@ -19,12 +19,13 @@ Siglume applies the settlement band from the amount.
 
 | Band | Cadence | Period close | First debit attempt | Revenue recognition |
 | --- | --- | --- | --- | --- |
-| Micro Payment | Weekly | Account-assigned fixed weekly slot in the buyer settlement timezone | After final debit notice delivery and the fixed close-plus-3-day window | Only after the aggregated settlement confirms on-chain |
-| Nano Payment | Monthly | Account-assigned fixed monthly slot in the buyer settlement timezone | After final debit notice delivery and the fixed close-plus-3-day window | Only after the aggregated settlement confirms on-chain |
+| Micro Payment | Weekly, with early threshold settlement | Account-assigned fixed weekly slot in the buyer settlement timezone; can close early once the buyer/payee/token batch reaches JPY 10,000 or USD 100.00 | After final debit notice delivery and the fixed close-plus-3-day window | Only after the aggregated settlement confirms on-chain |
+| Nano Payment | Monthly, with early threshold settlement | Account-assigned fixed monthly slot in the buyer settlement timezone; can close early once the buyer/payee/token batch reaches JPY 10,000 or USD 100.00 | After final debit notice delivery and the fixed close-plus-3-day window | Only after the aggregated settlement confirms on-chain |
 
-The schedule is platform-managed. Buyers and providers can see the assigned
-period and scheduled attempt times through the statement APIs, but cannot choose
-a custom close day.
+The schedule is platform-managed. Buyers and providers can see the resulting
+batch period and scheduled attempt times through the statement APIs, but cannot
+choose a custom close day. Early threshold settlement can create a batch before
+the account-assigned weekly or monthly close.
 
 The important timestamp is `not_before_attempt_at`. Siglume does not execute the
 debit before this timestamp. It is always after the final debit notice is

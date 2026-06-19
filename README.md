@@ -199,20 +199,23 @@ setup, and after that the applied fee and the settlement timing follow the
 - **Standard Payment** — most payments. Your selected plan's percentage fee,
   settled on-chain immediately after each payment confirms.
 - **Micro Payment** — small payments, applied automatically by amount. A flat
-  per-SDRP-Tx protocol fee, **settled weekly**.
+  per-SDRP-Tx protocol fee, settled weekly or earlier when the buyer/payee
+  batch reaches JPY 10,000 / USD 100.00.
 - **Nano Payment** — very small payments, applied automatically by amount. A
-  flat per-SDRP-Tx protocol fee, **settled monthly**.
+  flat per-SDRP-Tx protocol fee, settled monthly or earlier when the buyer/payee
+  batch reaches JPY 10,000 / USD 100.00.
 
 Here, `Tx` means one accepted SDRP payment, not the later on-chain settlement
 transaction. Micro / Nano settlement batches are aggregated on-chain after the
-weekly or monthly close.
+weekly or monthly close, or earlier when the fixed amount threshold is reached.
 
 Micro Payment and Nano Payment are not separate products you opt into; they are
 amount bands Siglume applies on your behalf. Your integration code is the same
 regardless of which band a payment falls into. The full fee table and the exact
-weekly / monthly settlement schedule are in [docs/pricing.md](./docs/pricing.md).
+weekly / monthly settlement schedule plus early threshold settlement rule are in
+[docs/pricing.md](./docs/pricing.md).
 Provider revenue in the Micro and Nano bands is not settled revenue until the
-weekly or monthly on-chain settlement succeeds. Siglume keeps outstanding failed
+aggregated on-chain settlement succeeds. Siglume keeps outstanding failed
 settlements for retry under the published policy, but does not advance or
 guarantee provider revenue before settlement succeeds. Merchant setup and the
 billing mandate terms assume the merchant accepts this Micro / Nano delayed
@@ -280,8 +283,8 @@ amounts differ.
 | Public one-time payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
 | JPY 501+ / USD 3.01+ | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
-| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / SDRP Tx, about JPY 2 | Weekly settlement - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
-| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / SDRP Tx, about JPY 0.2 | Monthly settlement - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
+| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / SDRP Tx, about JPY 2 | Weekly settlement, or earlier at JPY 10,000 / USD 100.00 - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
+| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / SDRP Tx, about JPY 0.2 | Monthly settlement, or earlier at JPY 10,000 / USD 100.00 - see [Settlement schedule](./docs/pricing.md#settlement-schedule) |
 
 In this table, `Tx` means one accepted SDRP payment, not an on-chain settlement
 transaction.
@@ -304,7 +307,8 @@ All SDRP payment fees are seller-borne. Standard Payment fees are deducted from
 the merchant settlement amount. Micro / Nano protocol fees are deducted from
 provider receivable at aggregated settlement and are not added to the buyer
 debit.
-The full fee table and the weekly / monthly settlement schedule live in
+The full fee table, the weekly / monthly settlement schedule, and the JPY
+10,000 / USD 100.00 early settlement threshold live in
 [docs/pricing.md](./docs/pricing.md). Statement APIs for "how much was used,
 when will it close, when can it debit, and what is settled" are documented in
 [docs/metered-statements.md](./docs/metered-statements.md).

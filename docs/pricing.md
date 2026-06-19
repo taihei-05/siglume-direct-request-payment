@@ -34,18 +34,19 @@ charging.
 | Public one-time payment amount | Applied automatically | What you select | Fee | Settlement |
 | --- | --- | --- | --- | --- |
 | JPY 501+ / USD 3.01+ | Standard Payment | Select one Standard plan: Launch, Starter, Growth, or Pro | Launch: JPY 0 / USD 0 monthly, 1.8%; Starter: JPY 980 / USD 6 monthly, 1.0%; Growth: JPY 2,980 / USD 18 monthly, 0.7%; Pro: JPY 9,800 / USD 60 monthly, 0.5%. Minimum JPY 30 / USD 0.20 per payment. | Settled on-chain immediately after the payment confirms |
-| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / SDRP Tx, about JPY 2 | Aggregated and settled **weekly** (see [Settlement schedule](#settlement-schedule)) |
-| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / SDRP Tx, about JPY 0.2 | Aggregated and settled **monthly** (see [Settlement schedule](#settlement-schedule)) |
+| JPY 50-500 / USD 0.31-3.00 | Micro Payment | Applied automatically by amount | USD 0.01 / SDRP Tx, about JPY 2 | Aggregated and settled **weekly**, or earlier once the buyer/payee batch reaches JPY 10,000 / USD 100.00 (see [Settlement schedule](#settlement-schedule)) |
+| JPY 1-49 / USD 0.01-0.30 | Nano Payment | Applied automatically by amount | USD 0.001 / SDRP Tx, about JPY 0.2 | Aggregated and settled **monthly**, or earlier once the buyer/payee batch reaches JPY 10,000 / USD 100.00 (see [Settlement schedule](#settlement-schedule)) |
 
 In this table, `Tx` means one accepted SDRP payment, not an on-chain settlement
 transaction. Micro / Nano settlement batches are aggregated on-chain after the
-weekly or monthly close.
+weekly or monthly close, or earlier when the fixed amount threshold is reached.
 
 Standard Payment settles per payment. Micro Payment and Nano Payment are
-aggregated and settled in account-assigned weekly / monthly slots - see
-[Settlement schedule](#settlement-schedule) for how each band closes, when the
-pre-debit notice window elapses, when revenue becomes settled, and how rejected
-requests behave.
+aggregated and settled in account-assigned weekly / monthly slots, with early
+settlement when the same buyer/payee/token/period batch reaches JPY 10,000 or
+USD 100.00. See [Settlement schedule](#settlement-schedule) for how each band
+closes, when the pre-debit notice window elapses, when revenue becomes settled,
+and how rejected requests behave.
 
 The current public API chooses the band from `amount_minor`; JPY 500-and-under /
 USD 3-and-under payments are routed to Micro / Nano delayed aggregated
@@ -94,23 +95,27 @@ confirmed payment turns into money in your settlement wallet.
 | Band | Cadence | Period | You are paid |
 | --- | --- | --- | --- |
 | Standard Payment | Per payment | n/a | On-chain, immediately after each payment confirms |
-| Micro Payment | Weekly | Account-assigned fixed weekly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs | After the period closes and the roughly 3-day pre-debit notice window has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
-| Nano Payment | Monthly | Account-assigned fixed monthly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs | After the period closes and the roughly 3-day pre-debit notice window has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
+| Micro Payment | Weekly, with early threshold settlement | Account-assigned fixed weekly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs. If a buyer/payee/token/period batch reaches JPY 10,000 or USD 100.00 first, Siglume can close that batch early. | After the period closes or the fixed amount threshold is reached, and the roughly 3-day pre-debit notice window has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
+| Nano Payment | Monthly, with early threshold settlement | Account-assigned fixed monthly slot in the buyer settlement timezone; the assigned close time is visible through the statement APIs. If a buyer/payee/token/period batch reaches JPY 10,000 or USD 100.00 first, Siglume can close that batch early. | After the period closes or the fixed amount threshold is reached, and the roughly 3-day pre-debit notice window has elapsed, in aggregated on-chain settlement(s) grouped per buyer, payee, token, and period |
 
 ### Micro weekly settlement
 
 - **Closing period.** Micro-band payments accrue across one weekly period. The
   specific closing weekday and time are assigned as a fixed slot per account to
   spread settlement load.
+- **Early threshold settlement.** If a buyer/payee/token batch reaches JPY
+  10,000 or USD 100.00 before the weekly close, Siglume can close that batch
+  early and start the same final-notice and settlement flow.
 - **Timezone.** Period boundaries are evaluated in the buyer's configured
   settlement timezone, defaulting to UTC. Assigned slots are persisted and are
   not recalculated on the fly.
-- **Settlement.** After the week closes, Siglume aggregates that week's Micro
+- **Settlement.** After the week closes or the early threshold is reached,
+  Siglume aggregates the Micro
   payments — grouped per buyer, payee, token, and period — into on-chain
   settlement(s). Siglume sends the final debit notice first; the on-chain debit
   is not attempted until the scheduled attempt time after an approximately
   3-day pre-debit notice window (`not_before_attempt_at`).
-- **Revenue recognition.** A Micro payment is final only once its weekly
+- **Revenue recognition.** A Micro payment is final only once its aggregated
   settlement confirms on-chain. Until then it is accrued, not settled.
 
 ### Nano monthly settlement
@@ -118,15 +123,19 @@ confirmed payment turns into money in your settlement wallet.
 - **Closing period.** Nano-band payments accrue across one monthly period. The
   specific closing day and time are assigned as a fixed slot per account to
   spread settlement load.
+- **Early threshold settlement.** If a buyer/payee/token batch reaches JPY
+  10,000 or USD 100.00 before the monthly close, Siglume can close that batch
+  early and start the same final-notice and settlement flow.
 - **Timezone.** As with Micro, period boundaries use the buyer's configured
   settlement timezone, defaulting to UTC. Assigned slots are persisted and are
   not recalculated on the fly.
-- **Settlement.** After the month closes, Siglume aggregates that month's Nano
+- **Settlement.** After the month closes or the early threshold is reached,
+  Siglume aggregates the Nano
   payments — grouped per buyer, payee, token, and period — into on-chain
   settlement(s). Siglume sends the final debit notice first; the on-chain debit
   is not attempted until the scheduled attempt time after an approximately
   3-day pre-debit notice window (`not_before_attempt_at`).
-- **Revenue recognition.** A Nano payment is final only once its monthly
+- **Revenue recognition.** A Nano payment is final only once its aggregated
   settlement confirms on-chain.
 
 ### Failures, retries, and carry-over
@@ -168,14 +177,15 @@ Micro and Nano run a budget check before the buyer's paid request is fulfilled:
 
 ### What is fixed vs platform-managed
 
-The cadence is fixed: **Micro settles weekly, Nano settles monthly**, and a
-payment is final only after its on-chain settlement confirms. Micro and Nano are
-automatic amount bands, not customer-selected options. The account-assigned
-period boundaries, roughly 3-day pre-debit notice window, and current retry policy
-above are the public behavior as of 2026-06-18. Treat the platform's statement
-status, `not_before_attempt_at`, Standard `fee_bps`, and Micro / Nano statement
-amount fields as authoritative rather than hard-coding local revenue
-recognition.
+The cadence fields are fixed: **Micro is weekly, Nano is monthly**. In both
+bands, Siglume can close a buyer/payee/token batch early once it reaches JPY
+10,000 or USD 100.00. A payment is final only after its on-chain settlement
+confirms. Micro and Nano are automatic amount bands, not customer-selected
+options. The account-assigned period boundaries, roughly 3-day pre-debit notice
+window, early settlement threshold, and current retry policy above are the
+public behavior as of 2026-06-19. Treat the platform's statement status,
+`not_before_attempt_at`, Standard `fee_bps`, and Micro / Nano statement amount
+fields as authoritative rather than hard-coding local revenue recognition.
 
 ## Micro / Nano Amount Rounding
 

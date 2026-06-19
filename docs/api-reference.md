@@ -536,10 +536,11 @@ accepted by these user-authenticated routes.
 
 This client creates SDRP Standard Payment requirements for external merchant
 checkout flows. Micro Payment and Nano Payment are applied automatically by
-amount and settled on account-assigned weekly / monthly slots; they are not
-created explicitly through this client. Use the statement APIs below to see
-open-period usage, the close time, the final-notice schedule, and settled /
-unsettled / past-due revenue.
+amount and settled on account-assigned weekly / monthly slots, or earlier when a
+buyer/payee/token batch reaches JPY 10,000 / USD 100.00; they are not created
+explicitly through this client. Use the statement APIs below to see open-period
+usage, the close time, the final-notice schedule, and settled / unsettled /
+past-due revenue.
 
 Standard Payment requirements include `fee_bps` from the Siglume platform. The
 SDK does not calculate merchant plan fees locally. For Micro / Nano, use the
