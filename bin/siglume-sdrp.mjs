@@ -33,7 +33,7 @@ async function main() {
   }
   if (command === "preflight") {
     const options = parseArgs(args);
-    options.probe = false;
+    options.webhookDeliveryProbe = false;
     await readiness(options, { requireProbe: false, label: "preflight" });
     return;
   }
@@ -68,7 +68,7 @@ Readiness options:
   --base-url <url>          Siglume API base URL. Defaults to SIGLUME_API_BASE or production.
   --sandbox                 Use the local sandbox default API base (http://127.0.0.1:8787/v1).
   --no-api                  Validate local config only; do not call Siglume.
-  --no-probe                Partial API check only; readiness/verify will not be reported as ready. preflight sets this automatically.
+  --no-probe                Partial API check only; skips Hosted Checkout and webhook delivery probes.
   --json                    Print machine-readable JSON.
 
 Sandbox options:
@@ -120,6 +120,8 @@ async function readiness(options, mode = { requireProbe: true, label: "readiness
   const currency = normalizeCurrency(options.currency || process.env.SIGLUME_DIRECT_PAYMENT_TEST_CURRENCY || "JPY");
   const amountMinor = Number(options.amountMinor || process.env.SIGLUME_DIRECT_PAYMENT_TEST_AMOUNT_MINOR || (currency === "USD" ? 301 : 501));
   const baseUrl = options.baseUrl || process.env.SIGLUME_API_BASE || (sandboxMode ? process.env.SIGLUME_SANDBOX_API_BASE || "http://127.0.0.1:8787/v1" : undefined);
+  const checkoutProbe = options.probe !== false && options.checkoutProbe !== false;
+  const webhookDeliveryProbe = options.probe !== false && options.webhookDeliveryProbe !== false;
 
   check(checks, "target_environment", true, sandboxMode ? "sandbox" : "live");
   check(checks, "merchant_key", Boolean(merchant), "Set SIGLUME_DIRECT_PAYMENT_MERCHANT or pass --merchant.");
@@ -170,13 +172,13 @@ async function readiness(options, mode = { requireProbe: true, label: "readiness
       }
     }
 
-    if (!options.probe && mode.requireProbe && !hasFailures(checks)) {
+    if (!checkoutProbe && mode.requireProbe && !hasFailures(checks)) {
       check(checks, "hosted_checkout_probe", false, "--no-probe skips Hosted Checkout and webhook delivery probes. Remove --no-probe for readiness.");
-    } else if (!options.probe && !mode.requireProbe && !hasFailures(checks)) {
-      check(checks, "delivery_probe_skipped", true, "preflight only; run siglume-check verify after mounting and starting the webhook route.");
+    } else if (!webhookDeliveryProbe && !mode.requireProbe && !hasFailures(checks)) {
+      check(checks, "webhook_delivery_probe_skipped", true, "preflight only; run siglume-check verify after mounting and starting the webhook route.");
     }
 
-    if (options.probe && !hasFailures(checks)) {
+    if (checkoutProbe && !hasFailures(checks)) {
       try {
         const session = await merchantClient.createCheckoutSession({
           merchant,
@@ -187,16 +189,16 @@ async function readiness(options, mode = { requireProbe: true, label: "readiness
           cancel_url: `${origin}/siglume-readiness/cancel`,
           metadata: { source: "siglume-sdrp-readiness" },
         });
-        check(checks, "hosted_checkout", Boolean(session.checkout_url && session.challenge_hash), "Hosted Checkout did not return a checkout_url.");
+        check(checks, "hosted_checkout_probe", Boolean(session.checkout_url && session.challenge_hash), "Hosted Checkout did not return a checkout_url.");
       } catch (error) {
         const message = error instanceof HostedCheckoutNotAvailableError
           ? "Hosted Checkout is not enabled for this merchant account. Ask Siglume to enable it before coding the human checkout path."
           : apiErrorMessage(error, "Hosted Checkout probe failed. Check checkout_allowed_origins, currency, amount, and billing mandate.");
-        check(checks, "hosted_checkout", false, message);
+        check(checks, "hosted_checkout_probe", false, message);
       }
     }
 
-    if (options.probe && !hasFailures(checks)) {
+    if (webhookDeliveryProbe && !hasFailures(checks)) {
       await checkWebhookDeliveryProbe(checks, merchantClient, {
         merchant,
         subscription: matchingWebhookSubscription,
@@ -215,7 +217,7 @@ async function readiness(options, mode = { requireProbe: true, label: "readiness
     if (ok && !options.api) {
       console.log("Local config checks passed. API, Hosted Checkout, and webhook delivery readiness were not verified.");
     } else {
-      if (ok && !options.probe && !mode.requireProbe) {
+      if (ok && !webhookDeliveryProbe && !mode.requireProbe) {
         console.log(`Preflight passed (${sandboxMode ? "sandbox" : "live"}). Mount the routes, start your app, then run siglume-check verify.`);
       } else {
         console.log(ok ? `Ready for 10-minute SDRP integration (${sandboxMode ? "sandbox" : "live"}).` : `Not ready. Fix the FAIL items before ${mode.label === "preflight" ? "mounting checkout" : "opening checkout"}.`);

@@ -227,10 +227,8 @@ class MongoSiglumeOrderStore implements SiglumeSdrpOrderStore {
         $unset: { active_key: "" },
       },
     );
-    if (changed.modifiedCount > 0 && this.options.order_status_field) {
-      const update: Record<string, unknown> = { [this.options.order_status_field]: "paid" };
-      if (this.options.order_updated_at_field) update[this.options.order_updated_at_field] = timestamp();
-      await this.orders().updateOne(this.orderFilter(input.order_id), { $set: update });
+    if (this.options.order_status_field && (changed.modifiedCount > 0 || await this.hasAttemptStatus(input.order_id, "paid"))) {
+      await this.updateProductOrderStatus(input.order_id, "paid");
     }
   }
 
@@ -252,10 +250,8 @@ class MongoSiglumeOrderStore implements SiglumeSdrpOrderStore {
         $unset: { active_key: "" },
       },
     );
-    if (changed.modifiedCount > 0 && this.options.order_status_field) {
-      const update: Record<string, unknown> = { [this.options.order_status_field]: "fulfilled_unsettled" };
-      if (this.options.order_updated_at_field) update[this.options.order_updated_at_field] = timestamp();
-      await this.orders().updateOne(this.orderFilter(input.order_id), { $set: update });
+    if (this.options.order_status_field && (changed.modifiedCount > 0 || await this.hasAttemptStatus(input.order_id, "fulfilled_unsettled"))) {
+      await this.updateProductOrderStatus(input.order_id, "fulfilled_unsettled");
     }
   }
 
@@ -316,6 +312,17 @@ class MongoSiglumeOrderStore implements SiglumeSdrpOrderStore {
 
   private orderFilter(orderId: string): Record<string, unknown> {
     return { [this.options.order_id_field]: orderId };
+  }
+
+  private async hasAttemptStatus(orderId: string, status: "paid" | "fulfilled_unsettled"): Promise<boolean> {
+    return Boolean(await this.attempts().findOne({ order_id: orderId, status }));
+  }
+
+  private async updateProductOrderStatus(orderId: string, status: "paid" | "fulfilled_unsettled"): Promise<void> {
+    if (!this.options.order_status_field) return;
+    const update: Record<string, unknown> = { [this.options.order_status_field]: status };
+    if (this.options.order_updated_at_field) update[this.options.order_updated_at_field] = timestamp();
+    await this.orders().updateOne(this.orderFilter(orderId), { $set: update });
   }
 
   private orders(): Collection {

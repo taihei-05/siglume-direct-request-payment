@@ -4,6 +4,18 @@ The TypeScript package is `@siglume/direct-request-payment`. The Python package
 is `siglume-direct-request-payment` and imports as
 `siglume_direct_request_payment`.
 
+## Navigation
+
+- [Environment variables](#environment-variables)
+- [One-time challenge helpers](#createdirectrequestpaymentchallengeinput--create_direct_request_payment_challenge)
+- [Recurring challenge helpers](#createdirectrequestpaymentrecurringchallengeinput--create_direct_request_payment_recurring_challenge)
+- [Hosted Checkout](#createcheckoutsessioninput--create_checkout_session)
+- [Webhook subscription helpers](#createwebhooksubscriptioninput--create_webhook_subscription)
+- [Webhook verification](#verifydirectpaymentwebhookinput--verify_direct_payment_webhook)
+- [Payment classification](#classifydirectpaymentconfirmationevent--classify_direct_payment_confirmationevent)
+- [Statement APIs](#statement-apis)
+- [Constants and compatibility aliases](#constants)
+
 ## Current Public Beta Scope
 
 SDRP currently settles JPYC / USDC on **Polygon PoS only**. The public SDK does
@@ -409,7 +421,7 @@ const session = await merchant.createCheckoutSession({
   merchant: "example_merchant",
   amount_minor: 1200,
   currency: "JPY",
-  nonce: order.id,
+  nonce: `${order.id}-attempt_${paymentAttempt.number}`,
   success_url: "https://www.your-shop.com/thanks",
   cancel_url: "https://www.your-shop.com/cart",
   metadata: { order_id: order.id },
@@ -421,7 +433,7 @@ session = merchant.create_checkout_session(
     merchant="example_merchant",
     amount_minor=1200,
     currency="JPY",
-    nonce=order["id"],
+    nonce=f"{order['id']}-attempt_{payment_attempt['number']}",
     success_url="https://www.your-shop.com/thanks",
     cancel_url="https://www.your-shop.com/cart",
     metadata={"order_id": order["id"]},
@@ -434,7 +446,9 @@ Input:
 - `amount_minor`: positive integer in minor currency units (server-fixed; the
   browser cannot change it)
 - `currency`: `JPY`, or `USD` when enabled for the merchant account
-- `nonce`: unique per order; must not contain `:`
+- `nonce`: unique per logical order payment attempt; must not contain `:`.
+  Reuse the same nonce for network retries of the same attempt. Create a new
+  attempt nonce only after the prior checkout expired, was cancelled, or failed.
 - `success_url`: return URL after a completed payment; must be on a registered
   `checkout_allowed_origins` origin (or the webhook origin)
 - `cancel_url`: return URL after the shopper cancels; same origin rule

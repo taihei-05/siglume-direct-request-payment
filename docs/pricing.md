@@ -1,7 +1,7 @@
 # Pricing
 
 This page documents the trial-phase merchant pricing for Siglume Direct Request
-Payment as of SDK v0.4.27. Pricing can change by agreement or future product
+Payment as of SDK v0.4.28. Pricing can change by agreement or future product
 release; the Siglume platform response is the source of truth for per-payment
 fee data returned at runtime.
 

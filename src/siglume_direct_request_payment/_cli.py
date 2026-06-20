@@ -34,7 +34,7 @@ def main() -> None:
     if args.command in {"preflight", "readiness", "verify"}:
         args.probe_required = args.command != "preflight"
         if args.command == "preflight":
-            args.no_probe = True
+            args.webhook_delivery_probe = False
         ok = _readiness(args)
         raise SystemExit(0 if ok else 1)
     if args.command == "init":
@@ -65,6 +65,8 @@ def _readiness(args: argparse.Namespace) -> bool:
     base_url = args.base_url or os.getenv("SIGLUME_API_BASE")
     if not base_url and sandbox_mode:
         base_url = os.getenv("SIGLUME_SANDBOX_API_BASE") or "http://127.0.0.1:8787/v1"
+    checkout_probe = not bool(args.no_probe)
+    webhook_delivery_probe = checkout_probe and bool(getattr(args, "webhook_delivery_probe", True))
 
     _check(checks, "target_environment", True, "sandbox" if sandbox_mode else "live")
     _check(checks, "merchant_key", bool(args.merchant), "Set SIGLUME_DIRECT_PAYMENT_MERCHANT or pass --merchant.")
@@ -128,12 +130,12 @@ def _readiness(args: argparse.Namespace) -> bool:
             except Exception as exc:  # noqa: BLE001
                 _check(checks, "webhook_subscription_api", False, _api_error_message(exc, "Could not read webhook subscriptions."))
 
-        if args.no_probe and getattr(args, "probe_required", True) and not _has_failures(checks):
+        if not checkout_probe and getattr(args, "probe_required", True) and not _has_failures(checks):
             _check(checks, "hosted_checkout_probe", False, "--no-probe skips Hosted Checkout and webhook delivery probes. Remove --no-probe for readiness.")
-        elif args.no_probe and not getattr(args, "probe_required", True) and not _has_failures(checks):
-            _check(checks, "delivery_probe_skipped", True, "preflight only; run siglume-check verify after mounting and starting the webhook route.")
+        elif not webhook_delivery_probe and not getattr(args, "probe_required", True) and not _has_failures(checks):
+            _check(checks, "webhook_delivery_probe_skipped", True, "preflight only; run siglume-check verify after mounting and starting the webhook route.")
 
-        if not args.no_probe and not _has_failures(checks):
+        if checkout_probe and not _has_failures(checks):
             try:
                 session = merchant.create_checkout_session(
                     merchant=args.merchant,
@@ -144,13 +146,13 @@ def _readiness(args: argparse.Namespace) -> bool:
                     cancel_url=f"{args.origin}/siglume-readiness/cancel",
                     metadata={"source": "siglume-sdrp-readiness"},
                 )
-                _check(checks, "hosted_checkout", bool(session.get("checkout_url") and session.get("challenge_hash")), "Hosted Checkout did not return a checkout_url.")
+                _check(checks, "hosted_checkout_probe", bool(session.get("checkout_url") and session.get("challenge_hash")), "Hosted Checkout did not return a checkout_url.")
             except HostedCheckoutNotAvailableError:
-                _check(checks, "hosted_checkout", False, "Hosted Checkout is not enabled for this merchant account. Ask Siglume to enable it before coding the human checkout path.")
+                _check(checks, "hosted_checkout_probe", False, "Hosted Checkout is not enabled for this merchant account. Ask Siglume to enable it before coding the human checkout path.")
             except Exception as exc:  # noqa: BLE001
-                _check(checks, "hosted_checkout", False, _api_error_message(exc, "Hosted Checkout probe failed. Check checkout_allowed_origins, currency, amount, and billing mandate."))
+                _check(checks, "hosted_checkout_probe", False, _api_error_message(exc, "Hosted Checkout probe failed. Check checkout_allowed_origins, currency, amount, and billing mandate."))
 
-        if not args.no_probe and not _has_failures(checks):
+        if webhook_delivery_probe and not _has_failures(checks):
             _check_webhook_delivery_probe(checks, merchant, merchant_key=args.merchant, subscription=matching_subscription)
 
     ok = not _has_failures(checks)
@@ -162,7 +164,7 @@ def _readiness(args: argparse.Namespace) -> bool:
             print(f"{mark} {item['name']}: {item['message']}")
         if ok and args.no_api:
             print("Local config checks passed. API, Hosted Checkout, and webhook delivery readiness were not verified.")
-        elif ok and args.no_probe and not getattr(args, "probe_required", True):
+        elif ok and not webhook_delivery_probe and not getattr(args, "probe_required", True):
             print(f"Preflight passed ({'sandbox' if sandbox_mode else 'live'}). Mount the routes, start your app, then run siglume-check verify.")
         else:
             print(f"Ready for 10-minute SDRP integration ({'sandbox' if sandbox_mode else 'live'})." if ok else "Not ready. Fix the FAIL items before coding checkout.")

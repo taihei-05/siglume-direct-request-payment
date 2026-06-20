@@ -51,6 +51,16 @@ The sandbox rejects invalid checkout input early: `amount_minor` must be a
 positive integer, `currency` must be `JPY` or `USD`, and return URLs must be
 HTTPS or local HTTP URLs.
 
+## What the sandbox does and does not simulate
+
+| Area | Simulated locally | Not simulated locally |
+| --- | --- | --- |
+| Standard Checkout | Checkout session creation, hosted confirmation page, signed `direct_payment.confirmed` webhook, duplicate confirm idempotency | Real Siglume login, real wallet debit, Polygon transaction finality |
+| Webhooks | HMAC signatures, delivery recording, `verify --sandbox` delivery probe | Public network reachability, live subscription routing, live retry schedules |
+| Micro / Nano accounting | Pricing-band classification and seller-borne accounting fields in webhook and summary responses | BudgetVault enforcement, notice period workers, retrying / past_due / write-off transitions, actual payout |
+| Statements | Local summary shape for provider and buyer metered views | Live settlement batches, on-chain receipts, refund or adjustment execution |
+| Access control | Local merchant/origin checks | Live Hosted Checkout account enablement and Siglume support workflows |
+
 Sandbox Micro / Nano behavior follows the same public classifications:
 
 - JPY 501+ / USD 3.01+ returns `standard_settled`.

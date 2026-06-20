@@ -1,8 +1,21 @@
 # 10-Minute Product Integration
 
 This guide is the supported 10-minute path for adding SDRP Hosted Checkout to
-an existing product. The goal is to
-add two routes to your own server:
+an existing product when these prerequisites are already ready:
+
+- merchant credentials are available,
+- the merchant billing mandate is active,
+- Hosted Checkout access is enabled for the merchant account,
+- your product already has login/session middleware,
+- your product already has a real order database,
+- the live path has a public HTTPS webhook URL.
+
+The 10-minute scope is Standard Payment plumbing, not full payment operations.
+Start with dependencies installed and merchant credentials ready; finish when a
+sandbox Standard checkout succeeds, a signed webhook reaches your product, the
+DB order becomes paid, and duplicate delivery does not update the order twice.
+
+The goal is to add two routes to your own server:
 
 - `POST /payments/checkout/siglume/start`
 - `POST /payments/webhooks/siglume`
@@ -46,8 +59,8 @@ SIGLUME_WEBHOOK_SECRET=<webhook signing secret from setupCheckout/setup_checkout
 
 Before mounting routes, you may run a preflight. It checks local config,
 merchant, billing, webhook subscription metadata, and Hosted Checkout access,
-but it intentionally does not send a webhook delivery because your webhook route
-does not exist yet.
+by creating an unpaid expiring checkout session. It intentionally does not send
+a webhook delivery because your webhook route does not exist yet.
 
 ```bash
 # Node / Express
@@ -94,19 +107,44 @@ Express:
 
 ```ts
 import express from "express";
+import type { Request } from "express";
 import {
   createSiglumeSdrpCheckoutRouter,
   createSiglumeSdrpWebhookHandler,
   type SiglumeSdrpRouterOptions,
 } from "./siglume/siglume-sdrp-routes.js";
-import { siglumeOrderStore } from "./siglume/siglume-order-store.example.js";
+import { createPrismaSiglumeOrderStore } from "./siglume/siglume-order-store.sql.js";
+
+function currentUserId(req: Request): string | null {
+  return String((req as Request & { user?: { id?: string } }).user?.id || "") || null;
+}
+
+async function userCanPayOrder(orderId: string, userId: string): Promise<boolean> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { customerId: true, status: true },
+  });
+  return Boolean(order && order.customerId === userId && order.status === "created");
+}
+
+const order_store = createPrismaSiglumeOrderStore(prisma, {
+  dialect: "postgres",
+  orders_table: "orders",
+  order_id_column: "id",
+  amount_minor_column: "amount_minor",
+  currency_column: "currency",
+  authorize_order: async (order, req) => {
+    const userId = currentUserId(req);
+    return Boolean(userId && await userCanPayOrder(String(order.id), userId));
+  },
+});
 
 const siglumeOptions: SiglumeSdrpRouterOptions = {
   merchant: process.env.SIGLUME_DIRECT_PAYMENT_MERCHANT!,
   merchant_auth_token: process.env.SIGLUME_MERCHANT_AUTH_TOKEN!,
   webhook_secret: process.env.SIGLUME_WEBHOOK_SECRET!,
   shop_public_origin: process.env.SHOP_PUBLIC_ORIGIN!,
-  order_store: siglumeOrderStore,
+  order_store,
   allow_metered_payments: false,
 };
 
@@ -123,11 +161,22 @@ app.use("/payments", createSiglumeSdrpCheckoutRouter(siglumeOptions));
 FastAPI:
 
 ```py
-from .siglume.siglume_order_store_example import ExampleSiglumeOrderStore
+from .auth import current_user_id
+from .database import SessionLocal, user_can_pay_order
+from .siglume.siglume_order_store_sqlalchemy import SQLAlchemySiglumeOrderStore
 from .siglume.siglume_sdrp_routes import create_siglume_sdrp_router
 
+def authorize_order(order: dict, request) -> bool:
+    user_id = current_user_id(request)
+    return bool(user_id and user_can_pay_order(SessionLocal, str(order["id"]), user_id))
+
+order_store = SQLAlchemySiglumeOrderStore(
+    SessionLocal,
+    authorize_order=authorize_order,
+)
+
 app.include_router(
-    create_siglume_sdrp_router(ExampleSiglumeOrderStore(), allow_metered_payments=False),
+    create_siglume_sdrp_router(order_store, allow_metered_payments=False),
     prefix="/payments",
 )
 ```
@@ -156,7 +205,9 @@ terminal write-off handling.
 ## 5. Use a real database adapter
 
 The copied files include durable database adapters. Use these before opening
-checkout to users; the `*.example.*` stores are only for reading the interface.
+checkout to users. The `*.example.*` stores are sandbox-only interface examples;
+do not leave them mounted in a product because they do not authenticate the
+current user against the order owner.
 
 Express:
 
@@ -174,6 +225,10 @@ const order_store = createPrismaSiglumeOrderStore(prisma, {
   order_id_column: "id",
   amount_minor_column: "amount_minor",
   currency_column: "currency",
+  authorize_order: async (order, req) => {
+    const userId = currentUserId(req);
+    return Boolean(userId && await userCanPayOrder(String(order.id), userId));
+  },
 });
 ```
 
@@ -205,7 +260,13 @@ const dynamoDoc = DynamoDBDocumentClient.from(dynamo, {
   marshallOptions: { removeUndefinedValues: true, convertEmptyValues: true },
 });
 await createDynamoDbSiglumeTables({ client: dynamo, include_orders_table: false });
-const order_store = createDynamoDbSiglumeOrderStore({ client: dynamoDoc });
+const order_store = createDynamoDbSiglumeOrderStore({
+  client: dynamoDoc,
+  authorize_order: async (order, req) => {
+    const userId = currentUserId(req);
+    return Boolean(userId && String(order.customer_id) === userId);
+  },
+});
 ```
 
 ```ts
@@ -220,7 +281,13 @@ const mongo = new MongoClient(process.env.MONGODB_URI!);
 await mongo.connect();
 const db = mongo.db("shop");
 await createMongoSiglumeIndexes({ db });
-const order_store = createMongoSiglumeOrderStore({ db });
+const order_store = createMongoSiglumeOrderStore({
+  db,
+  authorize_order: async (order, req) => {
+    const userId = currentUserId(req);
+    return Boolean(userId && String(order.customer_id) === userId);
+  },
+});
 ```
 
 ```ts
@@ -229,7 +296,13 @@ import { Firestore } from "@google-cloud/firestore";
 import { createFirestoreSiglumeOrderStore } from "./siglume/siglume-order-store.firestore.js";
 
 const db = new Firestore({ projectId: process.env.GOOGLE_CLOUD_PROJECT });
-const order_store = createFirestoreSiglumeOrderStore({ db });
+const order_store = createFirestoreSiglumeOrderStore({
+  db,
+  authorize_order: async (order, req) => {
+    const userId = currentUserId(req);
+    return Boolean(userId && String(order.customer_id) === userId);
+  },
+});
 ```
 
 FastAPI:
@@ -247,6 +320,7 @@ create_sqlalchemy_siglume_schema(engine)
 SessionLocal = sessionmaker(engine, future=True)
 order_store = SQLAlchemySiglumeOrderStore(
     SessionLocal,
+    authorize_order=authorize_order,
     # Optional for existing products with different order table/column names:
     # orders_table=product_orders,
     # order_id_column="order_id",
@@ -271,7 +345,7 @@ engine = create_async_sqlalchemy_engine(os.environ["DATABASE_URL"])
 # Run this during your FastAPI startup/lifespan initialization.
 await create_async_sqlalchemy_siglume_schema(engine)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
-order_store = AsyncSQLAlchemySiglumeOrderStore(SessionLocal)
+order_store = AsyncSQLAlchemySiglumeOrderStore(SessionLocal, authorize_order=authorize_order)
 ```
 
 `create_sqlalchemy_siglume_schema(engine)` creates only SDRP-owned tables by

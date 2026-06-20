@@ -155,12 +155,113 @@ describe("sandbox CLI E2E", () => {
   }, 20000);
 });
 
+describe("readiness CLI", () => {
+  it("preflight creates a Hosted Checkout probe session and skips webhook delivery", async () => {
+    const calls: string[] = [];
+    const apiServer = createServer(async (req, res) => {
+      const url = new URL(req.url || "/", "http://127.0.0.1");
+      calls.push(`${req.method} ${url.pathname}`);
+      if (req.method === "GET" && url.pathname === "/v1/sdrp/direct-payments/merchants/example_merchant") {
+        sendJson(res, 200, envelope({
+          merchant_account: {
+            merchant: "example_merchant",
+            billing_mandate_id: "mandate_test",
+            billing_status: "active",
+            status: "active",
+          },
+        }));
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/v1/market/webhooks/subscriptions") {
+        sendJson(res, 200, envelope([{
+          id: "whsub_test",
+          callback_url: "https://api.example.com/payments/webhooks/siglume",
+          status: "active",
+          event_types: ["direct_payment.confirmed"],
+          signing_secret_hint: "test",
+        }]));
+        return;
+      }
+      if (req.method === "POST" && url.pathname === "/v1/sdrp/direct-payments/checkout-sessions") {
+        sendJson(res, 201, envelope({
+          checkout_url: "https://siglume.test/pay/chk_readiness",
+          session_id: "chk_readiness",
+          challenge_hash: "sha256:readiness",
+          status: "open",
+          expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        }));
+        return;
+      }
+      if (req.method === "POST" && url.pathname === "/v1/market/webhooks/test-deliveries") {
+        sendJson(res, 500, { error: { code: "unexpected_delivery_probe" } });
+        return;
+      }
+      sendJson(res, 404, { error: { code: "not_found" } });
+    });
+
+    await listen(apiServer);
+    try {
+      const result = await runCli([
+        "preflight",
+        "--base-url",
+        `http://127.0.0.1:${serverPort(apiServer)}/v1`,
+        "--merchant",
+        "example_merchant",
+        "--origin",
+        "https://shop.example.com",
+        "--webhook-url",
+        "https://api.example.com/payments/webhooks/siglume",
+        "--json",
+      ], {
+        SIGLUME_MERCHANT_AUTH_TOKEN: "merchant_jwt",
+        SIGLUME_WEBHOOK_SECRET: "whsec_test",
+      });
+      expect(result.status).toBe(0);
+      const body = JSON.parse(result.stdout) as { ok: boolean; checks: Array<{ name: string; status: string }> };
+      expect(body.ok).toBe(true);
+      expect(body.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "hosted_checkout_probe", status: "pass" }),
+        expect.objectContaining({ name: "webhook_delivery_probe_skipped", status: "pass" }),
+      ]));
+      expect(calls).toContain("POST /v1/sdrp/direct-payments/checkout-sessions");
+      expect(calls).not.toContain("POST /v1/market/webhooks/test-deliveries");
+    } finally {
+      await closeServer(apiServer);
+    }
+  }, 10000);
+});
+
+function envelope(data: unknown) {
+  return { data, meta: { request_id: "req_cli_test", trace_id: "trc_cli_test" } };
+}
+
 async function postJson(url: string, body: unknown): Promise<Response> {
   return fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+function sendJson(res: import("node:http").ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+}
+
+async function runCli(args: string[], env: Record<string, string>): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  const child = spawn(process.execPath, [binPath, ...args], {
+    cwd: repoRoot,
+    env: { ...process.env, ...env },
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk: Buffer) => {
+    stdout += chunk.toString("utf8");
+  });
+  child.stderr.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString("utf8");
+  });
+  const [status] = await once(child, "exit") as [number | null];
+  return { status, stdout, stderr };
 }
 
 async function listen(server: Server): Promise<void> {

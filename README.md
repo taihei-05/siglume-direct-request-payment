@@ -26,11 +26,29 @@ or paid API wants to accept Siglume wallet payments without taking custody of
 customer funds. The SDK creates and verifies one-time and recurring wallet
 payment authorizations; it does not hold customer funds or wallets.
 
+## Start Here
+
+- [Run the sandbox](./docs/sandbox.md) before using live credentials.
+- [Request Hosted Checkout access](https://github.com/taihei-05/siglume-direct-request-payment/issues/new?title=Hosted%20Checkout%20access%20request) for a beta merchant account. Include your merchant key and desired live origin; do not include tokens, webhook secrets, or wallet private material.
+- [Contact integration support](https://github.com/taihei-05/siglume-direct-request-payment/issues/new?title=SDRP%20integration%20support) with `request_id`, `trace_id`, or `support_reference` when available.
+- Read the [current beta limitations](#current-public-beta-scope) before promising refunds, recurring lifecycle, or Micro / Nano settlement behavior to your own users.
+
+## Documentation Map
+
+- [10-Minute Product Integration](./docs/quickstart-10-minutes.md): Standard Hosted Checkout plumbing for Express/FastAPI when prerequisites are ready.
+- [SDRP Sandbox](./docs/sandbox.md): local checkout, signed webhook, and Micro / Nano accounting inspection before live credentials.
+- [Merchant Quickstart](./docs/merchant-quickstart.md): manual API flow and recurring challenge notes.
+- [API Reference](./docs/api-reference.md): TypeScript/Python methods, CLI checks, webhook helpers, and statement APIs.
+- [Troubleshooting](./docs/troubleshooting.md): Hosted Checkout access, refunds, support escalation, and safe buyer messages.
+
 **Current public beta scope.** SDRP currently settles JPYC / USDC on **Polygon
 PoS only**. The public SDK does not expose chain selection, cross-chain payment,
 multiple merchant settlement wallets, per-payment settlement-wallet override, or
 split / multi-wallet charging. Route each payment through the buyer's Siglume
-wallet and the merchant account's configured Siglume settlement wallet.
+wallet and the merchant account's configured Siglume settlement wallet. Hosted
+Checkout is enabled account by account during beta. The SDK does not expose a
+self-service refund API; Standard refunds and Micro / Nano adjustments use the
+explicit Siglume support or platform process available to your account.
 
 Payment requirement creation must run in the authenticated buyer's Siglume
 context. Your merchant server must not use a merchant secret or API key to
@@ -81,8 +99,10 @@ card-style "instant" checkout for first-time buyers.
 ## Fast Path
 
 Use [10-Minute Product Integration](./docs/quickstart-10-minutes.md) to add
-Hosted Checkout routes to an existing Express or FastAPI product. The path is
-CLI-first:
+Standard Hosted Checkout plumbing to an existing Express or FastAPI product
+when merchant credentials, active billing mandate, Hosted Checkout access, an
+HTTPS webhook URL, login/session middleware, and a real order database already
+exist. The path is CLI-first:
 
 ```bash
 npm install @siglume/direct-request-payment
@@ -108,9 +128,10 @@ The sandbox command starts a local Siglume-compatible API that creates fake
 checkout sessions and sends signed webhooks to your product. It never charges a
 wallet; see [SDRP Sandbox](./docs/sandbox.md). `siglume-check preflight`
 checks account, billing, origin, webhook subscription metadata, and Hosted
-Checkout availability before route mounting. `siglume-check verify` additionally
-requires a signed webhook test delivery, so run it only after your webhook route
-is mounted and your app is running.
+Checkout availability by creating an unpaid expiring checkout session before
+route mounting. `siglume-check verify` additionally requires a signed webhook
+test delivery, so run it only after your webhook route is mounted and your app
+is running.
 
 The Express templates include SQL/ORM adapters plus DynamoDB, MongoDB, and
 Firestore order stores. The FastAPI templates include both sync `Session` and
@@ -137,7 +158,7 @@ fulfilling orders.
 
 | Use case | Recommended path | 10-minute integration path? | Production work still required |
 | --- | --- | --- | --- |
-| EC one-time Standard payment | Hosted Checkout | Yes, with `siglume-sdrp init`, sandbox, and `siglume-check verify` | Product DB adapter, refund/support process, monitoring |
+| EC one-time Standard payment | Hosted Checkout | Yes, with `siglume-sdrp init`, sandbox, and `siglume-check verify` when prerequisites are ready | Product DB adapter, order-owner authorization, no self-service refund API, support process, monitoring |
 | Game consumables | Hosted Checkout or agent/API | Conditional | Idempotent entitlement grants, disconnect recovery, Micro / Nano settlement reconciliation and past-due handling |
 | Paid API / AtoA | Direct API or Siglume marketplace tool | Conditional | Request idempotency, buyer auth context, reconciliation |
 | SaaS subscription | Recurring challenge plus raw API | No | Renewal, cancellation, failed renewal, plan-change lifecycle |
@@ -180,7 +201,7 @@ const session = await merchant.createCheckoutSession({
   merchant: "your_merchant_key",
   amount_minor: 1200,           // server-fixed; the browser cannot change it
   currency: "JPY",
-  nonce: order.id,              // unique per order
+  nonce: `${order.id}-attempt_${paymentAttempt.number}`,
   success_url: "https://www.your-shop.com/thanks",
   cancel_url: "https://www.your-shop.com/cart",
   metadata: { order_id: order.id },
@@ -215,7 +236,7 @@ session = merchant.create_checkout_session(
     merchant="your_merchant_key",
     amount_minor=1200,           # server-fixed; the browser cannot change it
     currency="JPY",
-    nonce=order["id"],           # unique per order
+    nonce=f"{order['id']}-attempt_{payment_attempt['number']}",
     success_url="https://www.your-shop.com/thanks",
     cancel_url="https://www.your-shop.com/cart",
     metadata={"order_id": order["id"]},
@@ -233,6 +254,9 @@ redirect(session["checkout_url"])  # -> https://siglume.com/pay/<session_id>
 Siglume fixes the amount, currency, challenge, and return URLs **server-side** at
 session creation, so the browser cannot tamper with the price or the redirect
 target. The shopper's Siglume credentials are never shared with your store.
+Create `paymentAttempt.number` in your own order DB. Reuse the same nonce for
+network retries of that logical attempt; create a new attempt number only after
+the prior checkout attempt expired, was cancelled, or failed.
 
 **Who does what.**
 
@@ -314,7 +338,12 @@ and CSV exports, see
 - merchant self-service setup with a Siglume merchant JWT
 - challenge secret creation and rotation
 - merchant billing mandate preparation
+- Hosted Checkout session creation and status reads
 - webhook subscription creation
+- `siglume-check preflight` / `siglume-check verify`
+- local sandbox checkout and signed webhook delivery
+- generated Express and FastAPI checkout/webhook routes
+- SQL/ORM, DynamoDB, MongoDB, Firestore, and SQLAlchemy order-store adapters
 - merchant-signed payment challenges
 - buyer-authenticated payment requirement creation
 - prepared wallet transaction execution payloads
@@ -564,6 +593,12 @@ never be replayed as each other); after that, recurring charges are
 challenge-free by design. Subscriptions are bounded by the buyer's mandate;
 scheduled autopay is bounded by the buyer's per-run, daily, and monthly
 auto-pay budget.
+
+Current SDK scope: recurring support covers challenge construction, challenge
+verification, and webhook helpers. Subscription/schedule lifecycle creation,
+renewal management, cancellation UI, plan changes, and failed-renewal recovery
+are not fully wrapped by high-level SDK methods yet; use the documented raw
+Siglume API paths and your own operations workflow for those parts.
 
 - **Subscription** (`cadence: "monthly"`): Siglume charges the buyer's wallet
   monthly and pays your merchant wallet automatically. First month is charged at

@@ -116,3 +116,60 @@ def test_readiness_fails_when_webhook_callback_does_not_match(monkeypatch) -> No
     )
 
     assert _readiness(_args()) is False
+
+
+@respx.mock
+def test_preflight_runs_checkout_probe_but_skips_webhook_delivery(monkeypatch) -> None:
+    monkeypatch.setenv("SIGLUME_MERCHANT_AUTH_TOKEN", "merchant_jwt")
+    monkeypatch.setenv("SIGLUME_WEBHOOK_SECRET", "whsec_test_hint")
+    respx.get("https://siglume.test/v1/sdrp/direct-payments/merchants/example_merchant").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "merchant_account": {
+                        "merchant": "example_merchant",
+                        "billing_mandate_id": "mandate_test",
+                        "billing_status": "active",
+                        "status": "active",
+                    }
+                }
+            },
+        )
+    )
+    respx.get("https://siglume.test/v1/market/webhooks/subscriptions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "whsub_test",
+                        "callback_url": "https://api.example.com/payments/webhooks/siglume",
+                        "status": "active",
+                        "event_types": ["direct_payment.confirmed"],
+                        "signing_secret_hint": "hint",
+                    }
+                ]
+            },
+        )
+    )
+    checkout_route = respx.post("https://siglume.test/v1/sdrp/direct-payments/checkout-sessions").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "data": {
+                    "checkout_url": "https://siglume.test/pay/chk_readiness",
+                    "session_id": "chk_readiness",
+                    "challenge_hash": "sha256:readiness",
+                    "status": "open",
+                }
+            },
+        )
+    )
+    delivery_route = respx.post("https://siglume.test/v1/market/webhooks/test-deliveries").mock(
+        return_value=httpx.Response(500, json={"error": {"code": "unexpected_delivery_probe"}})
+    )
+
+    assert _readiness(_args(no_probe=False, webhook_delivery_probe=False, probe_required=False)) is True
+    assert checkout_route.called
+    assert not delivery_route.called

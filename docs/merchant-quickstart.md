@@ -105,7 +105,7 @@ const session = await merchant.createCheckoutSession({
   merchant: "example_merchant",
   amount_minor: 1200,           // server-fixed; the browser cannot change it
   currency: "JPY",
-  nonce: order.id,              // unique per order
+  nonce: `${order.id}-attempt_${paymentAttempt.number}`,
   success_url: "https://www.example.com/thanks",
   cancel_url: "https://www.example.com/cart",
   metadata: { order_id: order.id },
@@ -145,7 +145,7 @@ session = merchant.create_checkout_session(
     merchant="example_merchant",
     amount_minor=1200,           # server-fixed; the browser cannot change it
     currency="JPY",
-    nonce=order["id"],           # unique per order
+    nonce=f"{order['id']}-attempt_{payment_attempt['number']}",
     success_url="https://www.example.com/thanks",
     cancel_url="https://www.example.com/cart",
     metadata={"order_id": order["id"]},
@@ -311,6 +311,9 @@ return {
 
 Never calculate `amount_minor` from browser input.
 The nonce must be unique per order payment attempt and must not contain `:`.
+Reuse the same nonce for network retries of the same logical attempt. Create a
+new attempt nonce only after the prior checkout or direct payment attempt
+expired, was cancelled, or failed.
 
 ## 3. Buyer Creates and Pays the Requirement
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.28 - 2026-06-21
+
+- Hardened the MongoDB order-store adapter so webhook redelivery repairs the
+  product order if a previous process marked the checkout attempt paid before
+  the product order status update completed.
+- Added a MongoDB fault-injection E2E that simulates paid-attempt / unpaid-order
+  crash recovery and verifies duplicate webhook delivery does not double-run
+  fulfillment.
+- Split readiness probing so `preflight` still creates an unpaid expiring
+  Hosted Checkout session, while only webhook delivery is deferred until
+  `verify`.
+- Aligned manual Hosted Checkout nonce examples across README, Merchant
+  Quickstart, API Reference, and Security Guide to use logical payment-attempt
+  nonces.
+- Updated the 10-minute guide to start from real database adapters with
+  `authorize_order` callbacks instead of unauthenticated example stores.
+- Added concrete Hosted Checkout access, integration support, refund limitation,
+  and sandbox limitation guidance.
+
 ## 0.4.27 - 2026-06-20
 
 - Changed the Express SQL migration docs for existing products to use

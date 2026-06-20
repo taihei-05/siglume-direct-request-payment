@@ -28,6 +28,7 @@ interface StoreContext {
   readonly store: SiglumeSdrpOrderStore;
   seedOrder(orderId: string): Promise<void>;
   expirePending(orderId: string): Promise<void>;
+  simulatePaidAttemptWithoutOrderStatus?(orderId: string, eventId: string): Promise<void>;
   attemptRows(orderId: string): Promise<Array<{ attempt_number: number; status: string }>>;
   orderStatus(orderId: string): Promise<string | undefined>;
   eventRows(eventId: string): Promise<Array<{ event_id: string; status: string }>>;
@@ -179,6 +180,27 @@ async function createMongoContext(): Promise<StoreContext> {
         { order_id: orderId, status: "pending" },
         { $set: { expires_at: "2000-01-01T00:00:00.000Z" } },
       );
+    },
+    async simulatePaidAttemptWithoutOrderStatus(orderId, eventId) {
+      await db.collection("attempts").insertOne({
+        order_id: orderId,
+        attempt_number: 1,
+        attempt_id: `sdrp_attempt_fault_${sha256(orderId)}`,
+        stable_nonce: `sdrp-fault-${sha256(orderId)}`,
+        status: "paid",
+        requirement_id: "dpr_mongo_fault",
+        chain_receipt_id: "chain_mongo_fault",
+        paid_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      await db.collection("events").insertOne({
+        event_id: eventId,
+        status: "failed",
+        error_message: "process stopped after marking attempt paid",
+        created_at: new Date().toISOString(),
+        processed_at: null,
+      });
     },
     async attemptRows(orderId) {
       const rows = await db.collection("attempts").find({ order_id: orderId }).sort({ attempt_number: 1 }).toArray();
@@ -340,6 +362,39 @@ describeNoSqlMatrix("Express NoSQL order store matrix", () => {
       }
     }, 120000);
   }
+});
+
+describeNoSqlMatrix("MongoDB order store fault recovery", () => {
+  it("repairs the product order when webhook redelivery sees an already-paid attempt", async () => {
+    const context = await createMongoContext();
+    try {
+      await context.seedOrder("order_mongo_fault");
+      await context.simulatePaidAttemptWithoutOrderStatus?.("order_mongo_fault", "evt_mongo_fault");
+      expect(await context.orderStatus("order_mongo_fault")).toBe("created");
+
+      let fulfillmentCount = 0;
+      const processed = await context.store.processWebhookEventOnce("evt_mongo_fault", async () => {
+        fulfillmentCount += 1;
+        await context.store.markOrderPaidOnce({
+          order_id: "order_mongo_fault",
+          requirement_id: "dpr_mongo_fault",
+          chain_receipt_id: "chain_mongo_fault",
+        });
+      });
+
+      expect(processed).toBe("processed");
+      expect(await context.orderStatus("order_mongo_fault")).toBe("paid");
+      expect(fulfillmentCount).toBe(1);
+
+      const duplicate = await context.store.processWebhookEventOnce("evt_mongo_fault", async () => {
+        fulfillmentCount += 1;
+      });
+      expect(duplicate).toBe("duplicate");
+      expect(fulfillmentCount).toBe(1);
+    } finally {
+      await context.close();
+    }
+  }, 120000);
 });
 
 function sha256(value: string): string {

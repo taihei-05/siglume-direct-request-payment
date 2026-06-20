@@ -37,6 +37,8 @@ Use a nonce derived from a durable order payment attempt, for example
 challenge is encoded as `scheme:nonce:signature`. Store the returned
 `challenge_hash` on the order. When a
 webhook arrives, look up the order by `challenge_hash`.
+Reuse the same nonce for network retries of the same logical attempt. Create a
+new nonce only after the prior attempt expired, was cancelled, or failed.
 
 Recurring approvals use a different challenge scheme and HMAC material:
 

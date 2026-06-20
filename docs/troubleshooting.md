@@ -22,7 +22,8 @@ without `--sandbox` against live credentials. `verify` validates local
 configuration, reads the merchant account, checks the active billing mandate,
 confirms the webhook subscription, creates one unpaid expiring checkout session,
 and queues a signed webhook test delivery. `preflight` skips the delivery probe
-so it can run before your webhook endpoint exists.
+so it can run before your webhook endpoint exists, but it still creates the
+unpaid expiring checkout session to confirm Hosted Checkout access.
 
 - The merchant account exists.
 - The merchant billing mandate is active.
@@ -47,6 +48,14 @@ If `createCheckoutSession(...)` or `getCheckoutSession(...)` raises
 `HostedCheckoutNotAvailableError`, do not show the raw 404/409 to the buyer.
 Stop the human checkout flow and contact Siglume support or your Siglume account
 contact for Hosted Checkout enablement.
+
+Use these public escalation paths during beta:
+
+- [Request Hosted Checkout access](https://github.com/taihei-05/siglume-direct-request-payment/issues/new?title=Hosted%20Checkout%20access%20request) before live checkout testing.
+- [Contact integration support](https://github.com/taihei-05/siglume-direct-request-payment/issues/new?title=SDRP%20integration%20support) with `request_id`, `trace_id`, `support_reference`, package version, and environment.
+
+No public support SLA is promised during the beta. Keep a non-Siglume checkout
+fallback if your product needs guaranteed immediate payment-method availability.
 
 ## API errors
 
@@ -81,6 +90,10 @@ This SDK release does not expose a self-service refund API. For Standard
 Payment refunds or Micro / Nano adjustments, use the explicit Siglume support or
 platform process available to your account. Do not reverse settled revenue by
 editing local statements or CSV exports.
+
+If your product requires automated refunds before launch, treat that as a
+go-live blocker and agree the account-specific platform process with Siglume
+before enabling Hosted Checkout.
 
 ## Safe buyer messages
 

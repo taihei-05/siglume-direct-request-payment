@@ -1,6 +1,6 @@
 {
   "name": "@siglume/direct-request-payment",
-  "version": "0.4.27",
+  "version": "0.4.28",
   "description": "SDK for the Siglume Direct Request Payment SDRP payment protocol",
   "keywords": [
     "siglume",
@@ -34,8 +34,8 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "siglume-sdrp": "./bin/siglume-sdrp.mjs",
-    "siglume-check": "./bin/siglume-sdrp.mjs"
+    "siglume-sdrp": "bin/siglume-sdrp.mjs",
+    "siglume-check": "bin/siglume-sdrp.mjs"
   },
   "exports": {
     ".": {
