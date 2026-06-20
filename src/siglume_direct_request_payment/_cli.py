@@ -18,17 +18,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="siglume-sdrp")
     subparsers = parser.add_subparsers(dest="command")
 
-    readiness = subparsers.add_parser("readiness")
-    readiness.add_argument("--merchant", default=os.getenv("SIGLUME_DIRECT_PAYMENT_MERCHANT", ""))
-    readiness.add_argument("--origin", default=os.getenv("SHOP_PUBLIC_ORIGIN", ""))
-    readiness.add_argument("--webhook-url", default=os.getenv("SHOP_WEBHOOK_URL", ""))
-    readiness.add_argument("--currency", default=os.getenv("SIGLUME_DIRECT_PAYMENT_TEST_CURRENCY", "JPY"))
-    readiness.add_argument("--amount-minor", type=int, default=0)
-    readiness.add_argument("--base-url", default=os.getenv("SIGLUME_API_BASE"))
-    readiness.add_argument("--sandbox", action="store_true")
-    readiness.add_argument("--no-api", action="store_true")
-    readiness.add_argument("--no-probe", action="store_true")
-    readiness.add_argument("--json", action="store_true")
+    _add_readiness_args(subparsers.add_parser("preflight"))
+    _add_readiness_args(subparsers.add_parser("readiness"))
+    _add_readiness_args(subparsers.add_parser("verify"))
 
     init = subparsers.add_parser("init")
     init.add_argument("framework", choices=["fastapi"])
@@ -39,12 +31,28 @@ def main() -> None:
     if args.command in (None, "help"):
         parser.print_help()
         return
-    if args.command == "readiness":
+    if args.command in {"preflight", "readiness", "verify"}:
+        args.probe_required = args.command != "preflight"
+        if args.command == "preflight":
+            args.no_probe = True
         ok = _readiness(args)
         raise SystemExit(0 if ok else 1)
     if args.command == "init":
         _init_fastapi(Path(args.target), force=bool(args.force))
         return
+
+
+def _add_readiness_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--merchant", default=os.getenv("SIGLUME_DIRECT_PAYMENT_MERCHANT", ""))
+    parser.add_argument("--origin", default=os.getenv("SHOP_PUBLIC_ORIGIN", ""))
+    parser.add_argument("--webhook-url", default=os.getenv("SHOP_WEBHOOK_URL", ""))
+    parser.add_argument("--currency", default=os.getenv("SIGLUME_DIRECT_PAYMENT_TEST_CURRENCY", "JPY"))
+    parser.add_argument("--amount-minor", type=int, default=0)
+    parser.add_argument("--base-url", default=os.getenv("SIGLUME_API_BASE"))
+    parser.add_argument("--sandbox", action="store_true")
+    parser.add_argument("--no-api", action="store_true")
+    parser.add_argument("--no-probe", action="store_true")
+    parser.add_argument("--json", action="store_true")
 
 
 def _readiness(args: argparse.Namespace) -> bool:
@@ -85,8 +93,12 @@ def _readiness(args: argparse.Namespace) -> bool:
                 _active_like(account.get("billing_status")),
                 f"Billing status is {account.get('billing_status') or 'unknown'}; it must be active before accepting payments.",
             )
-            if account.get("status") and not _active_like(account.get("status")):
-                checks.append({"name": "merchant_status", "status": "warn", "message": f"Merchant status is {account.get('status')}; confirm it is allowed to accept payments."})
+            _check(
+                checks,
+                "merchant_status_active",
+                _merchant_status_allowed(account.get("status")),
+                f"Merchant status is {account.get('status') or 'unknown'}; it must be active or ready before accepting payments.",
+            )
         except Exception as exc:  # noqa: BLE001 - CLI must convert all failures to readiness output.
             _check(checks, "merchant_api", False, _api_error_message(exc, "Could not read the merchant account."))
 
@@ -116,8 +128,10 @@ def _readiness(args: argparse.Namespace) -> bool:
             except Exception as exc:  # noqa: BLE001
                 _check(checks, "webhook_subscription_api", False, _api_error_message(exc, "Could not read webhook subscriptions."))
 
-        if args.no_probe and not _has_failures(checks):
+        if args.no_probe and getattr(args, "probe_required", True) and not _has_failures(checks):
             _check(checks, "hosted_checkout_probe", False, "--no-probe skips Hosted Checkout and webhook delivery probes. Remove --no-probe for readiness.")
+        elif args.no_probe and not getattr(args, "probe_required", True) and not _has_failures(checks):
+            _check(checks, "delivery_probe_skipped", True, "preflight only; run siglume-check verify after mounting and starting the webhook route.")
 
         if not args.no_probe and not _has_failures(checks):
             try:
@@ -148,6 +162,8 @@ def _readiness(args: argparse.Namespace) -> bool:
             print(f"{mark} {item['name']}: {item['message']}")
         if ok and args.no_api:
             print("Local config checks passed. API, Hosted Checkout, and webhook delivery readiness were not verified.")
+        elif ok and args.no_probe and not getattr(args, "probe_required", True):
+            print(f"Preflight passed ({'sandbox' if sandbox_mode else 'live'}). Mount the routes, start your app, then run siglume-check verify.")
         else:
             print(f"Ready for 10-minute SDRP integration ({'sandbox' if sandbox_mode else 'live'})." if ok else "Not ready. Fix the FAIL items before coding checkout.")
     return ok
@@ -173,7 +189,7 @@ def _init_fastapi(target: Path, *, force: bool) -> None:
             if path.is_file():
                 shutil.copyfile(path, destination)
     print(f"Copied fastapi SDRP integration files to {target}")
-    print("Wire the router into your app, then run siglume-check readiness before opening checkout.")
+    print("Wire the router into your app, start it, then run siglume-check verify before opening checkout.")
 
 
 def _load_dotenv() -> None:
@@ -247,6 +263,10 @@ def _active_like(value: object) -> bool:
     return str(value or "").lower() in {"active", "ready", "current", "ok", "enabled", "paid", "complete", "completed"}
 
 
+def _merchant_status_allowed(value: object) -> bool:
+    return str(value or "").lower() in {"active", "ready"}
+
+
 def _includes_event_type(event_types: object, event_type: str) -> bool:
     if not isinstance(event_types, list) or not event_types:
         return True
@@ -284,6 +304,7 @@ def _check_webhook_delivery_probe(
             subscription_ids=[subscription_id],
             data={
                 "mode": "readiness_probe",
+                "readiness_probe": True,
                 "merchant": merchant_key,
                 "direct_payment_requirement_id": f"dpr_readiness_{nonce}",
                 "requirement_id": f"dpr_readiness_{nonce}",

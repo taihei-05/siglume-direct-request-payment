@@ -387,7 +387,8 @@ server endpoint is not enabled for the merchant yet, the SDK raises
 404/409. Payment handling must still key off the signed
 `direct_payment.confirmed` webhook and its settlement machine fields, not the
 event name alone.
-Confirm Hosted Checkout readiness before implementation; see
+Run `siglume-check preflight` before mounting routes, then run
+`siglume-check verify` after your webhook route is live; see
 [Troubleshooting](./troubleshooting.md#hosted-checkout-readiness). A human web
 checkout does not have a drop-in fallback if this account-level feature is not
 enabled yet.
@@ -561,7 +562,8 @@ POST /v1/market/webhooks/test-deliveries
 ```
 
 Queues a signed test event to one or more subscription ids. `siglume-check
-readiness` uses this for a harmless `direct_payment.confirmed` readiness probe.
+verify` and the legacy `readiness` alias use this for a harmless
+`direct_payment.confirmed` delivery probe.
 
 ### `listWebhookDeliveries(input)` / `list_webhook_deliveries(...)`
 
@@ -571,7 +573,7 @@ Calls:
 GET /v1/market/webhooks/deliveries
 ```
 
-Supports `subscription_id`, `event_type`, `status`, and `limit`. Readiness polls
+Supports `subscription_id`, `event_type`, `status`, and `limit`. `verify` polls
 this list after queueing the test delivery and only passes when the matching
 delivery status becomes `delivered`.
 

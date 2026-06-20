@@ -268,6 +268,86 @@ describe("Express 10-minute template E2E", () => {
     });
     expect(duplicate).toBe("duplicate");
     expect(attempts).toBe(2);
+
+    await executor.execute(
+      `INSERT INTO "siglume_webhook_events" (event_id, status, created_at) VALUES (?, ?, ?)`,
+      ["evt_stale_processing", "processing", "2000-01-01 00:00:00"],
+    );
+    const recovered = await store.processWebhookEventOnce("evt_stale_processing", async () => {
+      attempts += 1;
+    });
+    expect(recovered).toBe("processed");
+    expect(attempts).toBe(3);
+    expect((await executor.query(`SELECT status FROM "siglume_webhook_events" WHERE event_id = ?`, ["evt_stale_processing"]))[0]).toMatchObject({
+      status: "processed",
+    });
     db.close();
   });
+
+  it("creates one Hosted Checkout session for concurrent starts and creates a new attempt after expiry", async () => {
+    const SQL = await initSqlJs();
+    const db = new SQL.Database();
+    const executor = sqliteExecutor(db);
+    for (const statement of createSiglumeSdrpSqlSchema({ dialect: "sqlite" })) {
+      db.run(statement);
+    }
+    db.run(`INSERT INTO "orders" ("id", "amount_minor", "currency", "status") VALUES ('order_concurrent', 1200, 'JPY', 'created')`);
+
+    const store = createSqlSiglumeOrderStore({ executor, dialect: "sqlite" });
+    const options: SiglumeSdrpRouterOptions = {
+      merchant: "sandbox_merchant",
+      merchant_auth_token: "merchant_jwt",
+      webhook_secret: "whsec_test",
+      shop_public_origin: "https://shop.example.com",
+      order_store: store,
+      allow_metered_payments: false,
+    };
+
+    const checkoutCalls: unknown[] = [];
+    globalThis.fetch = (async (input, init = {}) => {
+      const url = String(input);
+      if (url === "https://siglume.com/v1/sdrp/direct-payments/checkout-sessions") {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        const body = JSON.parse(String(init.body || "{}"));
+        const sessionId = `chk_parallel_${checkoutCalls.length + 1}`;
+        checkoutCalls.push(body);
+        return new Response(JSON.stringify(envelope({
+          checkout_url: `https://siglume.test/pay/${sessionId}`,
+          session_id: sessionId,
+          challenge_hash: `sha256:${body.nonce}`,
+          status: "open",
+          expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        })), { status: 201, headers: { "content-type": "application/json" } });
+      }
+      return originalFetch(input, init);
+    }) as typeof fetch;
+
+    const app = await createApp(options);
+    try {
+      const responses = await Promise.all(Array.from({ length: 50 }, () => (
+        postJson(`${app.baseUrl}/payments/checkout/siglume/start`, { order_id: "order_concurrent" })
+      )));
+      expect(responses.every((response) => response.status === 200)).toBe(true);
+      const bodies = await Promise.all(responses.map((response) => response.json() as Promise<{ checkout_url: string; session_id: string }>));
+      expect(new Set(bodies.map((body) => body.session_id))).toEqual(new Set(["chk_parallel_1"]));
+      expect(checkoutCalls).toHaveLength(1);
+      expect(await executor.query(`SELECT attempt_id FROM "siglume_checkout_attempts" WHERE active_key = ?`, ["order_concurrent"])).toHaveLength(1);
+
+      await executor.execute(
+        `UPDATE "siglume_checkout_attempts" SET expires_at = ?, updated_at = CURRENT_TIMESTAMP WHERE order_id = ? AND status = ?`,
+        ["2000-01-01 00:00:00", "order_concurrent", "pending"],
+      );
+      const retryAfterExpiry = await postJson(`${app.baseUrl}/payments/checkout/siglume/start`, { order_id: "order_concurrent" });
+      expect(retryAfterExpiry.status).toBe(200);
+      await expect(retryAfterExpiry.json()).resolves.toMatchObject({ session_id: "chk_parallel_2" });
+      expect(checkoutCalls).toHaveLength(2);
+      expect(await executor.query(`SELECT attempt_number, status FROM "siglume_checkout_attempts" WHERE order_id = ? ORDER BY attempt_number`, ["order_concurrent"])).toEqual([
+        expect.objectContaining({ attempt_number: 1, status: "expired" }),
+        expect.objectContaining({ attempt_number: 2, status: "pending" }),
+      ]);
+    } finally {
+      await app.close();
+      db.close();
+    }
+  }, 20000);
 });

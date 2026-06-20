@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Request } from "express";
 
 import type { SiglumeCheckoutAttempt, SiglumeSdrpOrderStore } from "./siglume-sdrp-routes.js";
@@ -59,6 +59,11 @@ interface SqlParts {
   readonly qEvents: string;
   readonly qReviews: string;
 }
+
+const CHECKOUT_CREATION_LEASE_MS = 30_000;
+const CHECKOUT_CREATION_WAIT_MS = 10_000;
+const CHECKOUT_CREATION_POLL_MS = 100;
+const WEBHOOK_PROCESSING_STALE_MS = 10 * 60 * 1000;
 
 export function createSqlSiglumeOrderStore(options: SiglumeSqlOrderStoreOptions): SiglumeSdrpOrderStore {
   return new SqlSiglumeOrderStore(normalizeOptions(options));
@@ -134,22 +139,32 @@ CREATE TABLE IF NOT EXISTS ${parts.qOrders} (
 
   statements.push(`
 CREATE TABLE IF NOT EXISTS ${parts.qAttempts} (
-  order_id ${text} PRIMARY KEY,
-  attempt_id ${text} NOT NULL UNIQUE,
+  attempt_id ${text} PRIMARY KEY,
+  order_id ${text} NOT NULL,
+  attempt_number INTEGER NOT NULL,
   stable_nonce ${text} NOT NULL UNIQUE,
+  active_key ${text} UNIQUE,
   status ${text} NOT NULL DEFAULT 'created',
   challenge_hash ${text} UNIQUE,
   checkout_session_id ${text},
   checkout_url ${text},
+  expires_at ${timestamp},
+  cancelled_at ${timestamp},
+  failed_at ${timestamp},
+  creation_owner_id ${text},
+  creation_lease_expires_at ${timestamp},
+  error_message ${text},
   requirement_id ${text},
   chain_receipt_id ${text},
   pricing_band ${text},
   paid_at ${timestamp},
   fulfilled_unsettled_at ${timestamp},
   created_at ${timestamp} NOT NULL DEFAULT ${now},
-  updated_at ${timestamp} NOT NULL DEFAULT ${now}
+  updated_at ${timestamp} NOT NULL DEFAULT ${now},
+  UNIQUE (order_id, attempt_number)
 )`.trim());
   if (normalized.dialect !== "mysql") {
+    statements.push(`CREATE INDEX IF NOT EXISTS ${quoteIdentifier("idx_siglume_checkout_attempts_order", normalized.dialect)} ON ${parts.qAttempts} (order_id)`);
     statements.push(`CREATE INDEX IF NOT EXISTS ${quoteIdentifier("idx_siglume_checkout_attempts_challenge", normalized.dialect)} ON ${parts.qAttempts} (challenge_hash)`);
   }
 
@@ -278,30 +293,69 @@ class SqlSiglumeOrderStore implements SiglumeSdrpOrderStore {
 
   async beginCheckoutAttempt(orderId: string, req: Request): Promise<SiglumeCheckoutAttempt | null> {
     const cleanOrderId = requireText(orderId, "order_id");
-    return this.withTransaction(async () => {
-      const order = await this.findProductOrder(cleanOrderId);
-      if (!order) return null;
-      if (this.options.authorize_order && !(await this.options.authorize_order(order, req))) return null;
+    const waitUntil = Date.now() + CHECKOUT_CREATION_WAIT_MS;
+    for (;;) {
+      const result = await this.withTransaction(async (executor) => {
+        const order = await this.findProductOrder(cleanOrderId);
+        if (!order) return { done: true, attempt: null as SiglumeCheckoutAttempt | null };
+        if (this.options.authorize_order && !(await this.options.authorize_order(order, req))) {
+          return { done: true, attempt: null as SiglumeCheckoutAttempt | null };
+        }
 
-      const parts = sqlParts(this.options);
-      const attempt = stableAttempt(cleanOrderId);
-      await this.insertAttemptIfMissing(cleanOrderId, attempt.attempt_id, attempt.stable_nonce);
-      const rows = await this.executor().query<Record<string, unknown>>(
-        `SELECT attempt_id, stable_nonce, checkout_session_id, checkout_url FROM ${parts.qAttempts} WHERE order_id = ${this.p(1)} LIMIT 1`,
-        [cleanOrderId],
-      );
-      const state = rows[0] ?? {};
-      return {
-        id: String(order.id),
-        order_id: String(order.id),
-        amount_minor: Number(order.amount_minor),
-        currency: String(order.currency),
-        attempt_id: String(state.attempt_id || attempt.attempt_id),
-        stable_nonce: String(state.stable_nonce || attempt.stable_nonce),
-        checkout_session_id: textOrUndefined(state.checkout_session_id),
-        checkout_url: textOrUndefined(state.checkout_url),
-      };
-    });
+        const active = await this.findActiveCheckoutAttempt(executor, cleanOrderId);
+        if (active && isReusableCheckoutAttempt(active)) {
+          return { done: true, attempt: this.toCheckoutAttempt(order, active) };
+        }
+        if (active && isCreatingCheckoutAttempt(active) && !timestampHasPassed(active.creation_lease_expires_at)) {
+          return { done: false, attempt: this.toCheckoutAttempt(order, active, true) };
+        }
+        if (active) {
+          await this.releaseInactiveAttempt(executor, active, active.status === "pending" ? "expired" : "failed");
+        }
+
+        const attemptNumber = await this.nextAttemptNumber(executor, cleanOrderId);
+        const attempt = stableAttempt(cleanOrderId, attemptNumber);
+        const inserted = await this.executeChangedWith(
+          executor,
+          insertAttemptSql(this.options),
+          [
+            cleanOrderId,
+            attemptNumber,
+            attempt.attempt_id,
+            attempt.stable_nonce,
+            cleanOrderId,
+            "creating",
+            `sdrp_create_${randomUUID()}`,
+            sqlTimestamp(Date.now() + CHECKOUT_CREATION_LEASE_MS),
+          ],
+        );
+        if (inserted === 0) {
+          return { done: false, attempt: this.toCheckoutAttempt(order, {
+            order_id: cleanOrderId,
+            attempt_number: attemptNumber,
+            attempt_id: attempt.attempt_id,
+            stable_nonce: attempt.stable_nonce,
+            status: "creating",
+          }, true) };
+        }
+        return {
+          done: true,
+          attempt: {
+            id: String(order.id),
+            order_id: String(order.id),
+            amount_minor: Number(order.amount_minor),
+            currency: String(order.currency),
+            attempt_number: attemptNumber,
+            attempt_id: attempt.attempt_id,
+            stable_nonce: attempt.stable_nonce,
+            status: "creating",
+          },
+        };
+      });
+      if (result.done) return result.attempt;
+      if (Date.now() >= waitUntil) return result.attempt;
+      await sleep(CHECKOUT_CREATION_POLL_MS);
+    }
   }
 
   async markCheckoutPending(input: {
@@ -311,14 +365,33 @@ class SqlSiglumeOrderStore implements SiglumeSdrpOrderStore {
     challenge_hash: string;
     checkout_session_id: string;
     checkout_url: string;
+    expires_at?: string | null;
   }): Promise<void> {
     const parts = sqlParts(this.options);
     await this.executor().execute(
       `UPDATE ${parts.qAttempts}
-       SET status = ${this.p(1)}, attempt_id = ${this.p(2)}, stable_nonce = ${this.p(3)}, challenge_hash = ${this.p(4)},
-           checkout_session_id = ${this.p(5)}, checkout_url = ${this.p(6)}, updated_at = CURRENT_TIMESTAMP
-       WHERE order_id = ${this.p(7)}`,
-      ["pending", input.attempt_id, input.stable_nonce, input.challenge_hash, input.checkout_session_id, input.checkout_url, input.order_id],
+       SET status = ${this.p(1)}, stable_nonce = ${this.p(2)}, challenge_hash = ${this.p(3)},
+           checkout_session_id = ${this.p(4)}, checkout_url = ${this.p(5)}, expires_at = ${this.p(6)},
+           creation_owner_id = NULL, creation_lease_expires_at = NULL, error_message = NULL,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE order_id = ${this.p(7)} AND attempt_id = ${this.p(8)} AND status = ${this.p(9)}`,
+      ["pending", input.stable_nonce, input.challenge_hash, input.checkout_session_id, input.checkout_url, sqlTimestampOrNull(input.expires_at), input.order_id, input.attempt_id, "creating"],
+    );
+  }
+
+  async markCheckoutFailed(input: {
+    order_id: string;
+    attempt_id: string;
+    error_message?: string;
+  }): Promise<void> {
+    const parts = sqlParts(this.options);
+    await this.executor().execute(
+      `UPDATE ${parts.qAttempts}
+       SET status = ${this.p(1)}, active_key = NULL, failed_at = CURRENT_TIMESTAMP,
+           creation_owner_id = NULL, creation_lease_expires_at = NULL,
+           error_message = ${this.p(2)}, updated_at = CURRENT_TIMESTAMP
+       WHERE order_id = ${this.p(3)} AND attempt_id = ${this.p(4)} AND status = ${this.p(5)}`,
+      ["failed", textOrNull(input.error_message), input.order_id, input.attempt_id, "creating"],
     );
   }
 
@@ -329,13 +402,14 @@ class SqlSiglumeOrderStore implements SiglumeSdrpOrderStore {
     }
     return this.withTransaction(async (executor) => {
       const parts = sqlParts(this.options);
-      const existing = await executor.query<{ status?: unknown }>(
-        `SELECT status FROM ${parts.qEvents} WHERE event_id = ${this.p(1)} LIMIT 1`,
+      const existing = await executor.query<{ status?: unknown; created_at?: unknown }>(
+        `SELECT status, created_at FROM ${parts.qEvents} WHERE event_id = ${this.p(1)} LIMIT 1`,
         [cleanEventId],
       );
       const existingStatus = existing.length ? String(existing[0]?.status || "") : "";
-      if (existingStatus === "processed" || existingStatus === "processing") return "duplicate";
-      if (existingStatus === "failed") {
+      if (existingStatus === "processed") return "duplicate";
+      if (existingStatus === "processing" && !webhookProcessingIsStale(existing[0]?.created_at)) return "duplicate";
+      if (existingStatus === "failed" || existingStatus === "processing") {
         await executor.execute(
           `UPDATE ${parts.qEvents} SET status = ${this.p(1)}, error_message = NULL, processed_at = NULL WHERE event_id = ${this.p(2)}`,
           ["processing", cleanEventId],
@@ -367,13 +441,14 @@ class SqlSiglumeOrderStore implements SiglumeSdrpOrderStore {
     handler: () => Promise<void>,
   ): Promise<"processed" | "duplicate"> {
     const parts = sqlParts(this.options);
-    const existing = await this.options.executor.query<{ status?: unknown }>(
-      `SELECT status FROM ${parts.qEvents} WHERE event_id = ${this.p(1)} LIMIT 1`,
+    const existing = await this.options.executor.query<{ status?: unknown; created_at?: unknown }>(
+      `SELECT status, created_at FROM ${parts.qEvents} WHERE event_id = ${this.p(1)} LIMIT 1`,
       [cleanEventId],
     );
     const existingStatus = existing.length ? String(existing[0]?.status || "") : "";
-    if (existingStatus === "processed" || existingStatus === "processing") return "duplicate";
-    if (existingStatus === "failed") {
+    if (existingStatus === "processed") return "duplicate";
+    if (existingStatus === "processing" && !webhookProcessingIsStale(existing[0]?.created_at)) return "duplicate";
+    if (existingStatus === "failed" || existingStatus === "processing") {
       await this.options.executor.execute(
         `UPDATE ${parts.qEvents} SET status = ${this.p(1)}, error_message = NULL, processed_at = NULL WHERE event_id = ${this.p(2)}`,
         ["processing", cleanEventId],
@@ -407,9 +482,9 @@ class SqlSiglumeOrderStore implements SiglumeSdrpOrderStore {
     const parts = sqlParts(this.options);
     const changed = await this.executeChanged(
       `UPDATE ${parts.qAttempts}
-       SET status = ${this.p(1)}, requirement_id = ${this.p(2)}, chain_receipt_id = ${this.p(3)}, paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-       WHERE order_id = ${this.p(4)} AND status <> ${this.p(5)}`,
-      ["paid", input.requirement_id, input.chain_receipt_id, input.order_id, "paid"],
+       SET status = ${this.p(1)}, active_key = NULL, requirement_id = ${this.p(2)}, chain_receipt_id = ${this.p(3)}, paid_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE order_id = ${this.p(4)} AND status NOT IN (${this.p(5)}, ${this.p(6)}, ${this.p(7)}, ${this.p(8)})`,
+      ["paid", input.requirement_id, input.chain_receipt_id, input.order_id, "paid", "expired", "cancelled", "failed"],
     );
     if (changed && parts.qOrderStatus) {
       const updatedAt = parts.qOrderUpdatedAt ? `, ${parts.qOrderUpdatedAt} = CURRENT_TIMESTAMP` : "";
@@ -428,9 +503,9 @@ class SqlSiglumeOrderStore implements SiglumeSdrpOrderStore {
     const parts = sqlParts(this.options);
     const changed = await this.executeChanged(
       `UPDATE ${parts.qAttempts}
-       SET status = ${this.p(1)}, requirement_id = ${this.p(2)}, pricing_band = ${this.p(3)}, fulfilled_unsettled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-       WHERE order_id = ${this.p(4)} AND status NOT IN (${this.p(5)}, ${this.p(6)})`,
-      ["fulfilled_unsettled", input.requirement_id, input.pricing_band, input.order_id, "fulfilled_unsettled", "paid"],
+       SET status = ${this.p(1)}, active_key = NULL, requirement_id = ${this.p(2)}, pricing_band = ${this.p(3)}, fulfilled_unsettled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE order_id = ${this.p(4)} AND status NOT IN (${this.p(5)}, ${this.p(6)}, ${this.p(7)}, ${this.p(8)}, ${this.p(9)})`,
+      ["fulfilled_unsettled", input.requirement_id, input.pricing_band, input.order_id, "fulfilled_unsettled", "paid", "expired", "cancelled", "failed"],
     );
     if (changed && parts.qOrderStatus) {
       const updatedAt = parts.qOrderUpdatedAt ? `, ${parts.qOrderUpdatedAt} = CURRENT_TIMESTAMP` : "";
@@ -467,8 +542,61 @@ class SqlSiglumeOrderStore implements SiglumeSdrpOrderStore {
     return rows[0] ?? null;
   }
 
-  private async insertAttemptIfMissing(orderId: string, attemptId: string, stableNonce: string): Promise<void> {
-    await this.executor().execute(insertAttemptSql(this.options), [orderId, attemptId, stableNonce, "created"]);
+  private async findActiveCheckoutAttempt(executor: SiglumeSqlExecutor, orderId: string): Promise<Record<string, unknown> | null> {
+    const parts = sqlParts(this.options);
+    const rows = await executor.query<Record<string, unknown>>(
+      `SELECT order_id, attempt_number, attempt_id, stable_nonce, status, checkout_session_id, checkout_url, expires_at,
+              creation_lease_expires_at
+       FROM ${parts.qAttempts}
+       WHERE active_key = ${this.p(1)}
+       LIMIT 1`,
+      [orderId],
+    );
+    return rows[0] ?? null;
+  }
+
+  private async nextAttemptNumber(executor: SiglumeSqlExecutor, orderId: string): Promise<number> {
+    const parts = sqlParts(this.options);
+    const rows = await executor.query<Record<string, unknown>>(
+      `SELECT MAX(attempt_number) AS max_attempt_number FROM ${parts.qAttempts} WHERE order_id = ${this.p(1)}`,
+      [orderId],
+    );
+    const current = Number(rows[0]?.max_attempt_number || 0);
+    return Number.isSafeInteger(current) && current > 0 ? current + 1 : 1;
+  }
+
+  private async releaseInactiveAttempt(executor: SiglumeSqlExecutor, attempt: Record<string, unknown>, status: "expired" | "failed"): Promise<void> {
+    const parts = sqlParts(this.options);
+    const timestampColumn = status === "expired" ? "expires_at" : "failed_at";
+    await executor.execute(
+      `UPDATE ${parts.qAttempts}
+       SET status = ${this.p(1)}, active_key = NULL, ${quoteIdentifier(timestampColumn, this.options.dialect)} = COALESCE(${quoteIdentifier(timestampColumn, this.options.dialect)}, CURRENT_TIMESTAMP),
+           creation_owner_id = NULL, creation_lease_expires_at = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE attempt_id = ${this.p(2)}`,
+      [status, attempt.attempt_id],
+    );
+  }
+
+  private toCheckoutAttempt(order: Record<string, unknown>, state: Record<string, unknown>, pending = false): SiglumeCheckoutAttempt {
+    return {
+      id: String(order.id),
+      order_id: String(order.id),
+      amount_minor: Number(order.amount_minor),
+      currency: String(order.currency),
+      attempt_number: Number(state.attempt_number || 1),
+      attempt_id: String(state.attempt_id),
+      stable_nonce: String(state.stable_nonce),
+      status: String(state.status || ""),
+      checkout_session_id: textOrUndefined(state.checkout_session_id),
+      checkout_url: textOrUndefined(state.checkout_url),
+      expires_at: timestampTextOrNull(state.expires_at),
+      checkout_creation_pending: pending,
+    };
+  }
+
+  private async executeChangedWith(executor: SiglumeSqlExecutor, statement: string, params: readonly unknown[]): Promise<number | null> {
+    const result = await executor.execute(statement, params);
+    return affectedRows(result);
   }
 
   private async executeChanged(statement: string, params: readonly unknown[]): Promise<number | null> {
@@ -528,9 +656,12 @@ function sqlParts(options: NormalizedOptions): SqlParts {
 function insertAttemptSql(options: NormalizedOptions): string {
   const parts = sqlParts(options);
   if (options.dialect === "mysql") {
-    return `INSERT IGNORE INTO ${parts.qAttempts} (order_id, attempt_id, stable_nonce, status) VALUES (${placeholder(1, options)}, ${placeholder(2, options)}, ${placeholder(3, options)}, ${placeholder(4, options)})`;
+    return `INSERT IGNORE INTO ${parts.qAttempts} (order_id, attempt_number, attempt_id, stable_nonce, active_key, status, creation_owner_id, creation_lease_expires_at)
+      VALUES (${placeholder(1, options)}, ${placeholder(2, options)}, ${placeholder(3, options)}, ${placeholder(4, options)}, ${placeholder(5, options)}, ${placeholder(6, options)}, ${placeholder(7, options)}, ${placeholder(8, options)})`;
   }
-  return `INSERT INTO ${parts.qAttempts} (order_id, attempt_id, stable_nonce, status) VALUES (${placeholder(1, options)}, ${placeholder(2, options)}, ${placeholder(3, options)}, ${placeholder(4, options)}) ON CONFLICT (order_id) DO NOTHING`;
+  return `INSERT INTO ${parts.qAttempts} (order_id, attempt_number, attempt_id, stable_nonce, active_key, status, creation_owner_id, creation_lease_expires_at)
+    VALUES (${placeholder(1, options)}, ${placeholder(2, options)}, ${placeholder(3, options)}, ${placeholder(4, options)}, ${placeholder(5, options)}, ${placeholder(6, options)}, ${placeholder(7, options)}, ${placeholder(8, options)})
+    ON CONFLICT (active_key) DO NOTHING`;
 }
 
 function insertWebhookEventSql(options: NormalizedOptions, _eventId: string): string {
@@ -555,8 +686,8 @@ function quoteIdentifier(identifier: string, dialect: SiglumeSqlDialect): string
   }).join(".");
 }
 
-function stableAttempt(orderId: string): { attempt_id: string; stable_nonce: string } {
-  const digest = hash(orderId).slice(0, 32);
+function stableAttempt(orderId: string, attemptNumber: number): { attempt_id: string; stable_nonce: string } {
+  const digest = hash(`${orderId}:${attemptNumber}`).slice(0, 32);
   return {
     attempt_id: `sdrp_attempt_${digest}`,
     stable_nonce: `sdrp-${digest}`,
@@ -584,6 +715,52 @@ function textOrNull(value: unknown): string | null {
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message.slice(0, 1000);
   return String(error || "webhook handler failed").slice(0, 1000);
+}
+
+function webhookProcessingIsStale(value: unknown): boolean {
+  if (!value) return false;
+  const timestamp = Date.parse(String(value));
+  return Number.isFinite(timestamp) && Date.now() - timestamp > WEBHOOK_PROCESSING_STALE_MS;
+}
+
+function isReusableCheckoutAttempt(state: Record<string, unknown>): boolean {
+  return String(state.status || "") === "pending"
+    && Boolean(textOrUndefined(state.checkout_session_id))
+    && Boolean(textOrUndefined(state.checkout_url))
+    && !timestampHasPassed(state.expires_at);
+}
+
+function isCreatingCheckoutAttempt(state: Record<string, unknown>): boolean {
+  return String(state.status || "") === "creating";
+}
+
+function timestampHasPassed(value: unknown): boolean {
+  if (!value) return false;
+  const timestamp = Date.parse(String(value));
+  return Number.isFinite(timestamp) && timestamp <= Date.now();
+}
+
+function sqlTimestamp(value: number | string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  const pad = (item: number) => String(item).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function sqlTimestampOrNull(value: unknown): string | null {
+  if (!value) return null;
+  const timestamp = Date.parse(String(value));
+  if (!Number.isFinite(timestamp)) return null;
+  return sqlTimestamp(timestamp);
+}
+
+function timestampTextOrNull(value: unknown): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeRows(value: unknown): Record<string, unknown>[] {

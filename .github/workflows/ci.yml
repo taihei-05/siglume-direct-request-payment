@@ -18,7 +18,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: node bin/siglume-sdrp.mjs readiness --no-api --merchant example_merchant --origin https://shop.example.com --webhook-url https://api.example.com/payments/webhooks/siglume
+      - run: node bin/siglume-sdrp.mjs preflight --no-api --merchant example_merchant --origin https://shop.example.com --webhook-url https://api.example.com/payments/webhooks/siglume
         env:
           SIGLUME_MERCHANT_AUTH_TOKEN: test_merchant_token
           SIGLUME_WEBHOOK_SECRET: whsec_test
@@ -41,7 +41,7 @@ jobs:
       - run: python -m pip install -U pip
       - run: python -m pip install -e ".[test]" build twine
       - run: pytest python_tests
-      - run: python -m siglume_direct_request_payment._cli readiness --no-api --merchant example_merchant --origin https://shop.example.com --webhook-url https://api.example.com/payments/webhooks/siglume
+      - run: python -m siglume_direct_request_payment._cli preflight --no-api --merchant example_merchant --origin https://shop.example.com --webhook-url https://api.example.com/payments/webhooks/siglume
         env:
           SIGLUME_MERCHANT_AUTH_TOKEN: test_merchant_token
           SIGLUME_WEBHOOK_SECRET: whsec_test

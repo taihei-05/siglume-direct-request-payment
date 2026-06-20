@@ -7,19 +7,22 @@ Siglume account contact.
 
 ## Hosted Checkout readiness
 
-Hosted Checkout is enabled account by account during beta. Check this before
-building a human web checkout:
+Hosted Checkout is enabled account by account during beta. Use `preflight`
+before route mounting, then use `verify` after the webhook route is mounted and
+your app is running:
 
 ```bash
-npx siglume-check readiness --sandbox
-npx siglume-check readiness
+npx siglume-check preflight
+npx siglume-check verify --sandbox
+npx siglume-check verify
 ```
 
-Run `--sandbox` against the local SDK sandbox first. Then run the same command
-without `--sandbox` against live credentials. The command validates local
+Run `verify --sandbox` against the local SDK sandbox first. Then run `verify`
+without `--sandbox` against live credentials. `verify` validates local
 configuration, reads the merchant account, checks the active billing mandate,
 confirms the webhook subscription, creates one unpaid expiring checkout session,
-and queues a signed webhook test delivery.
+and queues a signed webhook test delivery. `preflight` skips the delivery probe
+so it can run before your webhook endpoint exists.
 
 - The merchant account exists.
 - The merchant billing mandate is active.
@@ -32,7 +35,8 @@ and queues a signed webhook test delivery.
 - The signed webhook test delivery reaches the endpoint and returns success.
 
 `--no-api` is only for local config smoke tests. `--no-probe` is a partial API
-check and does not report readiness as ready.
+check and does not report readiness as ready. Prefer `preflight` for the
+intentional no-delivery phase.
 
 If sandbox readiness fails, make sure `SIGLUME_ENV=sandbox`,
 `SIGLUME_API_BASE=http://127.0.0.1:8787/v1`, `SHOP_PUBLIC_ORIGIN`, and

@@ -25,6 +25,14 @@ class SiglumeSdrpOrderStore(Protocol):
         challenge_hash: str,
         checkout_session_id: str,
         checkout_url: str,
+        expires_at: str | None = None,
+    ) -> None: ...
+    async def mark_checkout_failed(
+        self,
+        *,
+        order_id: str,
+        attempt_id: str,
+        error_message: str | None = None,
     ) -> None: ...
     async def process_webhook_event_once(
         self,
@@ -45,7 +53,9 @@ def create_siglume_sdrp_router(
     router = APIRouter()
     merchant_key = os.environ["SIGLUME_DIRECT_PAYMENT_MERCHANT"]
     shop_origin = os.environ["SHOP_PUBLIC_ORIGIN"]
-    merchant = DirectRequestPaymentMerchantClient(auth_token=os.environ["SIGLUME_MERCHANT_AUTH_TOKEN"])
+    merchant = DirectRequestPaymentMerchantClient(
+        auth_token=os.environ["SIGLUME_MERCHANT_AUTH_TOKEN"],
+    )
 
     @router.post("/checkout/siglume/start")
     async def start_checkout(request: Request) -> JSONResponse:
@@ -58,8 +68,14 @@ def create_siglume_sdrp_router(
         if not allow_metered_payments and not _is_standard_checkout_amount(str(attempt["currency"]), int(attempt["amount_minor"])):
             return JSONResponse({"error": "METERED_INTEGRATION_REQUIRED"}, status_code=409)
 
+        if attempt.get("checkout_creation_pending"):
+            return JSONResponse({"status": "creating", "retry_after_ms": 250}, status_code=202)
+
         if attempt.get("checkout_url") and attempt.get("checkout_session_id"):
-            return JSONResponse({"checkout_url": attempt["checkout_url"], "session_id": attempt["checkout_session_id"]})
+            return JSONResponse({
+                "checkout_url": attempt["checkout_url"],
+                "session_id": attempt["checkout_session_id"],
+            })
 
         try:
             session = await run_in_threadpool(
@@ -74,7 +90,20 @@ def create_siglume_sdrp_router(
                 )
             )
         except HostedCheckoutNotAvailableError:
+            await order_store.mark_checkout_failed(
+                order_id=str(attempt["order_id"]),
+                attempt_id=str(attempt["attempt_id"]),
+                error_message="hosted_checkout_not_enabled",
+            )
             return JSONResponse({"error": "hosted_checkout_not_enabled"}, status_code=409)
+        except Exception as exc:
+            await order_store.mark_checkout_failed(
+                order_id=str(attempt["order_id"]),
+                attempt_id=str(attempt["attempt_id"]),
+                error_message=str(exc),
+            )
+            raise
+
         await order_store.mark_checkout_pending(
             order_id=str(attempt["order_id"]),
             attempt_id=str(attempt["attempt_id"]),
@@ -82,6 +111,7 @@ def create_siglume_sdrp_router(
             challenge_hash=session["challenge_hash"],
             checkout_session_id=session["session_id"],
             checkout_url=session["checkout_url"],
+            expires_at=session.get("expires_at"),
         )
         return JSONResponse({"checkout_url": session["checkout_url"], "session_id": session["session_id"]})
 
@@ -102,6 +132,7 @@ def create_siglume_sdrp_router(
 
         if await order_store.process_webhook_event_once(str(event["id"]), handler) == "duplicate":
             return Response(status_code=204)
+
         return Response(status_code=204)
 
     return router
@@ -115,6 +146,8 @@ async def _process_siglume_webhook_event(
 ) -> None:
     if event["type"] != "direct_payment.confirmed":
         return
+    if _is_readiness_probe_event(event):
+        return
 
     confirmation = classify_direct_payment_confirmation(event)
     if confirmation["kind"] == "standard_settled":
@@ -126,7 +159,10 @@ async def _process_siglume_webhook_event(
                 chain_receipt_id=confirmation["chain_receipt_id"],
             )
         else:
-            await order_store.flag_payment_review({"reason": "unknown_challenge_hash", "requirement_id": confirmation["requirement_id"]})
+            await order_store.flag_payment_review({
+                "reason": "unknown_challenge_hash",
+                "requirement_id": confirmation["requirement_id"],
+            })
     elif confirmation["kind"] == "metered_usage_accepted":
         if not allow_metered_payments:
             await order_store.flag_payment_review({
@@ -143,7 +179,10 @@ async def _process_siglume_webhook_event(
                 pricing_band=confirmation["pricing_band"],
             )
         else:
-            await order_store.flag_payment_review({"reason": "unknown_metered_challenge_hash", "requirement_id": confirmation["requirement_id"]})
+            await order_store.flag_payment_review({
+                "reason": "unknown_metered_challenge_hash",
+                "requirement_id": confirmation["requirement_id"],
+            })
     else:
         await order_store.flag_payment_review(dict(confirmation))
 
@@ -155,3 +194,8 @@ def _is_standard_checkout_amount(currency: str, amount_minor: int) -> bool:
     if normalized_currency == "USD":
         return amount_minor >= 301
     return False
+
+
+def _is_readiness_probe_event(event: dict[str, Any]) -> bool:
+    data = event.get("data") if isinstance(event.get("data"), dict) else {}
+    return data.get("readiness_probe") is True or data.get("mode") == "readiness_probe"

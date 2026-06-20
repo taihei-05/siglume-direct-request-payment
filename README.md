@@ -86,10 +86,11 @@ CLI-first:
 
 ```bash
 npm install @siglume/direct-request-payment
-npx siglume-sdrp sandbox --webhook-url http://localhost:3000/payments/webhooks/siglume
-npx siglume-check readiness --sandbox
-npx siglume-check readiness
 npx siglume-sdrp init express --target src/siglume
+# mount the routes, start your app, then:
+npx siglume-sdrp sandbox --webhook-url http://localhost:3000/payments/webhooks/siglume
+npx siglume-check verify --sandbox
+npx siglume-check verify
 ```
 
 or:
@@ -97,14 +98,22 @@ or:
 ```bash
 pip install siglume-direct-request-payment
 siglume-sdrp init fastapi --target app/siglume
+# mount the routes, start your app, then use the npm sandbox for local checkout:
+npx siglume-sdrp sandbox --webhook-url http://localhost:3000/payments/webhooks/siglume
+siglume-check verify --sandbox
 ```
 
 The sandbox command starts a local Siglume-compatible API that creates fake
 checkout sessions and sends signed webhooks to your product. It never charges a
-wallet; see [SDRP Sandbox](./docs/sandbox.md). The readiness command checks
-account, billing, origin, webhook, and Hosted Checkout availability before you
-write checkout code. It also confirms the webhook subscription and signed test
-delivery when API probes are enabled.
+wallet; see [SDRP Sandbox](./docs/sandbox.md). `siglume-check preflight`
+checks account, billing, origin, webhook subscription metadata, and Hosted
+Checkout availability before route mounting. `siglume-check verify` additionally
+requires a signed webhook test delivery, so run it only after your webhook route
+is mounted and your app is running.
+
+The FastAPI templates include both sync `Session` and async `AsyncSession`
+SQLAlchemy adapters. The sandbox also exposes metered summary endpoints so you
+can verify Micro / Nano seller-borne fee fields before using live credentials.
 
 Before implementation, confirm Hosted Checkout readiness in
 [Troubleshooting](./docs/troubleshooting.md#hosted-checkout-readiness). For
@@ -125,7 +134,7 @@ fulfilling orders.
 
 | Use case | Recommended path | 10-minute integration path? | Production work still required |
 | --- | --- | --- | --- |
-| EC one-time Standard payment | Hosted Checkout | Yes, with `siglume-check readiness` and `siglume-sdrp init` | Product DB adapter, refund/support process, monitoring |
+| EC one-time Standard payment | Hosted Checkout | Yes, with `siglume-sdrp init`, sandbox, and `siglume-check verify` | Product DB adapter, refund/support process, monitoring |
 | Game consumables | Hosted Checkout or agent/API | Conditional | Idempotent entitlement grants, disconnect recovery, Micro / Nano settlement reconciliation and past-due handling |
 | Paid API / AtoA | Direct API or Siglume marketplace tool | Conditional | Request idempotency, buyer auth context, reconciliation |
 | SaaS subscription | Recurring challenge plus raw API | No | Renewal, cancellation, failed renewal, plan-change lifecycle |
@@ -139,7 +148,7 @@ case `createCheckoutSession(...)` / `getCheckoutSession(...)` raises
 `HostedCheckoutNotAvailableError` instead of exposing the raw rollout 404/409.
 Keep the signed `direct_payment.confirmed` webhook as the durable signal, and
 inspect its settlement machine fields before marking any order paid.
-Check readiness before you build the flow; see
+Run preflight before route mounting and verify after your webhook is live; see
 [Hosted Checkout readiness](./docs/troubleshooting.md#hosted-checkout-readiness).
 
 Hosted Checkout is a Siglume-hosted page that turns a "Pay with Siglume" button
@@ -265,9 +274,11 @@ transaction. Micro / Nano settlement batches are aggregated on-chain after the
 weekly or monthly close, or earlier when the fixed amount threshold is reached.
 
 Micro Payment and Nano Payment are not separate products you opt into; they are
-amount bands Siglume applies on your behalf. Your integration code is the same
-regardless of which band a payment falls into. The full fee table and the exact
-weekly / monthly settlement schedule plus early threshold settlement rule are in
+amount bands Siglume applies on your behalf. Payment initiation is the same
+across amount bands. Fulfillment, revenue recognition, reconciliation, past-due
+handling, and terminal write-off handling differ for Micro / Nano. The full fee
+table and the exact weekly / monthly settlement schedule plus early threshold
+settlement rule are in
 [docs/pricing.md](./docs/pricing.md).
 Provider revenue in the Micro and Nano bands is not settled revenue until the
 aggregated on-chain settlement succeeds. Siglume keeps outstanding failed

@@ -15,10 +15,14 @@ export interface SiglumeCheckoutOrder {
 
 export interface SiglumeCheckoutAttempt extends SiglumeCheckoutOrder {
   order_id: string;
+  attempt_number?: number;
   attempt_id: string;
   stable_nonce: string;
+  status?: string;
   checkout_url?: string;
   checkout_session_id?: string;
+  expires_at?: string | null;
+  checkout_creation_pending?: boolean;
 }
 
 export interface SiglumeSdrpOrderStore {
@@ -30,6 +34,12 @@ export interface SiglumeSdrpOrderStore {
     challenge_hash: string;
     checkout_session_id: string;
     checkout_url: string;
+    expires_at?: string | null;
+  }): Promise<void>;
+  markCheckoutFailed?(input: {
+    order_id: string;
+    attempt_id: string;
+    error_message?: string;
   }): Promise<void>;
   processWebhookEventOnce(
     eventId: string,
@@ -78,20 +88,35 @@ export function createSiglumeSdrpCheckoutRouter(options: SiglumeSdrpRouterOption
         return;
       }
 
+      if (attempt.checkout_creation_pending) {
+        res.status(202).json({ status: "creating", retry_after_ms: 250 });
+        return;
+      }
+
       if (attempt.checkout_url && attempt.checkout_session_id) {
         res.json({ checkout_url: attempt.checkout_url, session_id: attempt.checkout_session_id });
         return;
       }
 
-      const session = await merchant.createCheckoutSession({
-        merchant: options.merchant,
-        amount_minor: attempt.amount_minor,
-        currency: attempt.currency,
-        nonce: attempt.stable_nonce,
-        success_url: `${options.shop_public_origin}/checkout/siglume/success`,
-        cancel_url: `${options.shop_public_origin}/checkout/siglume/cancel`,
-        metadata: { order_id: attempt.order_id, attempt_id: attempt.attempt_id },
-      });
+      let session;
+      try {
+        session = await merchant.createCheckoutSession({
+          merchant: options.merchant,
+          amount_minor: attempt.amount_minor,
+          currency: attempt.currency,
+          nonce: attempt.stable_nonce,
+          success_url: `${options.shop_public_origin}/checkout/siglume/success`,
+          cancel_url: `${options.shop_public_origin}/checkout/siglume/cancel`,
+          metadata: { order_id: attempt.order_id, attempt_id: attempt.attempt_id },
+        });
+      } catch (error) {
+        await options.order_store.markCheckoutFailed?.({
+          order_id: attempt.order_id,
+          attempt_id: attempt.attempt_id,
+          error_message: error instanceof Error ? error.message : "checkout session creation failed",
+        });
+        throw error;
+      }
 
       await options.order_store.markCheckoutPending({
         order_id: attempt.order_id,
@@ -100,6 +125,7 @@ export function createSiglumeSdrpCheckoutRouter(options: SiglumeSdrpRouterOption
         challenge_hash: session.challenge_hash,
         checkout_session_id: session.session_id,
         checkout_url: session.checkout_url,
+        expires_at: session.expires_at ?? null,
       });
 
       res.json({ checkout_url: session.checkout_url, session_id: session.session_id });
@@ -161,6 +187,9 @@ async function processSiglumeWebhookEvent(
   if (event.type !== "direct_payment.confirmed") {
     return;
   }
+  if (isReadinessProbeEvent(event)) {
+    return;
+  }
 
   const confirmation = classifyDirectPaymentConfirmation(event);
 
@@ -220,6 +249,11 @@ async function processSiglumeWebhookEvent(
     requirement_id: confirmation.requirement_id,
     settlement_batch_id: confirmation.settlement_batch_id,
   });
+}
+
+function isReadinessProbeEvent(event: Awaited<ReturnType<typeof verifyDirectRequestPaymentWebhook>>["event"]): boolean {
+  const data = event.data as Record<string, unknown> | undefined;
+  return data?.readiness_probe === true || data?.mode === "readiness_probe";
 }
 
 function isStandardCheckoutAmount(currency: string, amountMinor: number): boolean {

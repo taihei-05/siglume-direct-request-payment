@@ -11,45 +11,9 @@ The SDK supplies the readiness check, route files, webhook verification, payment
 classification, and the order-store adapter contract. Your app supplies the
 real order lookup and fulfillment writes.
 
-## 0. Run the sandbox first
+## 0. Install the SDK
 
-Do this before touching live Siglume credentials. The local sandbox is a tiny
-Siglume-compatible API server bundled with the SDK. It creates fake checkout
-sessions, signs webhooks with your sandbox secret, records delivery status, and
-never charges a wallet.
-
-In one terminal, point it at your product's local webhook route:
-
-```bash
-npx siglume-sdrp sandbox \
-  --origin http://localhost:3000 \
-  --webhook-url http://localhost:3000/payments/webhooks/siglume
-```
-
-Use the values it prints in your product `.env`:
-
-```bash
-SIGLUME_ENV=sandbox
-SIGLUME_API_BASE=http://127.0.0.1:8787/v1
-SIGLUME_MERCHANT_AUTH_TOKEN=sandbox_merchant_token
-SIGLUME_DIRECT_PAYMENT_MERCHANT=sandbox_merchant
-SHOP_PUBLIC_ORIGIN=http://localhost:3000
-SHOP_WEBHOOK_URL=http://localhost:3000/payments/webhooks/siglume
-SIGLUME_WEBHOOK_SECRET=whsec_sandbox_local
-```
-
-Then run:
-
-```bash
-npx siglume-check readiness --sandbox
-```
-
-The sandbox readiness check proves your local server can receive a signed
-`direct_payment.confirmed` delivery before you use live credentials.
-
-## 1. Live readiness
-
-Install the SDK in your product.
+Install the SDK in your existing product first.
 
 Node / Express:
 
@@ -63,6 +27,13 @@ Python / FastAPI:
 pip install siglume-direct-request-payment
 ```
 
+For FastAPI projects, the Python package supplies `init`, `preflight`, and
+`verify` commands. The local sandbox server is currently provided by the npm
+CLI, so install Node.js/npm as well when you want local sandbox checkout
+verification.
+
+## 1. Optional live preflight
+
 Set these environment variables in your app or `.env`:
 
 ```bash
@@ -73,32 +44,32 @@ SHOP_WEBHOOK_URL=https://api.your-product.example/payments/webhooks/siglume
 SIGLUME_WEBHOOK_SECRET=<webhook signing secret from setupCheckout/setup_checkout>
 ```
 
-Then run the matching CLI:
+Before mounting routes, you may run a preflight. It checks local config,
+merchant, billing, webhook subscription metadata, and Hosted Checkout access,
+but it intentionally does not send a webhook delivery because your webhook route
+does not exist yet.
 
 ```bash
 # Node / Express
-npx siglume-check readiness
+npx siglume-check preflight
 
 # Python / FastAPI
-siglume-check readiness
+siglume-check preflight
 ```
 
-The readiness check fails before you write checkout code if any required item is
-missing. It checks local config, reads the merchant account, requires active
-billing, confirms the webhook subscription points to `SHOP_WEBHOOK_URL`, checks
-that `direct_payment.confirmed` is subscribed, verifies the local webhook secret
-against the subscription hint, creates one unpaid expiring Hosted Checkout probe
-session, and queues a signed webhook test delivery. No buyer is charged.
+Use `readiness` or `verify` only after your webhook route is mounted and your
+app is running. Those commands also queue a signed webhook test delivery and
+require it to be delivered.
 
 For a CI local-config smoke test:
 
 ```bash
-npx siglume-check readiness --no-api --json
+npx siglume-check preflight --no-api --json
 ```
 
 `--no-api` does not prove Hosted Checkout or webhook delivery. Before opening a
-human web checkout path, run readiness without `--no-api` and fix every FAIL
-item.
+human web checkout path, run `siglume-check verify` without `--no-api` and fix
+every FAIL item.
 
 ## 2. Copy integration files into your product
 
@@ -219,14 +190,76 @@ from .siglume.siglume_order_store_sqlalchemy import (
 engine = create_sqlalchemy_engine(os.environ["DATABASE_URL"])
 create_sqlalchemy_siglume_schema(engine)
 SessionLocal = sessionmaker(engine, future=True)
-order_store = SQLAlchemySiglumeOrderStore(SessionLocal)
+order_store = SQLAlchemySiglumeOrderStore(
+    SessionLocal,
+    # Optional for existing products with different order table/column names:
+    # orders_table=product_orders,
+    # order_id_column="order_id",
+    # amount_minor_column="total_cents",
+    # currency_column="iso_currency",
+    # order_status_column="payment_status",
+)
 ```
 
-The adapters persist one checkout attempt per order, reuse the checkout URL on
-retries, record webhook event ids only after the order update/review write
-succeeds, and keep duplicate deliveries from double-fulfilling an order.
+If your FastAPI app already uses SQLAlchemy `AsyncSession`, use the async
+adapter instead:
 
-## 6. Start checkout from your frontend
+```py
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from .siglume.siglume_order_store_sqlalchemy_async import (
+    AsyncSQLAlchemySiglumeOrderStore,
+    create_async_sqlalchemy_engine,
+    create_async_sqlalchemy_siglume_schema,
+)
+
+engine = create_async_sqlalchemy_engine(os.environ["DATABASE_URL"])
+# Run this during your FastAPI startup/lifespan initialization.
+await create_async_sqlalchemy_siglume_schema(engine)
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+order_store = AsyncSQLAlchemySiglumeOrderStore(SessionLocal)
+```
+
+`create_sqlalchemy_siglume_schema(engine)` creates only SDRP-owned tables by
+default. Use `include_orders_table=True` only for the sample `orders` table.
+
+The adapters persist one active checkout attempt per order, reuse an unexpired
+checkout URL on network retries, create a new attempt after expiry/failure,
+record webhook event ids only after the order update/review write succeeds, and
+keep duplicate deliveries from double-fulfilling an order.
+
+## 6. Start your app and run sandbox verify
+
+Start your product locally with the mounted checkout and webhook routes. Then,
+in another terminal, start the sandbox and point it at your local webhook route:
+
+```bash
+npx siglume-sdrp sandbox \
+  --origin http://localhost:3000 \
+  --webhook-url http://localhost:3000/payments/webhooks/siglume
+```
+
+Use the values it prints in your product `.env`:
+
+```bash
+SIGLUME_ENV=sandbox
+SIGLUME_API_BASE=http://127.0.0.1:8787/v1
+SIGLUME_MERCHANT_AUTH_TOKEN=sandbox_merchant_token
+SIGLUME_DIRECT_PAYMENT_MERCHANT=sandbox_merchant
+SHOP_PUBLIC_ORIGIN=http://localhost:3000
+SHOP_WEBHOOK_URL=http://localhost:3000/payments/webhooks/siglume
+SIGLUME_WEBHOOK_SECRET=whsec_sandbox_local
+```
+
+Restart your product with those values, keep the sandbox running, then verify
+the local webhook delivery:
+
+```bash
+npx siglume-check verify --sandbox
+```
+
+`verify --sandbox` must pass before you switch to live credentials.
+
+## 7. Start checkout from your frontend
 
 Call your own server route:
 
@@ -238,12 +271,12 @@ curl -X POST https://api.your-product.example/payments/checkout/siglume/start \
 
 Redirect the shopper to the returned `checkout_url`.
 
-## 7. Done means
+## 8. Done means
 
 Your product is integrated when:
 
-- `npx siglume-check readiness --sandbox` passes against your local product,
-- `npx siglume-check readiness` passes against live Siglume credentials,
+- `npx siglume-check verify --sandbox` passes against your local product,
+- `npx siglume-check verify` passes against live Siglume credentials,
 - your product has mounted checkout and webhook routes,
 - your order database uses the SQL/ORM adapter or an equivalent transactional store,
 - the signed webhook verifies against the raw body,

@@ -33,6 +33,7 @@ class ExampleSiglumeOrderStore:
         challenge_hash: str,
         checkout_session_id: str,
         checkout_url: str,
+        expires_at: str | None = None,
     ) -> None:
         order = _orders.get(order_id)
         if not order:
@@ -43,6 +44,20 @@ class ExampleSiglumeOrderStore:
         order["challenge_hash"] = challenge_hash
         order["checkout_session_id"] = checkout_session_id
         order["checkout_url"] = checkout_url
+        order["expires_at"] = expires_at
+
+    async def mark_checkout_failed(
+        self,
+        *,
+        order_id: str,
+        attempt_id: str,
+        error_message: str | None = None,
+    ) -> None:
+        order = _orders.get(order_id)
+        if not order or order.get("attempt_id") != attempt_id:
+            return
+        order["status"] = "failed"
+        order["checkout_error"] = error_message or "checkout session creation failed"
 
     async def process_webhook_event_once(self, event_id: str, handler) -> str:
         if event_id in _processed_events:

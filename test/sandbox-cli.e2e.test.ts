@@ -97,6 +97,58 @@ describe("sandbox CLI E2E", () => {
       expect(secondConfirmBody.data.event.id).toBe(firstConfirmBody.data.event.id);
       expect(deliveries).toHaveLength(1);
       expect(deliveries[0]?.signature).toContain("v1=");
+
+      const microCreated = await postJson(`${baseUrl}/v1/sdrp/direct-payments/checkout-sessions`, {
+        merchant: "sandbox_merchant",
+        amount_minor: 100,
+        currency: "JPY",
+        nonce: "nonce_micro_e2e",
+        success_url: "http://localhost:3000/success",
+        cancel_url: "http://localhost:3000/cancel",
+        metadata: { order_id: "order_micro_sandbox_e2e" },
+      });
+      expect(microCreated.status).toBe(201);
+      const microCreatedBody = await microCreated.json() as { data: { session_id: string } };
+      const microConfirm = await fetch(`${baseUrl}/v1/sandbox/checkout-sessions/${microCreatedBody.data.session_id}/confirm`, { method: "POST" });
+      expect(microConfirm.status).toBe(200);
+      expect(deliveries).toHaveLength(2);
+      const microEvent = JSON.parse(deliveries[1]?.body || "{}") as {
+        data: {
+          pricing_band: string;
+          buyer_debit_minor: string;
+          provider_gross_amount_minor: string;
+          protocol_fee_minor: string;
+          provider_receivable_minor: string;
+          settlement_threshold_minor: string;
+        };
+      };
+      expect(microEvent.data.pricing_band).toBe("micro");
+      expect(microEvent.data.buyer_debit_minor).toBe("100");
+      expect(microEvent.data.provider_gross_amount_minor).toBe("100");
+      expect(microEvent.data.protocol_fee_minor).toBe("2");
+      expect(microEvent.data.provider_receivable_minor).toBe("98");
+      expect(microEvent.data.settlement_threshold_minor).toBe("10000");
+
+      const providerSummary = await fetch(`${baseUrl}/v1/sdrp/metered/provider/summary?plan_type=micro&token_symbol=JPYC`);
+      expect(providerSummary.status).toBe(200);
+      const providerSummaryBody = await providerSummary.json() as {
+        data: {
+          open_periods: Array<{
+            buyer_debit_minor: string;
+            provider_gross_amount_minor: string;
+            protocol_fee_minor: string;
+            provider_receivable_minor: string;
+            total_unsettled_exposure_minor: string;
+          }>;
+          totals: { unsettled_provider_receivable_minor: string };
+        };
+      };
+      expect(providerSummaryBody.data.open_periods[0]?.buyer_debit_minor).toBe("100");
+      expect(providerSummaryBody.data.open_periods[0]?.provider_gross_amount_minor).toBe("100");
+      expect(providerSummaryBody.data.open_periods[0]?.protocol_fee_minor).toBe("2");
+      expect(providerSummaryBody.data.open_periods[0]?.provider_receivable_minor).toBe("98");
+      expect(providerSummaryBody.data.open_periods[0]?.total_unsettled_exposure_minor).toBe("100");
+      expect(providerSummaryBody.data.totals.unsettled_provider_receivable_minor).toBe("98");
     } finally {
       await closeServer(webhookServer);
     }

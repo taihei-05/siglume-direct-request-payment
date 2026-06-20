@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import httpx
 import pytest
 import respx
 from fastapi import FastAPI
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import sessionmaker
 
 from siglume_direct_request_payment import build_webhook_signature_header
@@ -65,12 +66,13 @@ async def test_fastapi_sqlalchemy_template_e2e(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("SHOP_PUBLIC_ORIGIN", "https://shop.example.com")
 
     engine = create_sqlalchemy_engine(f"sqlite:///{tmp_path / 'sdrp.sqlite3'}")
-    create_sqlalchemy_siglume_schema(engine)
+    create_sqlalchemy_siglume_schema(engine, include_orders_table=True)
     SessionLocal = sessionmaker(engine, future=True)
     with SessionLocal.begin() as session:
         seed_sqlalchemy_order(session, order_id="order_123", amount_minor=1200, currency="JPY")
         seed_sqlalchemy_order(session, order_id="order_retry", amount_minor=1300, currency="JPY")
         seed_sqlalchemy_order(session, order_id="order_micro", amount_minor=100, currency="JPY")
+        seed_sqlalchemy_order(session, order_id="order_expiring", amount_minor=1400, currency="JPY")
 
     store = SQLAlchemySiglumeOrderStore(SessionLocal)
     app = FastAPI()
@@ -94,6 +96,7 @@ async def test_fastapi_sqlalchemy_template_e2e(tmp_path, monkeypatch) -> None:
                 "session_id": session_id,
                 "challenge_hash": challenge_hash,
                 "status": "open",
+                "expires_at": "2099-01-01T00:00:00Z",
             }),
         )
 
@@ -153,6 +156,27 @@ async def test_fastapi_sqlalchemy_template_e2e(tmp_path, monkeypatch) -> None:
         assert micro_start.status_code == 409
         assert micro_start.json() == {"error": "METERED_INTEGRATION_REQUIRED"}
         assert len(checkout_calls) == 2
+
+        expiring_start = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_expiring"})
+        assert expiring_start.status_code == 200
+        assert expiring_start.json()["session_id"] == "chk_py_3"
+        with SessionLocal.begin() as session:
+            session.execute(
+                update(checkout_attempts)
+                .where(checkout_attempts.c.order_id == "order_expiring")
+                .where(checkout_attempts.c.status == "pending")
+                .values(expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc))
+            )
+        retry_expired = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_expiring"})
+        assert retry_expired.status_code == 200
+        assert retry_expired.json()["session_id"] == "chk_py_4"
+        with SessionLocal() as session:
+            rows = session.execute(
+                select(checkout_attempts.c.attempt_number, checkout_attempts.c.status)
+                .where(checkout_attempts.c.order_id == "order_expiring")
+                .order_by(checkout_attempts.c.attempt_number)
+            ).all()
+            assert rows == [(1, "expired"), (2, "pending")]
 
     with SessionLocal() as session:
         assert session.execute(

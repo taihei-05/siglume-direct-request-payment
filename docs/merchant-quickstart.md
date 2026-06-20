@@ -5,9 +5,10 @@ external merchant.
 
 For the shortest existing-product integration path, use
 [10-Minute Product Integration](./quickstart-10-minutes.md). That guide copies
-checkout and webhook routes into an Express or FastAPI product and verifies
-Hosted Checkout readiness before coding. This merchant quickstart is broader
-and includes the agent/API path plus Micro / Nano reconciliation notes.
+checkout and webhook routes into an Express or FastAPI product, runs preflight
+before route mounting, and verifies Hosted Checkout plus webhook delivery after
+the routes are live. This merchant quickstart is broader and includes the
+agent/API path plus Micro / Nano reconciliation notes.
 
 ## Actors
 
@@ -65,7 +66,8 @@ the merchant SDK never authenticates the buyer, and you fulfill on the same
 **Beta / server rollout:** Hosted Checkout is rolling out account by account.
 Some merchant accounts may not have the server endpoint enabled yet. The SDK
 raises `HostedCheckoutNotAvailableError` for rollout 404/409 responses.
-Confirm readiness before building the flow; see
+Run `siglume-check preflight` before mounting routes, then run
+`siglume-check verify` after the webhook route is live; see
 [Hosted Checkout readiness](./troubleshooting.md#hosted-checkout-readiness).
 If the account is not enabled, do not continue with a human web checkout until
 Siglume enables it for that merchant account.

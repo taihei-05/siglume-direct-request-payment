@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.24 - 2026-06-20
+
+- Split CLI checks into `preflight` for pre-mount setup checks and `verify` for
+  full Hosted Checkout plus signed webhook delivery verification, so the
+  10-minute guide no longer asks users to verify a webhook route before it
+  exists.
+- Made merchant account status fail-closed in readiness checks; only `active`
+  and `ready` pass.
+- Reworked Express and FastAPI checkout attempts to support attempt generations,
+  expiry/failure recovery, and one active checkout attempt per order enforced by
+  a database unique key.
+- Added Express E2E coverage for 50 concurrent checkout starts creating exactly
+  one Hosted Checkout session, new attempt creation after expiry, and stale
+  non-transactional webhook `processing` recovery.
+- Added FastAPI SQLAlchemy expiry retry coverage and made the adapter configurable
+  for existing product order table/column names.
+- Added a FastAPI `AsyncSession` SQLAlchemy adapter and E2E coverage for async
+  checkout concurrency, webhook idempotency, and expired-session retry.
+- Marked readiness probe webhooks so generated routes ignore them instead of
+  writing manual-review records.
+- Updated sandbox checkout to follow the returned success redirect after
+  confirmation and expose metered summary responses with seller-borne Micro /
+  Nano accounting fields.
+
 ## 0.4.23 - 2026-06-20
 
 - Made the local SDRP sandbox reject invalid checkout input early, including

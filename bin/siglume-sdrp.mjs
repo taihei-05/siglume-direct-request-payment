@@ -27,8 +27,14 @@ async function main() {
     printHelp();
     return;
   }
-  if (command === "readiness" || command === "doctor") {
-    await readiness(parseArgs(args));
+  if (command === "readiness" || command === "verify" || command === "doctor") {
+    await readiness(parseArgs(args), { requireProbe: true, label: command === "verify" ? "verify" : "readiness" });
+    return;
+  }
+  if (command === "preflight") {
+    const options = parseArgs(args);
+    options.probe = false;
+    await readiness(options, { requireProbe: false, label: "preflight" });
     return;
   }
   if (command === "sandbox") {
@@ -46,7 +52,9 @@ function printHelp() {
   console.log(`Siglume SDRP integration CLI
 
 Usage:
+  siglume-check preflight --merchant <key> --origin <https://shop.example> --webhook-url <https://api.example/siglume/webhook>
   siglume-check readiness --merchant <key> --origin <https://shop.example> --webhook-url <https://api.example/siglume/webhook>
+  siglume-check verify --merchant <key> --origin <https://shop.example> --webhook-url <https://api.example/siglume/webhook>
   siglume-sdrp sandbox --webhook-url <http://localhost:3000/payments/webhooks/siglume>
   siglume-sdrp init express --target src/siglume
   siglume-sdrp init fastapi --target app/siglume
@@ -60,7 +68,7 @@ Readiness options:
   --base-url <url>          Siglume API base URL. Defaults to SIGLUME_API_BASE or production.
   --sandbox                 Use the local sandbox default API base (http://127.0.0.1:8787/v1).
   --no-api                  Validate local config only; do not call Siglume.
-  --no-probe                Partial API check only; readiness will not be reported as ready.
+  --no-probe                Partial API check only; readiness/verify will not be reported as ready. preflight sets this automatically.
   --json                    Print machine-readable JSON.
 
 Sandbox options:
@@ -101,7 +109,7 @@ function parseArgs(args) {
   return out;
 }
 
-async function readiness(options) {
+async function readiness(options, mode = { requireProbe: true, label: "readiness" }) {
   const checks = [];
   const sandboxMode = Boolean(options.sandbox) || String(process.env.SIGLUME_ENV || "").toLowerCase() === "sandbox";
   const merchant = options.merchant || process.env.SIGLUME_DIRECT_PAYMENT_MERCHANT || "";
@@ -133,7 +141,7 @@ async function readiness(options) {
       check(checks, "merchant_exists", Boolean(account.merchant), "Run merchant setup before checkout.");
       check(checks, "billing_mandate", Boolean(account.billing_mandate_id), "Complete the merchant billing mandate wallet approval.");
       check(checks, "billing_status_active", activeLike(account.billing_status), `Billing status is ${account.billing_status || "unknown"}; it must be active before accepting payments.`);
-      warnIf(checks, "merchant_status", account.status && !activeLike(account.status), `Merchant status is ${account.status}; confirm it is allowed to accept payments.`);
+      check(checks, "merchant_status_active", merchantStatusAllowed(account.status), `Merchant status is ${account.status || "unknown"}; it must be active or ready before accepting payments.`);
     } catch (error) {
       check(checks, "merchant_api", false, apiErrorMessage(error, "Could not read the merchant account."));
     }
@@ -162,8 +170,10 @@ async function readiness(options) {
       }
     }
 
-    if (!options.probe && !hasFailures(checks)) {
+    if (!options.probe && mode.requireProbe && !hasFailures(checks)) {
       check(checks, "hosted_checkout_probe", false, "--no-probe skips Hosted Checkout and webhook delivery probes. Remove --no-probe for readiness.");
+    } else if (!options.probe && !mode.requireProbe && !hasFailures(checks)) {
+      check(checks, "delivery_probe_skipped", true, "preflight only; run siglume-check verify after mounting and starting the webhook route.");
     }
 
     if (options.probe && !hasFailures(checks)) {
@@ -205,7 +215,11 @@ async function readiness(options) {
     if (ok && !options.api) {
       console.log("Local config checks passed. API, Hosted Checkout, and webhook delivery readiness were not verified.");
     } else {
-      console.log(ok ? `Ready for 10-minute SDRP integration (${sandboxMode ? "sandbox" : "live"}).` : "Not ready. Fix the FAIL items before coding checkout.");
+      if (ok && !options.probe && !mode.requireProbe) {
+        console.log(`Preflight passed (${sandboxMode ? "sandbox" : "live"}). Mount the routes, start your app, then run siglume-check verify.`);
+      } else {
+        console.log(ok ? `Ready for 10-minute SDRP integration (${sandboxMode ? "sandbox" : "live"}).` : `Not ready. Fix the FAIL items before ${mode.label === "preflight" ? "mounting checkout" : "opening checkout"}.`);
+      }
     }
   }
   if (!ok) {
@@ -233,7 +247,7 @@ async function init(args) {
   }
   await copyDir(from, to, Boolean(parsed.force));
   console.log(`Copied ${framework} SDRP integration files to ${to}`);
-  console.log("Wire the exported router into your app, then run siglume-check readiness before opening checkout.");
+  console.log("Wire the exported router into your app, start it, then run siglume-check verify before opening checkout.");
 }
 
 async function sandbox(options) {
@@ -260,6 +274,7 @@ async function sandbox(options) {
     subscriptionId: "whsub_sandbox_local",
     sessions: new Map(),
     deliveries: [],
+    meteredUsageEvents: [],
   };
 
   const server = createServer(async (req, res) => {
@@ -294,7 +309,7 @@ async function sandbox(options) {
     console.log(`SHOP_PUBLIC_ORIGIN=${origin}`);
     console.log(`SHOP_WEBHOOK_URL=${webhookUrl}`);
     console.log("");
-    console.log(`Then run: siglume-check readiness --sandbox`);
+    console.log(`Then run after your app is running: siglume-check verify --sandbox`);
   }
 }
 
@@ -417,6 +432,35 @@ async function handleSandboxRequest(req, res, state, port) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/v1/sdrp/metered/my-summary") {
+    sendEnvelope(res, 200, sandboxBuyerMeteredSummary(state, url));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/v1/sdrp/metered/provider/summary") {
+    sendEnvelope(res, 200, sandboxProviderMeteredSummary(state, url));
+    return;
+  }
+
+  if (req.method === "GET" && (
+    url.pathname === "/v1/sdrp/metered/my-usage-events"
+    || url.pathname === "/v1/sdrp/metered/provider/usage-events"
+  )) {
+    sendEnvelope(res, 200, {
+      items: filterSandboxMeteredUsage(state, url),
+      next_cursor: null,
+    });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/v1/sdrp/metered/provider/settlement-batches") {
+    sendEnvelope(res, 200, {
+      items: sandboxSettlementBatches(state, url),
+      next_cursor: null,
+    });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname.startsWith("/pay/")) {
     const sessionId = decodeURIComponent(url.pathname.split("/").pop() || "");
     const session = state.sessions.get(sessionId);
@@ -444,6 +488,10 @@ async function handleSandboxRequest(req, res, state, port) {
     session.requirement_id = `dpr_sandbox_${sessionId}`;
     const event = sandboxPaymentConfirmedEvent(session);
     session.confirmation_event = event;
+    const usageEvent = sandboxMeteredUsageEvent(session, event);
+    if (usageEvent) {
+      state.meteredUsageEvents.unshift(usageEvent);
+    }
     await deliverSandboxWebhook(state, event);
     sendEnvelope(res, 200, sandboxConfirmResponse(session, event));
     return;
@@ -487,6 +535,7 @@ function sandboxEvent({ event_type, data }) {
 function sandboxPaymentConfirmedEvent(session) {
   const pricingBand = classifySandboxAmount(session.currency, Number(session.amount_minor));
   const metered = pricingBand === "micro" || pricingBand === "nano";
+  const accounting = metered ? sandboxMeteredAccounting(session, pricingBand) : null;
   return sandboxEvent({
     event_type: "direct_payment.confirmed",
     data: {
@@ -503,8 +552,186 @@ function sandboxPaymentConfirmedEvent(session) {
       settlement_status: metered ? "pending_settlement" : "settled",
       chain_receipt_id: metered ? undefined : `chain_sandbox_${session.session_id}`,
       environment: "sandbox",
+      ...(accounting ? {
+        provider_gross_amount_minor: accounting.provider_gross_amount_minor,
+        provider_usage_amount_minor: accounting.provider_usage_amount_minor,
+        protocol_fee_minor: accounting.protocol_fee_minor,
+        provider_receivable_minor: accounting.provider_receivable_minor,
+        gross_buyer_debit_minor: accounting.gross_buyer_debit_minor,
+        buyer_debit_minor: accounting.buyer_debit_minor,
+        rounding_delta_minor: accounting.rounding_delta_minor,
+        settlement_threshold_minor: accounting.settlement_threshold_minor,
+      } : {}),
     },
   });
+}
+
+function sandboxMeteredUsageEvent(session, event) {
+  const pricingBand = classifySandboxAmount(session.currency, Number(session.amount_minor));
+  if (pricingBand !== "micro" && pricingBand !== "nano") return null;
+  const accounting = sandboxMeteredAccounting(session, pricingBand);
+  return {
+    metered_usage_id: `mu_sandbox_${session.session_id}`,
+    created_at: new Date().toISOString(),
+    plan_type: pricingBand,
+    pricing_band: pricingBand,
+    settlement_cadence: pricingBand === "micro" ? "weekly" : "monthly",
+    period_start: new Date().toISOString(),
+    period_end: null,
+    listing_id: session.metadata_jsonb?.listing_id || "sandbox_listing",
+    capability_key: session.metadata_jsonb?.capability_key || "sandbox_checkout",
+    operation_key: session.metadata_jsonb?.operation_key || "checkout.confirm",
+    currency: session.currency,
+    token_symbol: session.token_symbol,
+    status: "open",
+    settlement_batch_id: null,
+    buyer_period_ref: `buyer_sandbox:${session.merchant}:${session.token_symbol}:${pricingBand}`,
+    requirement_id: session.requirement_id,
+    challenge_hash: session.challenge_hash,
+    event_id: event.id,
+    ...accounting,
+  };
+}
+
+function sandboxMeteredAccounting(session, pricingBand) {
+  const currency = String(session.currency || "").toUpperCase();
+  const providerGrossTenths = Number(session.amount_minor) * 10;
+  const protocolFeeTenths = sandboxProtocolFeeTenths(currency, pricingBand);
+  const providerReceivableTenths = providerGrossTenths - protocolFeeTenths;
+  return {
+    provider_gross_amount_minor: formatTenths(providerGrossTenths),
+    provider_usage_amount_minor: formatTenths(providerGrossTenths),
+    protocol_fee_minor: formatTenths(protocolFeeTenths),
+    provider_receivable_minor: formatTenths(providerReceivableTenths),
+    gross_buyer_debit_minor: formatTenths(providerGrossTenths),
+    buyer_debit_minor: formatTenths(providerGrossTenths),
+    rounding_delta_minor: "0",
+    settlement_threshold_minor: "10000",
+  };
+}
+
+function sandboxProtocolFeeTenths(currency, pricingBand) {
+  if (pricingBand === "micro") return currency === "USD" ? 10 : 20;
+  return currency === "USD" ? 1 : 2;
+}
+
+function sandboxBuyerMeteredSummary(state, url) {
+  const events = filterSandboxMeteredUsage(state, url);
+  const batches = sandboxSettlementBatches(state, url);
+  return {
+    role: "buyer",
+    open_periods: sandboxOpenPeriods(events),
+    settlement_batches: batches,
+    past_due_blocks: [],
+    balance_sufficiency: { sufficient: true },
+  };
+}
+
+function sandboxProviderMeteredSummary(state, url) {
+  const events = filterSandboxMeteredUsage(state, url);
+  const totals = sandboxProviderTotals(events);
+  return {
+    role: "provider",
+    timezone: "UTC",
+    filters: Object.fromEntries(url.searchParams.entries()),
+    open_periods: sandboxOpenPeriods(events),
+    periods: sandboxSettlementBatches(state, url),
+    totals,
+  };
+}
+
+function filterSandboxMeteredUsage(state, url) {
+  const planType = url.searchParams.get("plan_type");
+  const tokenSymbol = url.searchParams.get("token_symbol");
+  const status = url.searchParams.get("status");
+  return state.meteredUsageEvents.filter((event) => {
+    if (planType && event.plan_type !== planType) return false;
+    if (tokenSymbol && event.token_symbol !== tokenSymbol) return false;
+    if (status && event.status !== status) return false;
+    return true;
+  });
+}
+
+function sandboxOpenPeriods(events) {
+  return Object.values(groupSandboxMeteredEvents(events)).map((group) => {
+    const grossTenths = sumTenths(group.events, "provider_gross_amount_minor");
+    const protocolFeeTenths = sumTenths(group.events, "protocol_fee_minor");
+    const receivableTenths = sumTenths(group.events, "provider_receivable_minor");
+    const buyerDebitTenths = sumTenths(group.events, "buyer_debit_minor");
+    const thresholdTenths = 10000 * 10;
+    const thresholdReached = grossTenths >= thresholdTenths;
+    return {
+      plan_type: group.plan_type,
+      settlement_cadence: group.plan_type === "micro" ? "weekly" : "monthly",
+      currency: group.currency,
+      token_symbol: group.token_symbol,
+      period_start: group.events[group.events.length - 1]?.created_at ?? null,
+      period_end: null,
+      close_at: null,
+      settlement_trigger: thresholdReached ? "amount_threshold" : null,
+      settlement_threshold_minor: "10000",
+      threshold_reached_at: thresholdReached ? group.events[0]?.created_at ?? null : null,
+      provider_gross_amount_minor: formatTenths(grossTenths),
+      provider_usage_amount_minor: formatTenths(grossTenths),
+      protocol_fee_minor: formatTenths(protocolFeeTenths),
+      provider_receivable_minor: formatTenths(receivableTenths),
+      buyer_debit_minor: formatTenths(buyerDebitTenths),
+      total_unsettled_exposure_minor: formatTenths(grossTenths),
+    };
+  });
+}
+
+function sandboxSettlementBatches(state, url) {
+  const events = filterSandboxMeteredUsage(state, url);
+  return sandboxOpenPeriods(events)
+    .filter((period) => period.settlement_trigger === "amount_threshold")
+    .map((period) => ({
+      settlement_batch_id: `batch_sandbox_${period.plan_type}_${period.currency}_${period.token_symbol}`,
+      status: "notice_pending",
+      notice_status: "pending",
+      not_before_attempt_at: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
+      expected_scheduled_debit_at: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
+      ...period,
+    }));
+}
+
+function sandboxProviderTotals(events) {
+  return {
+    settled_provider_receivable_minor: "0",
+    unsettled_provider_receivable_minor: formatTenths(sumTenths(events, "provider_receivable_minor")),
+    past_due_provider_receivable_minor: "0",
+    terminal_provider_receivable_minor: "0",
+    uncollectible_provider_receivable_minor: "0",
+    written_off_provider_receivable_minor: "0",
+  };
+}
+
+function groupSandboxMeteredEvents(events) {
+  const groups = {};
+  for (const event of events) {
+    const key = `${event.plan_type}:${event.currency}:${event.token_symbol}`;
+    groups[key] ||= {
+      plan_type: event.plan_type,
+      currency: event.currency,
+      token_symbol: event.token_symbol,
+      events: [],
+    };
+    groups[key].events.push(event);
+  }
+  return groups;
+}
+
+function sumTenths(items, field) {
+  return items.reduce((total, item) => total + parseTenths(item[field]), 0);
+}
+
+function parseTenths(value) {
+  return Math.round(Number(value || 0) * 10);
+}
+
+function formatTenths(value) {
+  if (value % 10 === 0) return String(value / 10);
+  return (value / 10).toFixed(1);
 }
 
 function sandboxConfirmResponse(session, event) {
@@ -567,6 +794,9 @@ function sandboxCheckoutHtml(session) {
       const body = await response.json();
       document.getElementById("status").textContent = body.data?.status || "failed";
       document.getElementById("output").textContent = JSON.stringify(body, null, 2);
+      if (body.data?.redirect_url) {
+        window.setTimeout(() => window.location.assign(body.data.redirect_url), 400);
+      }
     });
   </script>
 </body>`;
@@ -781,6 +1011,10 @@ function activeLike(value) {
   return /^(active|ready|current|ok|enabled|paid|complete|completed)$/i.test(String(value || ""));
 }
 
+function merchantStatusAllowed(value) {
+  return /^(active|ready)$/i.test(String(value || ""));
+}
+
 function includesEventType(eventTypes, eventType) {
   if (!Array.isArray(eventTypes) || eventTypes.length === 0) return true;
   return eventTypes.map((item) => String(item)).includes(eventType);
@@ -812,6 +1046,7 @@ async function checkWebhookDeliveryProbe(checks, merchantClient, { merchant, sub
       subscription_ids: [id],
       data: {
         mode: "readiness_probe",
+        readiness_probe: true,
         merchant,
         direct_payment_requirement_id: `dpr_readiness_${Date.now()}`,
         requirement_id: `dpr_readiness_${Date.now()}`,
