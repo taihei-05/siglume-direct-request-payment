@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.25 - 2026-06-20
+
+- Added a real PostgreSQL/MySQL ORM matrix for the Express SQL order store,
+  covering Prisma + PostgreSQL, TypeORM + PostgreSQL, Sequelize + MySQL,
+  Drizzle + PostgreSQL, and Drizzle + MySQL.
+- The matrix verifies concurrent Hosted Checkout starts create one session,
+  expired checkout attempts create a new attempt, webhook handler failures stay
+  retryable, duplicate webhook events stay idempotent, and paid status reaches
+  the merchant order table.
+- Hardened the TypeORM and Drizzle SQL executors so ORM-specific affected-row
+  and row-return shapes are normalized before checkout/webhook safety decisions.
+- Added PostgreSQL and MySQL service-backed CI coverage, and made npm release
+  publish only after the ORM matrix passes.
+
 ## 0.4.24 - 2026-06-20
 
 - Split CLI checks into `preflight` for pre-mount setup checks and `verify` for

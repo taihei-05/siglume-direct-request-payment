@@ -30,6 +30,49 @@ jobs:
         working-directory: examples/hosted-checkout-typescript
       - run: npm publish --dry-run --access public
 
+  orm-matrix:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: siglume
+          POSTGRES_PASSWORD: siglume
+          POSTGRES_DB: siglume_sdrp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U siglume -d siglume_sdrp"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: siglume
+          MYSQL_DATABASE: siglume_sdrp
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -psiglume"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      SIGLUME_SDRP_POSTGRES_URL: postgresql://siglume:siglume@127.0.0.1:5432/siglume_sdrp
+      SIGLUME_SDRP_MYSQL_URL: mysql://root:siglume@127.0.0.1:3306/siglume_sdrp
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate:test
+      - run: npm run test:orm-matrix
+        env:
+          SIGLUME_SDRP_ORM_MATRIX: "1"
+
   python:
     runs-on: ubuntu-latest
     steps:

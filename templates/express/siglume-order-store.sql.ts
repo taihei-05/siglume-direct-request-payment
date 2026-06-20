@@ -60,6 +60,12 @@ interface SqlParts {
   readonly qReviews: string;
 }
 
+interface TypeOrmQueryRunner {
+  connect?: () => Promise<void>;
+  query?: (statement: string, params?: readonly unknown[], useStructuredResult?: boolean) => Promise<unknown>;
+  release?: () => Promise<void>;
+}
+
 const CHECKOUT_CREATION_LEASE_MS = 30_000;
 const CHECKOUT_CREATION_WAIT_MS = 10_000;
 const CHECKOUT_CREATION_POLL_MS = 100;
@@ -216,6 +222,8 @@ export function createPrismaSiglumeSqlExecutor(prisma: unknown): SiglumeSqlExecu
 export function createTypeOrmSiglumeSqlExecutor(dataSource: unknown): SiglumeSqlExecutor {
   const source = dataSource as {
     query?: (statement: string, params?: readonly unknown[]) => Promise<unknown>;
+    queryRunner?: TypeOrmQueryRunner | null;
+    createQueryRunner?: () => TypeOrmQueryRunner;
     transaction?: <T>(handler: (manager: { query: (statement: string, params?: readonly unknown[]) => Promise<unknown> }) => Promise<T>) => Promise<T>;
   };
   return {
@@ -223,6 +231,15 @@ export function createTypeOrmSiglumeSqlExecutor(dataSource: unknown): SiglumeSql
       return normalizeRows(await source.query?.(statement, params)) as T[];
     },
     async execute(statement, params = []) {
+      const runner = source.queryRunner ?? source.createQueryRunner?.();
+      if (runner?.query) {
+        try {
+          if (!source.queryRunner) await runner.connect?.();
+          return normalizeTypeOrmExecuteResult(await runner.query(statement, params, true));
+        } finally {
+          if (!source.queryRunner) await runner.release?.();
+        }
+      }
       return source.query?.(statement, params);
     },
     async transaction(handler) {
@@ -371,7 +388,7 @@ class SqlSiglumeOrderStore implements SiglumeSdrpOrderStore {
     await this.executor().execute(
       `UPDATE ${parts.qAttempts}
        SET status = ${this.p(1)}, stable_nonce = ${this.p(2)}, challenge_hash = ${this.p(3)},
-           checkout_session_id = ${this.p(4)}, checkout_url = ${this.p(5)}, expires_at = ${this.p(6)},
+           checkout_session_id = ${this.p(4)}, checkout_url = ${this.p(5)}, expires_at = ${timestampPlaceholder(6, this.options)},
            creation_owner_id = NULL, creation_lease_expires_at = NULL, error_message = NULL,
            updated_at = CURRENT_TIMESTAMP
        WHERE order_id = ${this.p(7)} AND attempt_id = ${this.p(8)} AND status = ${this.p(9)}`,
@@ -660,7 +677,7 @@ function insertAttemptSql(options: NormalizedOptions): string {
       VALUES (${placeholder(1, options)}, ${placeholder(2, options)}, ${placeholder(3, options)}, ${placeholder(4, options)}, ${placeholder(5, options)}, ${placeholder(6, options)}, ${placeholder(7, options)}, ${placeholder(8, options)})`;
   }
   return `INSERT INTO ${parts.qAttempts} (order_id, attempt_number, attempt_id, stable_nonce, active_key, status, creation_owner_id, creation_lease_expires_at)
-    VALUES (${placeholder(1, options)}, ${placeholder(2, options)}, ${placeholder(3, options)}, ${placeholder(4, options)}, ${placeholder(5, options)}, ${placeholder(6, options)}, ${placeholder(7, options)}, ${placeholder(8, options)})
+    VALUES (${placeholder(1, options)}, ${placeholder(2, options)}, ${placeholder(3, options)}, ${placeholder(4, options)}, ${placeholder(5, options)}, ${placeholder(6, options)}, ${placeholder(7, options)}, ${timestampPlaceholder(8, options)})
     ON CONFLICT (active_key) DO NOTHING`;
 }
 
@@ -674,6 +691,11 @@ function insertWebhookEventSql(options: NormalizedOptions, _eventId: string): st
 
 function placeholder(index: number, options: NormalizedOptions): string {
   return options.param_style === "numbered" ? `$${index}` : "?";
+}
+
+function timestampPlaceholder(index: number, options: NormalizedOptions): string {
+  const value = placeholder(index, options);
+  return options.dialect === "postgres" ? `CAST(${value} AS TIMESTAMPTZ)` : value;
 }
 
 function quoteIdentifier(identifier: string, dialect: SiglumeSqlDialect): string {
@@ -764,7 +786,10 @@ function sleep(ms: number): Promise<void> {
 }
 
 function normalizeRows(value: unknown): Record<string, unknown>[] {
-  if (Array.isArray(value)) return value as Record<string, unknown>[];
+  if (Array.isArray(value)) {
+    if (Array.isArray(value[0])) return value[0] as Record<string, unknown>[];
+    return value as Record<string, unknown>[];
+  }
   if (value && typeof value === "object" && Array.isArray((value as { rows?: unknown[] }).rows)) {
     return (value as { rows: Record<string, unknown>[] }).rows;
   }
@@ -773,12 +798,28 @@ function normalizeRows(value: unknown): Record<string, unknown>[] {
 
 function affectedRows(value: unknown): number | null {
   if (typeof value === "number") return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const changed = affectedRows(item);
+      if (changed !== null) return changed;
+    }
+    return null;
+  }
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  for (const key of ["rowCount", "affectedRows", "changes"]) {
+  for (const key of ["rowCount", "affectedRows", "changes", "affected"]) {
     if (typeof record[key] === "number") return record[key] as number;
   }
   return null;
+}
+
+function normalizeTypeOrmExecuteResult(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (typeof record.affected === "number" && typeof record.rowCount !== "number") {
+    return { ...record, rowCount: record.affected };
+  }
+  return value;
 }
 
 function toDrizzleStatement(
