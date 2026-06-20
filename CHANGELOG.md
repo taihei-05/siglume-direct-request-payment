@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.21 - 2026-06-20
+
+Complete the 10-minute integration path with durable adapters, sandbox, and E2E.
+
+- Added a local `siglume-sdrp sandbox` server that creates fake Hosted Checkout
+  sessions, sends signed `direct_payment.confirmed` webhooks, records delivery
+  status, and never charges a wallet.
+- Added `SIGLUME_ENV=sandbox`, `SIGLUME_SANDBOX_API_BASE`, and
+  `siglume-check readiness --sandbox` so sandbox and live checks are explicit.
+- Added durable Express SQL/ORM order-store adapters for Prisma, TypeORM,
+  Sequelize, Drizzle, and generic SQL executors.
+- Added a durable FastAPI SQLAlchemy order-store adapter and packaged it in the
+  Python templates.
+- Added Express and FastAPI E2E tests covering checkout start, checkout URL
+  reuse, signed webhook success, duplicate webhook suppression, retry after
+  handler failure, and Standard-only Micro/Nano blocking.
+- Updated the 10-minute guide, sandbox guide, template READMEs, API reference,
+  troubleshooting, and README so implementers can test locally before live
+  credentials.
+
 ## 0.4.20 - 2026-06-20
 
 Close the v0.4.19 public onboarding safety review.

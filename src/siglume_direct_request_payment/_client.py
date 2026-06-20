@@ -15,6 +15,7 @@ import httpx
 
 
 DEFAULT_SIGLUME_API_BASE = "https://siglume.com/v1"
+DEFAULT_SIGLUME_SANDBOX_API_BASE = "http://127.0.0.1:8787/v1"
 DIRECT_REQUEST_PAYMENT_CHALLENGE_SCHEME = "siglume-external-402-v1"
 # Recurring (subscription / scheduled autopay) approval uses a DISTINCT scheme
 # with cadence bound into the HMAC, so a one-time checkout challenge can never
@@ -25,7 +26,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.20"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.21"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
 DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain"
@@ -271,7 +272,7 @@ class DirectRequestPaymentClient:
                 "Developer Portal API keys are not accepted."
             )
         self._auth_token = token
-        self.base_url = _normalize_api_base_url(base_url or _env_value("SIGLUME_API_BASE") or DEFAULT_SIGLUME_API_BASE)
+        self.base_url = _normalize_api_base_url(base_url or _default_api_base_url())
         self.timeout = max(float(timeout), 0.001)
         self.user_agent = user_agent
         self._client = client
@@ -553,7 +554,7 @@ class DirectRequestPaymentMerchantClient:
                 "Developer Portal API keys are not accepted."
             )
         self._auth_token = token
-        self.base_url = _normalize_api_base_url(base_url or _env_value("SIGLUME_API_BASE") or DEFAULT_SIGLUME_API_BASE)
+        self.base_url = _normalize_api_base_url(base_url or _default_api_base_url())
         self.timeout = max(float(timeout), 0.001)
         self.user_agent = user_agent
         self._client = client
@@ -1580,3 +1581,12 @@ def _env_value(name: str) -> str | None:
     if value and value.strip():
         return value.strip()
     return None
+
+
+def _default_api_base_url() -> str:
+    explicit = _env_value("SIGLUME_API_BASE")
+    if explicit:
+        return explicit
+    if str(_env_value("SIGLUME_ENV") or "").lower() == "sandbox":
+        return _env_value("SIGLUME_SANDBOX_API_BASE") or DEFAULT_SIGLUME_SANDBOX_API_BASE
+    return DEFAULT_SIGLUME_API_BASE

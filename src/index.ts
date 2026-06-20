@@ -1,4 +1,5 @@
 export const DEFAULT_SIGLUME_API_BASE = "https://siglume.com/v1";
+export const DEFAULT_SIGLUME_SANDBOX_API_BASE = "http://127.0.0.1:8787/v1";
 export const DIRECT_REQUEST_PAYMENT_CHALLENGE_SCHEME = "siglume-external-402-v1";
 // Recurring (subscription / scheduled autopay) approval uses a DISTINCT scheme
 // with cadence bound into the HMAC, so a one-time checkout challenge can never
@@ -9,7 +10,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.20";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.21";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain";
@@ -693,7 +694,7 @@ export class DirectRequestPaymentClient {
       throw new SiglumeDirectRequestPaymentError("A fetch implementation is required in this runtime.");
     }
     this.#authToken = authToken;
-    this.base_url = normalizeApiBaseUrl(options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE);
+    this.base_url = normalizeApiBaseUrl(options.base_url ?? defaultApiBaseUrl());
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
     this.user_agent = options.user_agent ?? `@siglume/direct-request-payment/${DIRECT_REQUEST_PAYMENT_SDK_VERSION}`;
     this.fetch_impl = fetchImpl;
@@ -887,7 +888,7 @@ export class DirectRequestPaymentMerchantClient {
       throw new SiglumeDirectRequestPaymentError("A fetch implementation is required in this runtime.");
     }
     this.#authToken = authToken;
-    this.base_url = normalizeApiBaseUrl(options.base_url ?? envValue("SIGLUME_API_BASE") ?? DEFAULT_SIGLUME_API_BASE);
+    this.base_url = normalizeApiBaseUrl(options.base_url ?? defaultApiBaseUrl());
     this.timeout_ms = Math.max(1, Math.trunc(options.timeout_ms ?? 15000));
     this.user_agent = options.user_agent ?? `@siglume/direct-request-payment/${DIRECT_REQUEST_PAYMENT_SDK_VERSION}`;
     this.fetch_impl = fetchImpl;
@@ -1878,6 +1879,15 @@ function envValue(name: string): string | undefined {
   }
   const value = process.env[name];
   return value && value.trim() ? value.trim() : undefined;
+}
+
+function defaultApiBaseUrl(): string {
+  const explicit = envValue("SIGLUME_API_BASE");
+  if (explicit) return explicit;
+  if ((envValue("SIGLUME_ENV") || "").toLowerCase() === "sandbox") {
+    return envValue("SIGLUME_SANDBOX_API_BASE") || DEFAULT_SIGLUME_SANDBOX_API_BASE;
+  }
+  return DEFAULT_SIGLUME_API_BASE;
 }
 
 function bodyBytes(body: DirectRequestPaymentWebhookSignatureBody): Uint8Array {

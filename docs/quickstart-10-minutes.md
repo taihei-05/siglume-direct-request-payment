@@ -11,7 +11,43 @@ The SDK supplies the readiness check, route files, webhook verification, payment
 classification, and the order-store adapter contract. Your app supplies the
 real order lookup and fulfillment writes.
 
-## 0. Readiness first
+## 0. Run the sandbox first
+
+Do this before touching live Siglume credentials. The local sandbox is a tiny
+Siglume-compatible API server bundled with the SDK. It creates fake checkout
+sessions, signs webhooks with your sandbox secret, records delivery status, and
+never charges a wallet.
+
+In one terminal, point it at your product's local webhook route:
+
+```bash
+npx siglume-sdrp sandbox \
+  --origin http://localhost:3000 \
+  --webhook-url http://localhost:3000/payments/webhooks/siglume
+```
+
+Use the values it prints in your product `.env`:
+
+```bash
+SIGLUME_ENV=sandbox
+SIGLUME_API_BASE=http://127.0.0.1:8787/v1
+SIGLUME_MERCHANT_AUTH_TOKEN=sandbox_merchant_token
+SIGLUME_DIRECT_PAYMENT_MERCHANT=sandbox_merchant
+SHOP_PUBLIC_ORIGIN=http://localhost:3000
+SHOP_WEBHOOK_URL=http://localhost:3000/payments/webhooks/siglume
+SIGLUME_WEBHOOK_SECRET=whsec_sandbox_local
+```
+
+Then run:
+
+```bash
+npx siglume-check readiness --sandbox
+```
+
+The sandbox readiness check proves your local server can receive a signed
+`direct_payment.confirmed` delivery before you use live credentials.
+
+## 1. Live readiness
 
 Install the SDK in your product.
 
@@ -64,7 +100,7 @@ npx siglume-check readiness --no-api --json
 human web checkout path, run readiness without `--no-api` and fix every FAIL
 item.
 
-## 1. Copy integration files into your product
+## 2. Copy integration files into your product
 
 For Express:
 
@@ -81,7 +117,7 @@ siglume-sdrp init fastapi --target app/siglume
 These commands copy framework-specific route files into your codebase. The
 generated files are intentionally small and are meant to be edited.
 
-## 2. Mount the routes
+## 3. Mount the routes
 
 Express:
 
@@ -125,7 +161,7 @@ app.include_router(
 )
 ```
 
-## 3. Replace the order-store example
+## 4. Adapter responsibilities
 
 Replace the example store with your product's order database. The adapter must:
 
@@ -146,7 +182,51 @@ Micro / Nano, checkout returns `METERED_INTEGRATION_REQUIRED` until you set
 fulfilled-but-unsettled state, settlement reconciliation, past-due handling, and
 terminal write-off handling.
 
-## 4. Start checkout from your frontend
+## 5. Use a real database adapter
+
+The copied files include durable database adapters. Use these before opening
+checkout to users; the `*.example.*` stores are only for reading the interface.
+
+Express:
+
+```ts
+import {
+  createPrismaSiglumeOrderStore,
+  createTypeOrmSiglumeOrderStore,
+  createSequelizeSiglumeOrderStore,
+  createDrizzleSiglumeOrderStore,
+} from "./siglume/siglume-order-store.sql.js";
+
+const order_store = createPrismaSiglumeOrderStore(prisma, {
+  dialect: "postgres",
+  orders_table: "orders",
+  order_id_column: "id",
+  amount_minor_column: "amount_minor",
+  currency_column: "currency",
+});
+```
+
+FastAPI:
+
+```py
+from sqlalchemy.orm import sessionmaker
+from .siglume.siglume_order_store_sqlalchemy import (
+    SQLAlchemySiglumeOrderStore,
+    create_sqlalchemy_engine,
+    create_sqlalchemy_siglume_schema,
+)
+
+engine = create_sqlalchemy_engine(os.environ["DATABASE_URL"])
+create_sqlalchemy_siglume_schema(engine)
+SessionLocal = sessionmaker(engine, future=True)
+order_store = SQLAlchemySiglumeOrderStore(SessionLocal)
+```
+
+The adapters persist one checkout attempt per order, reuse the checkout URL on
+retries, record webhook event ids only after the order update/review write
+succeeds, and keep duplicate deliveries from double-fulfilling an order.
+
+## 6. Start checkout from your frontend
 
 Call your own server route:
 
@@ -158,16 +238,17 @@ curl -X POST https://api.your-product.example/payments/checkout/siglume/start \
 
 Redirect the shopper to the returned `checkout_url`.
 
-## 5. Done means
+## 7. Done means
 
 Your product is integrated when:
 
-- `npx siglume-check readiness` passes,
+- `npx siglume-check readiness --sandbox` passes against your local product,
+- `npx siglume-check readiness` passes against live Siglume credentials,
 - your product has mounted checkout and webhook routes,
-- your order database stores one active checkout attempt and `challenge_hash` for the order,
+- your order database uses the SQL/ORM adapter or an equivalent transactional store,
 - the signed webhook verifies against the raw body,
 - `standard_settled` marks the order paid once,
-- duplicate webhook deliveries do not double-fulfill the order.
+- a failed webhook handler is retried and duplicate webhook deliveries do not double-fulfill the order.
 
 For Micro / Nano revenue reconciliation, read
 [Payment lifecycle](./payment-lifecycle.md) and

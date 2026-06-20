@@ -2,10 +2,12 @@
 
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  buildWebhookSignatureHeader,
   DirectRequestPaymentMerchantClient,
   HostedCheckoutNotAvailableError,
   SiglumeApiError,
@@ -29,6 +31,10 @@ async function main() {
     await readiness(parseArgs(args));
     return;
   }
+  if (command === "sandbox") {
+    await sandbox(parseArgs(args));
+    return;
+  }
   if (command === "init") {
     await init(args);
     return;
@@ -41,6 +47,7 @@ function printHelp() {
 
 Usage:
   siglume-check readiness --merchant <key> --origin <https://shop.example> --webhook-url <https://api.example/siglume/webhook>
+  siglume-sdrp sandbox --webhook-url <http://localhost:3000/payments/webhooks/siglume>
   siglume-sdrp init express --target src/siglume
   siglume-sdrp init fastapi --target app/siglume
 
@@ -51,9 +58,17 @@ Readiness options:
   --currency <JPY|USD>      Probe currency. Defaults to SIGLUME_DIRECT_PAYMENT_TEST_CURRENCY or JPY.
   --amount-minor <amount>   Standard-band probe amount. Defaults to 501 for JPY, 301 for USD.
   --base-url <url>          Siglume API base URL. Defaults to SIGLUME_API_BASE or production.
+  --sandbox                 Use the local sandbox default API base (http://127.0.0.1:8787/v1).
   --no-api                  Validate local config only; do not call Siglume.
   --no-probe                Partial API check only; readiness will not be reported as ready.
   --json                    Print machine-readable JSON.
+
+Sandbox options:
+  --port <port>             Local sandbox port. Defaults to 8787.
+  --merchant <key>          Sandbox merchant key. Defaults to sandbox_merchant.
+  --origin <origin>         Shop origin allowed by the sandbox. Defaults to http://localhost:3000.
+  --webhook-url <url>       Your local product webhook URL.
+  --webhook-secret <secret> Sandbox webhook secret. Defaults to whsec_sandbox_local.
 `);
 }
 
@@ -67,6 +82,8 @@ function parseArgs(args) {
       out.probe = false;
     } else if (arg === "--json") {
       out.json = true;
+    } else if (arg === "--sandbox") {
+      out.sandbox = true;
     } else if (arg === "--force") {
       out.force = true;
     } else if (arg.startsWith("--")) {
@@ -86,6 +103,7 @@ function parseArgs(args) {
 
 async function readiness(options) {
   const checks = [];
+  const sandboxMode = Boolean(options.sandbox) || String(process.env.SIGLUME_ENV || "").toLowerCase() === "sandbox";
   const merchant = options.merchant || process.env.SIGLUME_DIRECT_PAYMENT_MERCHANT || "";
   const origin = options.origin || process.env.SHOP_PUBLIC_ORIGIN || "";
   const webhookUrl = options.webhookUrl || process.env.SHOP_WEBHOOK_URL || "";
@@ -93,18 +111,20 @@ async function readiness(options) {
   const token = process.env.SIGLUME_MERCHANT_AUTH_TOKEN || process.env.SIGLUME_AUTH_TOKEN || "";
   const currency = normalizeCurrency(options.currency || process.env.SIGLUME_DIRECT_PAYMENT_TEST_CURRENCY || "JPY");
   const amountMinor = Number(options.amountMinor || process.env.SIGLUME_DIRECT_PAYMENT_TEST_AMOUNT_MINOR || (currency === "USD" ? 301 : 501));
+  const baseUrl = options.baseUrl || process.env.SIGLUME_API_BASE || (sandboxMode ? process.env.SIGLUME_SANDBOX_API_BASE || "http://127.0.0.1:8787/v1" : undefined);
 
+  check(checks, "target_environment", true, sandboxMode ? "sandbox" : "live");
   check(checks, "merchant_key", Boolean(merchant), "Set SIGLUME_DIRECT_PAYMENT_MERCHANT or pass --merchant.");
-  check(checks, "merchant_token", Boolean(token) && !token.startsWith("cli_"), "Set SIGLUME_MERCHANT_AUTH_TOKEN to a merchant Siglume bearer token, not a cli_ key.");
-  check(checks, "shop_origin", isHttpsOrigin(origin), "Set SHOP_PUBLIC_ORIGIN to an https origin, for example https://www.example.com.");
-  check(checks, "webhook_url", isHttpsUrl(webhookUrl), "Set SHOP_WEBHOOK_URL to a public https webhook URL.");
+  check(checks, "merchant_token", Boolean(token) && (sandboxMode || !token.startsWith("cli_")), "Set SIGLUME_MERCHANT_AUTH_TOKEN to a merchant Siglume bearer token, not a cli_ key.");
+  check(checks, "shop_origin", isAllowedOrigin(origin, sandboxMode), sandboxMode ? "Set SHOP_PUBLIC_ORIGIN to your local product origin, for example http://localhost:3000." : "Set SHOP_PUBLIC_ORIGIN to an https origin, for example https://www.example.com.");
+  check(checks, "webhook_url", isAllowedWebhookUrl(webhookUrl, sandboxMode), sandboxMode ? "Set SHOP_WEBHOOK_URL to your local webhook URL, for example http://localhost:3000/payments/webhooks/siglume." : "Set SHOP_WEBHOOK_URL to a public https webhook URL.");
   check(checks, "webhook_secret_present", Boolean(webhookSecret) && webhookSecret.startsWith("whsec_"), "Set SIGLUME_WEBHOOK_SECRET to the webhook signing secret returned by setupCheckout/setup_checkout.");
   check(checks, "standard_probe_amount", isStandardAmount(currency, amountMinor), "Use a Standard-band probe amount: JPY 501+ or USD 301+ minor units.");
 
   if (options.api && !hasFailures(checks)) {
     const merchantClient = new DirectRequestPaymentMerchantClient({
       auth_token: token,
-      base_url: options.baseUrl || process.env.SIGLUME_API_BASE,
+      base_url: baseUrl,
     });
     let matchingWebhookSubscription = null;
     try {
@@ -185,7 +205,7 @@ async function readiness(options) {
     if (ok && !options.api) {
       console.log("Local config checks passed. API, Hosted Checkout, and webhook delivery readiness were not verified.");
     } else {
-      console.log(ok ? "Ready for 10-minute SDRP integration." : "Not ready. Fix the FAIL items before coding checkout.");
+      console.log(ok ? `Ready for 10-minute SDRP integration (${sandboxMode ? "sandbox" : "live"}).` : "Not ready. Fix the FAIL items before coding checkout.");
     }
   }
   if (!ok) {
@@ -214,6 +234,370 @@ async function init(args) {
   await copyDir(from, to, Boolean(parsed.force));
   console.log(`Copied ${framework} SDRP integration files to ${to}`);
   console.log("Wire the exported router into your app, then run siglume-check readiness before opening checkout.");
+}
+
+async function sandbox(options) {
+  const port = Number(options.port || process.env.SIGLUME_SANDBOX_PORT || 8787);
+  const merchant = options.merchant || process.env.SIGLUME_DIRECT_PAYMENT_MERCHANT || "sandbox_merchant";
+  const origin = options.origin || process.env.SHOP_PUBLIC_ORIGIN || "http://localhost:3000";
+  const webhookUrl = options.webhookUrl || process.env.SHOP_WEBHOOK_URL || "";
+  const webhookSecret = options.webhookSecret || process.env.SIGLUME_WEBHOOK_SECRET || "whsec_sandbox_local";
+  if (!Number.isSafeInteger(port) || port <= 0) {
+    throw new Error("--port must be a positive integer.");
+  }
+  if (!webhookUrl) {
+    throw new Error("sandbox requires --webhook-url <your local product webhook URL>.");
+  }
+  if (!isAllowedWebhookUrl(webhookUrl, true)) {
+    throw new Error("--webhook-url must be https or local http.");
+  }
+
+  const state = {
+    merchant,
+    origin,
+    webhookUrl,
+    webhookSecret,
+    subscriptionId: "whsub_sandbox_local",
+    sessions: new Map(),
+    deliveries: [],
+  };
+
+  const server = createServer(async (req, res) => {
+    try {
+      await handleSandboxRequest(req, res, state, port);
+    } catch (error) {
+      sendJson(res, 500, {
+        error: {
+          code: "SANDBOX_INTERNAL_ERROR",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  });
+
+  await new Promise((resolveServer) => server.listen(port, "127.0.0.1", resolveServer));
+  const apiBase = `http://127.0.0.1:${port}/v1`;
+  if (options.json) {
+    console.log(JSON.stringify({
+      api_base: apiBase,
+      merchant,
+      webhook_url: webhookUrl,
+      webhook_secret: webhookSecret,
+    }, null, 2));
+  } else {
+    console.log("Siglume SDRP sandbox is running.");
+    console.log(`SIGLUME_ENV=sandbox`);
+    console.log(`SIGLUME_API_BASE=${apiBase}`);
+    console.log(`SIGLUME_DIRECT_PAYMENT_MERCHANT=${merchant}`);
+    console.log(`SIGLUME_MERCHANT_AUTH_TOKEN=sandbox_merchant_token`);
+    console.log(`SIGLUME_WEBHOOK_SECRET=${webhookSecret}`);
+    console.log(`SHOP_PUBLIC_ORIGIN=${origin}`);
+    console.log(`SHOP_WEBHOOK_URL=${webhookUrl}`);
+    console.log("");
+    console.log(`Then run: siglume-check readiness --sandbox`);
+  }
+}
+
+async function handleSandboxRequest(req, res, state, port) {
+  const url = new URL(req.url || "/", `http://127.0.0.1:${port}`);
+  if (req.method === "GET" && url.pathname === "/favicon.ico") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === `/v1/sdrp/direct-payments/merchants/${state.merchant}`) {
+    sendEnvelope(res, 200, {
+      merchant_account: {
+        merchant_account_id: "macc_sandbox_local",
+        merchant: state.merchant,
+        merchant_user_id: "usr_sandbox_merchant",
+        billing_mandate_id: "mandate_sandbox_active",
+        status: "active",
+        billing_status: "active",
+        billing_plan: "launch",
+        billing_currency: "JPY",
+        token_symbol: "JPYC",
+        metadata_jsonb: {
+          environment: "sandbox",
+          checkout_allowed_origins: [state.origin],
+          webhook_callback_url: state.webhookUrl,
+        },
+      },
+      challenge_secret_created: true,
+      mandate: { mandate_id: "mandate_sandbox_active", status: "active" },
+    });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/v1/market/webhooks/subscriptions") {
+    sendEnvelope(res, 200, [sandboxSubscription(state)]);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/v1/sdrp/direct-payments/checkout-sessions") {
+    const body = await readJson(req);
+    if (String(body.merchant || "") !== state.merchant) {
+      sendJson(res, 404, { error: { code: "EXTERNAL_402_MERCHANT_NOT_FOUND", message: "sandbox merchant not found" } });
+      return;
+    }
+    const sessionId = `chk_sandbox_${state.sessions.size + 1}`;
+    const challengeHash = `sha256:sandbox_${hashString(`${sessionId}:${body.nonce || ""}`).slice(0, 32)}`;
+    const session = {
+      session_id: sessionId,
+      merchant: state.merchant,
+      amount_minor: Number(body.amount_minor),
+      currency: String(body.currency || "JPY").toUpperCase(),
+      token_symbol: String(body.currency || "JPY").toUpperCase() === "USD" ? "USDC" : "JPYC",
+      status: "open",
+      challenge_hash: challengeHash,
+      success_url: String(body.success_url || ""),
+      cancel_url: String(body.cancel_url || ""),
+      metadata_jsonb: body.metadata && typeof body.metadata === "object" ? body.metadata : {},
+      checkout_url: `http://127.0.0.1:${port}/pay/${sessionId}`,
+      expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    };
+    state.sessions.set(sessionId, session);
+    sendEnvelope(res, 201, {
+      checkout_url: session.checkout_url,
+      session_id: sessionId,
+      challenge_hash: challengeHash,
+      status: "open",
+      expires_at: session.expires_at,
+    });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname.startsWith("/v1/sdrp/direct-payments/checkout-sessions/")) {
+    const sessionId = decodeURIComponent(url.pathname.split("/").pop() || "");
+    const session = state.sessions.get(sessionId);
+    if (!session) {
+      sendJson(res, 404, { error: { code: "CHECKOUT_SESSION_NOT_FOUND", message: "sandbox session not found" } });
+      return;
+    }
+    sendEnvelope(res, 200, session);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/v1/market/webhooks/test-deliveries") {
+    const body = await readJson(req);
+    const event = sandboxEvent({
+      event_type: String(body.event_type || "direct_payment.confirmed"),
+      data: body.data && typeof body.data === "object" ? body.data : {},
+    });
+    await deliverSandboxWebhook(state, event);
+    sendEnvelope(res, 201, { queued: true, event: { id: event.id, type: event.type } });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/v1/market/webhooks/deliveries") {
+    let deliveries = [...state.deliveries];
+    const eventType = url.searchParams.get("event_type");
+    if (eventType) deliveries = deliveries.filter((delivery) => delivery.event_type === eventType);
+    const limit = Number(url.searchParams.get("limit") || 50);
+    sendEnvelope(res, 200, deliveries.slice(0, Math.max(1, Math.min(limit, 100))));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname.startsWith("/pay/")) {
+    const sessionId = decodeURIComponent(url.pathname.split("/").pop() || "");
+    const session = state.sessions.get(sessionId);
+    if (!session) {
+      sendHtml(res, 404, "<h1>Sandbox checkout session not found</h1>");
+      return;
+    }
+    sendHtml(res, 200, sandboxCheckoutHtml(session));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname.startsWith("/v1/sandbox/checkout-sessions/") && url.pathname.endsWith("/confirm")) {
+    const parts = url.pathname.split("/");
+    const sessionId = decodeURIComponent(parts[4] || "");
+    const session = state.sessions.get(sessionId);
+    if (!session) {
+      sendJson(res, 404, { error: { code: "CHECKOUT_SESSION_NOT_FOUND", message: "sandbox session not found" } });
+      return;
+    }
+    session.status = "paid";
+    session.requirement_id = `dpr_sandbox_${sessionId}`;
+    const event = sandboxPaymentConfirmedEvent(session);
+    await deliverSandboxWebhook(state, event);
+    sendEnvelope(res, 200, {
+      status: "paid",
+      redirect_url: `${session.success_url}${session.success_url.includes("?") ? "&" : "?"}session_id=${encodeURIComponent(sessionId)}`,
+      event: { id: event.id, type: event.type },
+    });
+    return;
+  }
+
+  sendJson(res, 404, { error: { code: "SANDBOX_ROUTE_NOT_FOUND", message: "sandbox route not found" } });
+}
+
+function sandboxSubscription(state) {
+  return {
+    id: state.subscriptionId,
+    webhook_subscription_id: state.subscriptionId,
+    callback_url: state.webhookUrl,
+    status: "active",
+    event_types: ["direct_payment.confirmed"],
+    signing_secret_hint: state.webhookSecret.slice(-4),
+    metadata: { environment: "sandbox" },
+  };
+}
+
+function sandboxEvent({ event_type, data }) {
+  return {
+    id: `evt_sandbox_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+    type: event_type,
+    api_version: "2026-06-20",
+    occurred_at: new Date().toISOString(),
+    data: {
+      mode: "external_402",
+      pricing_band: "standard",
+      finality: "per_payment_onchain",
+      settlement_status: "settled",
+      requirement_id: `dpr_sandbox_${Date.now()}`,
+      challenge_hash: "sha256:sandbox_readiness",
+      chain_receipt_id: `chain_sandbox_${Date.now()}`,
+      environment: "sandbox",
+      ...data,
+    },
+  };
+}
+
+function sandboxPaymentConfirmedEvent(session) {
+  const pricingBand = classifySandboxAmount(session.currency, Number(session.amount_minor));
+  const metered = pricingBand === "micro" || pricingBand === "nano";
+  return sandboxEvent({
+    event_type: "direct_payment.confirmed",
+    data: {
+      merchant: session.merchant,
+      requirement_id: session.requirement_id,
+      direct_payment_requirement_id: session.requirement_id,
+      challenge_hash: session.challenge_hash,
+      amount_minor: session.amount_minor,
+      currency: session.currency,
+      token_symbol: session.token_symbol,
+      pricing_band: pricingBand,
+      settlement_cadence: pricingBand === "micro" ? "weekly" : pricingBand === "nano" ? "monthly" : "per_payment",
+      finality: metered ? "aggregated_onchain_settlement" : "per_payment_onchain",
+      settlement_status: metered ? "pending_settlement" : "settled",
+      chain_receipt_id: metered ? undefined : `chain_sandbox_${session.session_id}`,
+      environment: "sandbox",
+    },
+  });
+}
+
+async function deliverSandboxWebhook(state, event) {
+  const rawBody = JSON.stringify(event);
+  const signature = await buildWebhookSignatureHeader(state.webhookSecret, rawBody);
+  let status = "failed";
+  let responseStatus = null;
+  try {
+    const response = await fetch(state.webhookUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "siglume-signature": signature,
+        "x-siglume-environment": "sandbox",
+      },
+      body: rawBody,
+    });
+    responseStatus = response.status;
+    status = response.ok ? "delivered" : "failed";
+  } catch {
+    status = "failed";
+  }
+  state.deliveries.unshift({
+    id: `whdel_sandbox_${state.deliveries.length + 1}`,
+    subscription_id: state.subscriptionId,
+    event_id: event.id,
+    event_type: event.type,
+    delivery_status: status,
+    response_status: responseStatus,
+    delivered_at: status === "delivered" ? new Date().toISOString() : null,
+  });
+}
+
+function sandboxCheckoutHtml(session) {
+  return `<!doctype html>
+<meta charset="utf-8">
+<title>Siglume SDRP Sandbox Checkout</title>
+<body style="font-family: system-ui, sans-serif; max-width: 680px; margin: 48px auto; line-height: 1.5;">
+  <h1>Siglume SDRP Sandbox Checkout</h1>
+  <p>This is a local sandbox page. No real wallet, token, or on-chain settlement is used.</p>
+  <dl>
+    <dt>Session</dt><dd>${escapeHtml(session.session_id)}</dd>
+    <dt>Merchant</dt><dd>${escapeHtml(session.merchant)}</dd>
+    <dt>Amount</dt><dd>${escapeHtml(String(session.amount_minor))} ${escapeHtml(session.currency)}</dd>
+    <dt>Status</dt><dd id="status">${escapeHtml(session.status)}</dd>
+  </dl>
+  <button id="confirm" style="font: inherit; padding: 10px 14px;">Confirm sandbox payment</button>
+  <pre id="output"></pre>
+  <script>
+    document.getElementById("confirm").addEventListener("click", async () => {
+      const response = await fetch("/v1/sandbox/checkout-sessions/${encodeURIComponent(session.session_id)}/confirm", { method: "POST" });
+      const body = await response.json();
+      document.getElementById("status").textContent = body.data?.status || "failed";
+      document.getElementById("output").textContent = JSON.stringify(body, null, 2);
+    });
+  </script>
+</body>`;
+}
+
+async function readJson(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const text = Buffer.concat(chunks).toString("utf8");
+  if (!text) return {};
+  return JSON.parse(text);
+}
+
+function sendEnvelope(res, status, data) {
+  sendJson(res, status, { data, meta: { request_id: "req_sandbox", trace_id: "trc_sandbox" } });
+}
+
+function sendJson(res, status, body) {
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(JSON.stringify(body));
+}
+
+function sendHtml(res, status, body) {
+  res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
+  res.end(body);
+}
+
+function hashString(value) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(16).padStart(8, "0");
+}
+
+function classifySandboxAmount(currency, amountMinor) {
+  const normalizedCurrency = String(currency || "").toUpperCase();
+  if (normalizedCurrency === "JPY") {
+    if (amountMinor >= 501) return "standard";
+    if (amountMinor >= 50) return "micro";
+    return "nano";
+  }
+  if (normalizedCurrency === "USD") {
+    if (amountMinor >= 301) return "standard";
+    if (amountMinor >= 31) return "micro";
+    return "nano";
+  }
+  return "standard";
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  }[char]));
 }
 
 async function findCopyConflicts(from, to) {
@@ -297,6 +681,17 @@ function isHttpsOrigin(value) {
   }
 }
 
+function isAllowedOrigin(value, sandboxMode) {
+  if (isHttpsOrigin(value)) return true;
+  if (!sandboxMode) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" && isLocalhost(url.hostname) && url.origin === value.replace(/\/$/, "");
+  } catch {
+    return false;
+  }
+}
+
 function isHttpsUrl(value) {
   try {
     const url = new URL(value);
@@ -304,6 +699,22 @@ function isHttpsUrl(value) {
   } catch {
     return false;
   }
+}
+
+function isAllowedWebhookUrl(value, sandboxMode) {
+  if (isHttpsUrl(value)) return true;
+  if (!sandboxMode) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" && isLocalhost(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isLocalhost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
 }
 
 function normalizeCurrency(value) {

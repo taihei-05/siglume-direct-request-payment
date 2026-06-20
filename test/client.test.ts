@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAllowanceExecutionPayload,
   buildPaymentExecutionPayload,
+  DEFAULT_SIGLUME_SANDBOX_API_BASE,
   DIRECT_REQUEST_PAYMENT_SDK_VERSION,
   DirectRequestPaymentClient,
   DirectRequestPaymentMerchantClient,
@@ -127,6 +128,35 @@ describe("DirectRequestPaymentClient", () => {
       base_url: "https://user@siglume.example/v1",
       fetch: fetchImpl,
     })).toThrow(/userinfo/);
+  });
+
+  it("defaults to the local sandbox API when SIGLUME_ENV=sandbox", () => {
+    const previousEnv = process.env.SIGLUME_ENV;
+    const previousApiBase = process.env.SIGLUME_API_BASE;
+    const previousSandboxBase = process.env.SIGLUME_SANDBOX_API_BASE;
+    try {
+      delete process.env.SIGLUME_API_BASE;
+      delete process.env.SIGLUME_SANDBOX_API_BASE;
+      process.env.SIGLUME_ENV = "sandbox";
+      const client = new DirectRequestPaymentClient({
+        auth_token: "buyer_token",
+        fetch: (async () => new Response("{}")) as typeof fetch,
+      });
+      const merchant = new DirectRequestPaymentMerchantClient({
+        auth_token: "merchant_token",
+        fetch: (async () => new Response("{}")) as typeof fetch,
+      });
+
+      expect(client.base_url).toBe(DEFAULT_SIGLUME_SANDBOX_API_BASE);
+      expect(merchant.base_url).toBe(DEFAULT_SIGLUME_SANDBOX_API_BASE);
+    } finally {
+      if (previousEnv === undefined) delete process.env.SIGLUME_ENV;
+      else process.env.SIGLUME_ENV = previousEnv;
+      if (previousApiBase === undefined) delete process.env.SIGLUME_API_BASE;
+      else process.env.SIGLUME_API_BASE = previousApiBase;
+      if (previousSandboxBase === undefined) delete process.env.SIGLUME_SANDBOX_API_BASE;
+      else process.env.SIGLUME_SANDBOX_API_BASE = previousSandboxBase;
+    }
   });
 
   it("rejects non-integer payment amounts before making a request", async () => {

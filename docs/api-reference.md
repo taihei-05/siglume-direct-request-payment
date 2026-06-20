@@ -48,6 +48,8 @@ Standard can be marked paid only after settled per-payment finality, while Micro
 | `SIGLUME_MERCHANT_AUTH_TOKEN` | merchant setup helper | merchant Siglume bearer token for self-service setup |
 | `SIGLUME_AUTH_TOKEN` | user-authenticated helper | buyer Siglume bearer token for payment / buyer statements, or provider Siglume bearer token for provider statements |
 | `SIGLUME_API_BASE` | optional | API base URL override; defaults to `https://siglume.com/v1` |
+| `SIGLUME_ENV` | optional | Set to `sandbox` to default clients and readiness to the local sandbox API |
+| `SIGLUME_SANDBOX_API_BASE` | optional | Sandbox API override; defaults to `http://127.0.0.1:8787/v1` when `SIGLUME_ENV=sandbox` |
 | `SIGLUME_WEBHOOK_SECRET` | merchant server | webhook signing secret returned as `whsec_...` |
 
 Do not use a Developer Portal `cli_` API key as either auth token. Merchant
@@ -1214,6 +1216,7 @@ Both packages export these importable constants:
 | Constant | Value |
 | --- | --- |
 | `DEFAULT_SIGLUME_API_BASE` | `https://siglume.com/v1` |
+| `DEFAULT_SIGLUME_SANDBOX_API_BASE` | `http://127.0.0.1:8787/v1` |
 | `DIRECT_REQUEST_PAYMENT_CHALLENGE_SCHEME` | `siglume-external-402-v1` |
 | `DIRECT_REQUEST_PAYMENT_RECURRING_CHALLENGE_SCHEME` | `siglume-external-402-recurring-v1` |
 | `DIRECT_REQUEST_PAYMENT_MODE` | `external_402` |

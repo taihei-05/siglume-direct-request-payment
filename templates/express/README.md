@@ -10,7 +10,16 @@ import {
   createSiglumeSdrpWebhookHandler,
   type SiglumeSdrpRouterOptions,
 } from "./siglume/siglume-sdrp-routes.js";
-import { siglumeOrderStore } from "./siglume/siglume-order-store.example.js";
+import { createPrismaSiglumeOrderStore } from "./siglume/siglume-order-store.sql.js";
+import { prisma } from "../db/prisma.js";
+
+const siglumeOrderStore = createPrismaSiglumeOrderStore(prisma, {
+  dialect: "postgres",
+  orders_table: "orders",
+  order_id_column: "id",
+  amount_minor_column: "amount_minor",
+  currency_column: "currency",
+});
 
 const siglumeOptions: SiglumeSdrpRouterOptions = {
   merchant: process.env.SIGLUME_DIRECT_PAYMENT_MERCHANT!,
@@ -31,7 +40,12 @@ app.use(express.json());
 app.use("/payments", createSiglumeSdrpCheckoutRouter(siglumeOptions));
 ```
 
-Replace `siglume-order-store.example.ts` with your real order database adapter.
+Use `siglume-order-store.sql.ts` for a durable database-backed adapter. It
+supports Prisma, TypeORM, Sequelize, Drizzle, and any driver that can implement
+the small `SiglumeSqlExecutor` interface. Run
+`createSiglumeSdrpSqlSchema({ dialect: "postgres" })` once in a migration or
+translate the returned SQL into your migration tool.
+
 Keep `processWebhookEventOnce()` transactional: record the webhook event as
 processed only after the order update or review write succeeds. The generated
 route defaults to Standard-only. Enable `allow_metered_payments` only after you

@@ -86,6 +86,8 @@ CLI-first:
 
 ```bash
 npm install @siglume/direct-request-payment
+npx siglume-sdrp sandbox --webhook-url http://localhost:3000/payments/webhooks/siglume
+npx siglume-check readiness --sandbox
 npx siglume-check readiness
 npx siglume-sdrp init express --target src/siglume
 ```
@@ -97,9 +99,12 @@ pip install siglume-direct-request-payment
 siglume-sdrp init fastapi --target app/siglume
 ```
 
-The readiness command checks account, billing, origin, webhook, and Hosted
-Checkout availability before you write checkout code. It also confirms the
-webhook subscription and signed test delivery when API probes are enabled.
+The sandbox command starts a local Siglume-compatible API that creates fake
+checkout sessions and sends signed webhooks to your product. It never charges a
+wallet; see [SDRP Sandbox](./docs/sandbox.md). The readiness command checks
+account, billing, origin, webhook, and Hosted Checkout availability before you
+write checkout code. It also confirms the webhook subscription and signed test
+delivery when API probes are enabled.
 
 Before implementation, confirm Hosted Checkout readiness in
 [Troubleshooting](./docs/troubleshooting.md#hosted-checkout-readiness). For

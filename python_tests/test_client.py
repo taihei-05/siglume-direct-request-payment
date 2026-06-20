@@ -9,6 +9,7 @@ import respx
 from siglume_direct_request_payment import (
     DIRECT_REQUEST_PAYMENT_MODE,
     DIRECT_REQUEST_PAYMENT_SDK_VERSION,
+    DEFAULT_SIGLUME_SANDBOX_API_BASE,
     DirectRequestPaymentClient,
     DirectRequestPaymentMerchantClient,
     DirectRequestPaymentError,
@@ -21,6 +22,18 @@ from siglume_direct_request_payment import (
 def test_runtime_sdk_version_matches_package_metadata() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     assert DIRECT_REQUEST_PAYMENT_SDK_VERSION == pyproject["project"]["version"]
+
+
+def test_clients_default_to_local_sandbox_api_when_siglume_env_is_sandbox(monkeypatch) -> None:
+    monkeypatch.delenv("SIGLUME_API_BASE", raising=False)
+    monkeypatch.delenv("SIGLUME_SANDBOX_API_BASE", raising=False)
+    monkeypatch.setenv("SIGLUME_ENV", "sandbox")
+
+    client = DirectRequestPaymentClient(auth_token="buyer_token")
+    merchant = DirectRequestPaymentMerchantClient(auth_token="merchant_token")
+
+    assert client.base_url == DEFAULT_SIGLUME_SANDBOX_API_BASE
+    assert merchant.base_url == DEFAULT_SIGLUME_SANDBOX_API_BASE
 
 
 def requirement_payload() -> dict:

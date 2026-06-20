@@ -25,6 +25,7 @@ def main() -> None:
     readiness.add_argument("--currency", default=os.getenv("SIGLUME_DIRECT_PAYMENT_TEST_CURRENCY", "JPY"))
     readiness.add_argument("--amount-minor", type=int, default=0)
     readiness.add_argument("--base-url", default=os.getenv("SIGLUME_API_BASE"))
+    readiness.add_argument("--sandbox", action="store_true")
     readiness.add_argument("--no-api", action="store_true")
     readiness.add_argument("--no-probe", action="store_true")
     readiness.add_argument("--json", action="store_true")
@@ -48,20 +49,25 @@ def main() -> None:
 
 def _readiness(args: argparse.Namespace) -> bool:
     checks: list[dict[str, str]] = []
+    sandbox_mode = bool(getattr(args, "sandbox", False)) or str(os.getenv("SIGLUME_ENV") or "").lower() == "sandbox"
     token = os.getenv("SIGLUME_MERCHANT_AUTH_TOKEN") or os.getenv("SIGLUME_AUTH_TOKEN") or ""
     webhook_secret = os.getenv("SIGLUME_WEBHOOK_SECRET") or ""
     currency = str(args.currency).upper()
     amount_minor = int(args.amount_minor or os.getenv("SIGLUME_DIRECT_PAYMENT_TEST_AMOUNT_MINOR") or (301 if currency == "USD" else 501))
+    base_url = args.base_url or os.getenv("SIGLUME_API_BASE")
+    if not base_url and sandbox_mode:
+        base_url = os.getenv("SIGLUME_SANDBOX_API_BASE") or "http://127.0.0.1:8787/v1"
 
+    _check(checks, "target_environment", True, "sandbox" if sandbox_mode else "live")
     _check(checks, "merchant_key", bool(args.merchant), "Set SIGLUME_DIRECT_PAYMENT_MERCHANT or pass --merchant.")
-    _check(checks, "merchant_token", bool(token) and not token.startswith("cli_"), "Set SIGLUME_MERCHANT_AUTH_TOKEN to a merchant Siglume bearer token, not a cli_ key.")
-    _check(checks, "shop_origin", _is_https_origin(args.origin), "Set SHOP_PUBLIC_ORIGIN to an https origin, for example https://www.example.com.")
-    _check(checks, "webhook_url", _is_https_url(args.webhook_url), "Set SHOP_WEBHOOK_URL to a public https webhook URL.")
+    _check(checks, "merchant_token", bool(token) and (sandbox_mode or not token.startswith("cli_")), "Set SIGLUME_MERCHANT_AUTH_TOKEN to a merchant Siglume bearer token, not a cli_ key.")
+    _check(checks, "shop_origin", _is_allowed_origin(args.origin, sandbox_mode), "Set SHOP_PUBLIC_ORIGIN to a valid origin.")
+    _check(checks, "webhook_url", _is_allowed_webhook_url(args.webhook_url, sandbox_mode), "Set SHOP_WEBHOOK_URL to a public https URL, or local http in sandbox.")
     _check(checks, "webhook_secret_present", bool(webhook_secret) and webhook_secret.startswith("whsec_"), "Set SIGLUME_WEBHOOK_SECRET to the webhook signing secret returned by setup_checkout.")
     _check(checks, "standard_probe_amount", _is_standard_amount(currency, amount_minor), "Use a Standard-band probe amount: JPY 501+ or USD 301+ minor units.")
 
     if not args.no_api and not _has_failures(checks):
-        merchant = DirectRequestPaymentMerchantClient(auth_token=token, base_url=args.base_url)
+        merchant = DirectRequestPaymentMerchantClient(auth_token=token, base_url=base_url)
         matching_subscription: dict[str, object] | None = None
         try:
             response = merchant.get_merchant(args.merchant)
@@ -143,7 +149,7 @@ def _readiness(args: argparse.Namespace) -> bool:
         if ok and args.no_api:
             print("Local config checks passed. API, Hosted Checkout, and webhook delivery readiness were not verified.")
         else:
-            print("Ready for 10-minute SDRP integration." if ok else "Not ready. Fix the FAIL items before coding checkout.")
+            print(f"Ready for 10-minute SDRP integration ({'sandbox' if sandbox_mode else 'live'})." if ok else "Not ready. Fix the FAIL items before coding checkout.")
     return ok
 
 
@@ -198,11 +204,39 @@ def _is_https_origin(value: str) -> bool:
         return False
 
 
+def _is_allowed_origin(value: str, sandbox_mode: bool) -> bool:
+    if _is_https_origin(value):
+        return True
+    if not sandbox_mode:
+        return False
+    try:
+        parsed = urlsplit(value)
+        return parsed.scheme == "http" and _is_localhost(parsed.hostname) and value.rstrip("/") == f"{parsed.scheme}://{parsed.netloc}"
+    except Exception:
+        return False
+
+
 def _is_https_url(value: str) -> bool:
     try:
         return urlsplit(value).scheme == "https"
     except Exception:
         return False
+
+
+def _is_allowed_webhook_url(value: str, sandbox_mode: bool) -> bool:
+    if _is_https_url(value):
+        return True
+    if not sandbox_mode:
+        return False
+    try:
+        parsed = urlsplit(value)
+        return parsed.scheme == "http" and _is_localhost(parsed.hostname)
+    except Exception:
+        return False
+
+
+def _is_localhost(hostname: str | None) -> bool:
+    return str(hostname or "").lower() in {"localhost", "127.0.0.1", "::1"}
 
 
 def _is_standard_amount(currency: str, amount_minor: int) -> bool:

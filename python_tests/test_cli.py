@@ -19,6 +19,7 @@ def _args(**overrides: object) -> Namespace:
         "no_api": False,
         "no_probe": True,
         "json": True,
+        "sandbox": False,
     }
     values.update(overrides)
     return Namespace(**values)
@@ -29,6 +30,30 @@ def test_readiness_fails_without_webhook_secret(monkeypatch) -> None:
     monkeypatch.delenv("SIGLUME_WEBHOOK_SECRET", raising=False)
 
     assert _readiness(_args(no_api=True)) is False
+
+
+def test_readiness_sandbox_allows_local_http(monkeypatch) -> None:
+    monkeypatch.setenv("SIGLUME_MERCHANT_AUTH_TOKEN", "sandbox_merchant_token")
+    monkeypatch.setenv("SIGLUME_WEBHOOK_SECRET", "whsec_sandbox_local")
+
+    assert _readiness(_args(
+        no_api=True,
+        sandbox=True,
+        origin="http://localhost:3000",
+        webhook_url="http://localhost:3000/payments/webhooks/siglume",
+    )) is True
+
+
+def test_readiness_live_rejects_local_http(monkeypatch) -> None:
+    monkeypatch.setenv("SIGLUME_MERCHANT_AUTH_TOKEN", "merchant_jwt")
+    monkeypatch.setenv("SIGLUME_WEBHOOK_SECRET", "whsec_test_hint")
+
+    assert _readiness(_args(
+        no_api=True,
+        sandbox=False,
+        origin="http://localhost:3000",
+        webhook_url="http://localhost:3000/payments/webhooks/siglume",
+    )) is False
 
 
 @respx.mock

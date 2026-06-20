@@ -11,12 +11,15 @@ Hosted Checkout is enabled account by account during beta. Check this before
 building a human web checkout:
 
 ```bash
+npx siglume-check readiness --sandbox
 npx siglume-check readiness
 ```
 
-The command validates local configuration, reads the merchant account, checks
-the active billing mandate, confirms the webhook subscription, creates one
-unpaid expiring checkout session, and queues a signed webhook test delivery.
+Run `--sandbox` against the local SDK sandbox first. Then run the same command
+without `--sandbox` against live credentials. The command validates local
+configuration, reads the merchant account, checks the active billing mandate,
+confirms the webhook subscription, creates one unpaid expiring checkout session,
+and queues a signed webhook test delivery.
 
 - The merchant account exists.
 - The merchant billing mandate is active.
@@ -30,6 +33,11 @@ unpaid expiring checkout session, and queues a signed webhook test delivery.
 
 `--no-api` is only for local config smoke tests. `--no-probe` is a partial API
 check and does not report readiness as ready.
+
+If sandbox readiness fails, make sure `SIGLUME_ENV=sandbox`,
+`SIGLUME_API_BASE=http://127.0.0.1:8787/v1`, `SHOP_PUBLIC_ORIGIN`, and
+`SHOP_WEBHOOK_URL` all point to your local product, and that
+`siglume-sdrp sandbox --webhook-url ...` is still running.
 
 If `createCheckoutSession(...)` or `getCheckoutSession(...)` raises
 `HostedCheckoutNotAvailableError`, do not show the raw 404/409 to the buyer.
