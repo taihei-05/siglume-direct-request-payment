@@ -228,4 +228,46 @@ describe("Express 10-minute template E2E", () => {
       db.close();
     }
   });
+
+  it("keeps webhook retries recoverable when a custom SQL executor has no transaction hook", async () => {
+    const SQL = await initSqlJs();
+    const db = new SQL.Database();
+    const transactionalExecutor = sqliteExecutor(db);
+    const executor: SiglumeSqlExecutor = {
+      query: transactionalExecutor.query,
+      execute: transactionalExecutor.execute,
+    };
+    for (const statement of createSiglumeSdrpSqlSchema({ dialect: "sqlite" })) {
+      db.run(statement);
+    }
+
+    const store = createSqlSiglumeOrderStore({ executor, dialect: "sqlite" });
+    let attempts = 0;
+    await expect(store.processWebhookEventOnce("evt_no_tx_retry", async () => {
+      attempts += 1;
+      throw new Error("simulated handler failure");
+    })).rejects.toThrow("simulated handler failure");
+    expect(attempts).toBe(1);
+    expect((await executor.query(`SELECT status, error_message FROM "siglume_webhook_events" WHERE event_id = ?`, ["evt_no_tx_retry"]))[0]).toMatchObject({
+      status: "failed",
+      error_message: "simulated handler failure",
+    });
+
+    const retried = await store.processWebhookEventOnce("evt_no_tx_retry", async () => {
+      attempts += 1;
+    });
+    expect(retried).toBe("processed");
+    expect(attempts).toBe(2);
+    expect((await executor.query(`SELECT status, error_message FROM "siglume_webhook_events" WHERE event_id = ?`, ["evt_no_tx_retry"]))[0]).toMatchObject({
+      status: "processed",
+      error_message: null,
+    });
+
+    const duplicate = await store.processWebhookEventOnce("evt_no_tx_retry", async () => {
+      attempts += 1;
+    });
+    expect(duplicate).toBe("duplicate");
+    expect(attempts).toBe(2);
+    db.close();
+  });
 });

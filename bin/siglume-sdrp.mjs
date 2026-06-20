@@ -341,18 +341,36 @@ async function handleSandboxRequest(req, res, state, port) {
       sendJson(res, 404, { error: { code: "EXTERNAL_402_MERCHANT_NOT_FOUND", message: "sandbox merchant not found" } });
       return;
     }
+    let currency;
+    let amountMinor;
+    let successUrl;
+    let cancelUrl;
+    try {
+      currency = normalizeCurrency(body.currency || "JPY");
+      amountMinor = normalizePositiveAmountMinor(body.amount_minor);
+      successUrl = normalizeSandboxReturnUrl(body.success_url, "success_url");
+      cancelUrl = normalizeSandboxReturnUrl(body.cancel_url, "cancel_url");
+    } catch (error) {
+      sendJson(res, 400, {
+        error: {
+          code: "INVALID_CHECKOUT_SESSION_REQUEST",
+          message: error instanceof Error ? error.message : "invalid checkout session request",
+        },
+      });
+      return;
+    }
     const sessionId = `chk_sandbox_${state.sessions.size + 1}`;
     const challengeHash = `sha256:sandbox_${hashString(`${sessionId}:${body.nonce || ""}`).slice(0, 32)}`;
     const session = {
       session_id: sessionId,
       merchant: state.merchant,
-      amount_minor: Number(body.amount_minor),
-      currency: String(body.currency || "JPY").toUpperCase(),
-      token_symbol: String(body.currency || "JPY").toUpperCase() === "USD" ? "USDC" : "JPYC",
+      amount_minor: amountMinor,
+      currency,
+      token_symbol: currency === "USD" ? "USDC" : "JPYC",
       status: "open",
       challenge_hash: challengeHash,
-      success_url: String(body.success_url || ""),
-      cancel_url: String(body.cancel_url || ""),
+      success_url: successUrl,
+      cancel_url: cancelUrl,
       metadata_jsonb: body.metadata && typeof body.metadata === "object" ? body.metadata : {},
       checkout_url: `http://127.0.0.1:${port}/pay/${sessionId}`,
       expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
@@ -418,15 +436,16 @@ async function handleSandboxRequest(req, res, state, port) {
       sendJson(res, 404, { error: { code: "CHECKOUT_SESSION_NOT_FOUND", message: "sandbox session not found" } });
       return;
     }
+    if (session.status === "paid" && session.confirmation_event) {
+      sendEnvelope(res, 200, sandboxConfirmResponse(session, session.confirmation_event));
+      return;
+    }
     session.status = "paid";
     session.requirement_id = `dpr_sandbox_${sessionId}`;
     const event = sandboxPaymentConfirmedEvent(session);
+    session.confirmation_event = event;
     await deliverSandboxWebhook(state, event);
-    sendEnvelope(res, 200, {
-      status: "paid",
-      redirect_url: `${session.success_url}${session.success_url.includes("?") ? "&" : "?"}session_id=${encodeURIComponent(sessionId)}`,
-      event: { id: event.id, type: event.type },
-    });
+    sendEnvelope(res, 200, sandboxConfirmResponse(session, event));
     return;
   }
 
@@ -486,6 +505,14 @@ function sandboxPaymentConfirmedEvent(session) {
       environment: "sandbox",
     },
   });
+}
+
+function sandboxConfirmResponse(session, event) {
+  return {
+    status: "paid",
+    redirect_url: `${session.success_url}${session.success_url.includes("?") ? "&" : "?"}session_id=${encodeURIComponent(session.session_id)}`,
+    event: { id: event.id, type: event.type },
+  };
 }
 
 async function deliverSandboxWebhook(state, event) {
@@ -723,6 +750,27 @@ function normalizeCurrency(value) {
     throw new Error("--currency must be JPY or USD.");
   }
   return currency;
+}
+
+function normalizePositiveAmountMinor(value) {
+  const amountMinor = Number(value);
+  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
+    throw new Error("amount_minor must be a positive integer.");
+  }
+  return amountMinor;
+}
+
+function normalizeSandboxReturnUrl(value, name) {
+  const text = String(value || "").trim();
+  try {
+    const url = new URL(text);
+    if (url.protocol === "https:" || (url.protocol === "http:" && isLocalhost(url.hostname))) {
+      return url.href;
+    }
+  } catch {
+    // Fall through to a consistent validation error.
+  }
+  throw new Error(`${name} must be an https URL, or a local http URL in sandbox.`);
 }
 
 function isStandardAmount(currency, amountMinor) {

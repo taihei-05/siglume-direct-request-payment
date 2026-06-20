@@ -41,6 +41,13 @@ curl -X POST http://localhost:3000/payments/checkout/siglume/start \
 
 Open the returned `checkout_url` and click the sandbox confirm button. Your
 product should receive a signed webhook and mark the Standard order paid once.
+If the confirm button or confirm endpoint is called again for the same sandbox
+session, the sandbox returns the original confirmation result and does not send
+another webhook.
+
+The sandbox rejects invalid checkout input early: `amount_minor` must be a
+positive integer, `currency` must be `JPY` or `USD`, and return URLs must be
+HTTPS or local HTTP URLs.
 
 Sandbox Micro / Nano behavior follows the same public classifications:
 

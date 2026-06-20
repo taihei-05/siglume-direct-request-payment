@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.23 - 2026-06-20
+
+- Made the local SDRP sandbox reject invalid checkout input early, including
+  non-positive `amount_minor`, unsupported currencies, and unsafe return URLs.
+- Made sandbox checkout confirmation idempotent so repeated confirmation calls
+  return the original event and do not send duplicate webhooks.
+- Made the Express SQL order-store adapter recoverable for custom SQL executors
+  without a transaction hook by marking failed webhook handling as retryable
+  instead of permanently treating it as a duplicate.
+- Added E2E coverage for sandbox idempotency, invalid sandbox input, and
+  non-transactional webhook retry recovery.
+
 ## 0.4.22 - 2026-06-20
 
 - Fixed clean-checkout TypeScript resolution for template imports so CI and npm

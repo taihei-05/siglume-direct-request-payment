@@ -324,18 +324,26 @@ class SqlSiglumeOrderStore implements SiglumeSdrpOrderStore {
 
   async processWebhookEventOnce(eventId: string, handler: () => Promise<void>): Promise<"processed" | "duplicate"> {
     const cleanEventId = requireText(eventId, "event_id");
+    if (!this.options.executor.transaction && !this.tx.getStore()) {
+      return this.processWebhookEventOnceWithoutTransaction(cleanEventId, handler);
+    }
     return this.withTransaction(async (executor) => {
       const parts = sqlParts(this.options);
-      const existing = await executor.query(
-        `SELECT event_id FROM ${parts.qEvents} WHERE event_id = ${this.p(1)} LIMIT 1`,
+      const existing = await executor.query<{ status?: unknown }>(
+        `SELECT status FROM ${parts.qEvents} WHERE event_id = ${this.p(1)} LIMIT 1`,
         [cleanEventId],
       );
-      if (existing.length) return "duplicate";
-      const inserted = await this.executeChanged(
-        insertWebhookEventSql(this.options, cleanEventId),
-        [cleanEventId, "processing"],
-      );
-      if (inserted === 0) return "duplicate";
+      const existingStatus = existing.length ? String(existing[0]?.status || "") : "";
+      if (existingStatus === "processed" || existingStatus === "processing") return "duplicate";
+      if (existingStatus === "failed") {
+        await executor.execute(
+          `UPDATE ${parts.qEvents} SET status = ${this.p(1)}, error_message = NULL, processed_at = NULL WHERE event_id = ${this.p(2)}`,
+          ["processing", cleanEventId],
+        );
+      } else {
+        const inserted = affectedRows(await executor.execute(insertWebhookEventSql(this.options, cleanEventId), [cleanEventId, "processing"]));
+        if (inserted === 0) return "duplicate";
+      }
       await this.tx.run(executor, handler);
       await executor.execute(
         `UPDATE ${parts.qEvents} SET status = ${this.p(1)}, processed_at = CURRENT_TIMESTAMP WHERE event_id = ${this.p(2)}`,
@@ -352,6 +360,43 @@ class SqlSiglumeOrderStore implements SiglumeSdrpOrderStore {
       [challengeHash],
     );
     return rows[0] ?? null;
+  }
+
+  private async processWebhookEventOnceWithoutTransaction(
+    cleanEventId: string,
+    handler: () => Promise<void>,
+  ): Promise<"processed" | "duplicate"> {
+    const parts = sqlParts(this.options);
+    const existing = await this.options.executor.query<{ status?: unknown }>(
+      `SELECT status FROM ${parts.qEvents} WHERE event_id = ${this.p(1)} LIMIT 1`,
+      [cleanEventId],
+    );
+    const existingStatus = existing.length ? String(existing[0]?.status || "") : "";
+    if (existingStatus === "processed" || existingStatus === "processing") return "duplicate";
+    if (existingStatus === "failed") {
+      await this.options.executor.execute(
+        `UPDATE ${parts.qEvents} SET status = ${this.p(1)}, error_message = NULL, processed_at = NULL WHERE event_id = ${this.p(2)}`,
+        ["processing", cleanEventId],
+      );
+    } else {
+      const inserted = await this.executeChanged(insertWebhookEventSql(this.options, cleanEventId), [cleanEventId, "processing"]);
+      if (inserted === 0) return "duplicate";
+    }
+
+    try {
+      await handler();
+      await this.options.executor.execute(
+        `UPDATE ${parts.qEvents} SET status = ${this.p(1)}, error_message = NULL, processed_at = CURRENT_TIMESTAMP WHERE event_id = ${this.p(2)}`,
+        ["processed", cleanEventId],
+      );
+      return "processed";
+    } catch (error) {
+      await this.options.executor.execute(
+        `UPDATE ${parts.qEvents} SET status = ${this.p(1)}, error_message = ${this.p(2)}, processed_at = NULL WHERE event_id = ${this.p(3)}`,
+        ["failed", errorMessage(error), cleanEventId],
+      );
+      throw error;
+    }
   }
 
   async markOrderPaidOnce(input: {
@@ -534,6 +579,11 @@ function textOrUndefined(value: unknown): string | undefined {
 
 function textOrNull(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message.slice(0, 1000);
+  return String(error || "webhook handler failed").slice(0, 1000);
 }
 
 function normalizeRows(value: unknown): Record<string, unknown>[] {
