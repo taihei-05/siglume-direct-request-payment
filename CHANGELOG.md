@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.22 - 2026-06-20
+
+- Fixed clean-checkout TypeScript resolution for template imports so CI and npm
+  release typechecks do not depend on a prebuilt `dist/` directory.
+
 ## 0.4.21 - 2026-06-20
 
 Complete the 10-minute integration path with durable adapters, sandbox, and E2E.

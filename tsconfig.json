@@ -11,6 +11,10 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
+    "baseUrl": ".",
+    "paths": {
+      "@siglume/direct-request-payment": ["./src/index.ts"]
+    },
     "types": ["node"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "tsup.config.ts", "vitest.config.ts"]
