@@ -40,11 +40,19 @@ app.use(express.json());
 app.use("/payments", createSiglumeSdrpCheckoutRouter(siglumeOptions));
 ```
 
-Use `siglume-order-store.sql.ts` for a durable database-backed adapter. It
-supports Prisma, TypeORM, Sequelize, Drizzle, and any driver that can implement
-the small `SiglumeSqlExecutor` interface. Run
-`createSiglumeSdrpSqlSchema({ dialect: "postgres" })` once in a migration or
-translate the returned SQL into your migration tool.
+Use one of the durable database-backed adapters before opening checkout to
+users:
+
+- `siglume-order-store.sql.ts`: Prisma, TypeORM, Sequelize, Drizzle, or any
+  driver that can implement the small `SiglumeSqlExecutor` interface. Run
+  `createSiglumeSdrpSqlSchema({ dialect: "postgres" })` once in a migration or
+  translate the returned SQL into your migration tool.
+- `siglume-order-store.dynamodb.ts`: DynamoDB with conditional writes and
+  `TransactWrite`.
+- `siglume-order-store.mongodb.ts`: MongoDB with unique indexes for the active
+  checkout attempt, challenge hash, and webhook event id.
+- `siglume-order-store.firestore.ts`: Firestore transactions and single-field
+  challenge lookup.
 
 Keep `processWebhookEventOnce()` transactional: record the webhook event as
 processed only after the order update or review write succeeds. The generated

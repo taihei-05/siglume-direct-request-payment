@@ -177,6 +177,61 @@ const order_store = createPrismaSiglumeOrderStore(prisma, {
 });
 ```
 
+For NoSQL products, install the driver you already use and choose the matching
+adapter:
+
+```bash
+# DynamoDB
+npm install @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb
+
+# MongoDB
+npm install mongodb
+
+# Firestore
+npm install @google-cloud/firestore
+```
+
+```ts
+// DynamoDB
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import {
+  createDynamoDbSiglumeOrderStore,
+  createDynamoDbSiglumeTables,
+} from "./siglume/siglume-order-store.dynamodb.js";
+
+const dynamo = new DynamoDBClient({ region: "ap-northeast-1" });
+const dynamoDoc = DynamoDBDocumentClient.from(dynamo, {
+  marshallOptions: { removeUndefinedValues: true, convertEmptyValues: true },
+});
+await createDynamoDbSiglumeTables({ client: dynamo, include_orders_table: false });
+const order_store = createDynamoDbSiglumeOrderStore({ client: dynamoDoc });
+```
+
+```ts
+// MongoDB
+import { MongoClient } from "mongodb";
+import {
+  createMongoSiglumeIndexes,
+  createMongoSiglumeOrderStore,
+} from "./siglume/siglume-order-store.mongodb.js";
+
+const mongo = new MongoClient(process.env.MONGODB_URI!);
+await mongo.connect();
+const db = mongo.db("shop");
+await createMongoSiglumeIndexes({ db });
+const order_store = createMongoSiglumeOrderStore({ db });
+```
+
+```ts
+// Firestore
+import { Firestore } from "@google-cloud/firestore";
+import { createFirestoreSiglumeOrderStore } from "./siglume/siglume-order-store.firestore.js";
+
+const db = new Firestore({ projectId: process.env.GOOGLE_CLOUD_PROJECT });
+const order_store = createFirestoreSiglumeOrderStore({ db });
+```
+
 FastAPI:
 
 ```py
@@ -222,10 +277,11 @@ order_store = AsyncSQLAlchemySiglumeOrderStore(SessionLocal)
 `create_sqlalchemy_siglume_schema(engine)` creates only SDRP-owned tables by
 default. Use `include_orders_table=True` only for the sample `orders` table.
 
-The adapters persist one active checkout attempt per order, reuse an unexpired
-checkout URL on network retries, create a new attempt after expiry/failure,
-record webhook event ids only after the order update/review write succeeds, and
-keep duplicate deliveries from double-fulfilling an order.
+The SQL, DynamoDB, MongoDB, Firestore, and SQLAlchemy adapters persist one
+active checkout attempt per order, reuse an unexpired checkout URL on network
+retries, create a new attempt after expiry/failure, record webhook event ids
+only after the order update/review write succeeds, and keep duplicate
+deliveries from double-fulfilling an order.
 
 ## 6. Start your app and run sandbox verify
 
@@ -278,7 +334,8 @@ Your product is integrated when:
 - `npx siglume-check verify --sandbox` passes against your local product,
 - `npx siglume-check verify` passes against live Siglume credentials,
 - your product has mounted checkout and webhook routes,
-- your order database uses the SQL/ORM adapter or an equivalent transactional store,
+- your order database uses the SQL/ORM, DynamoDB, MongoDB, Firestore, or
+  SQLAlchemy adapter, or an equivalent transactional store,
 - the signed webhook verifies against the raw body,
 - `standard_settled` marks the order paid once,
 - a failed webhook handler is retried and duplicate webhook deliveries do not double-fulfill the order.

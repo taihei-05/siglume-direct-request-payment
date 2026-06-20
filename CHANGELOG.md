@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.26 - 2026-06-20
+
+- Added official Express NoSQL order-store templates for DynamoDB, MongoDB, and
+  Firestore.
+- Added NoSQL setup helpers: DynamoDB table creation, MongoDB index creation,
+  and Firestore collection wiring.
+- Added a NoSQL E2E matrix for DynamoDB Local, MongoDB, and the Firestore
+  emulator covering concurrent checkout starts, expired checkout retry,
+  webhook retry, duplicate webhook suppression, and paid order status updates.
+- Updated the 10-minute integration docs so non-SQL products can choose a
+  supported adapter instead of writing the order store from scratch.
+
 ## 0.4.25 - 2026-06-20
 
 - Added a real PostgreSQL/MySQL ORM matrix for the Express SQL order store,

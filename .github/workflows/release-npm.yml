@@ -40,9 +40,29 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
+      dynamodb:
+        image: amazon/dynamodb-local:2.6.1
+        ports:
+          - 8000:8000
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd="mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     env:
       SIGLUME_SDRP_POSTGRES_URL: postgresql://siglume:siglume@127.0.0.1:5432/siglume_sdrp
       SIGLUME_SDRP_MYSQL_URL: mysql://root:siglume@127.0.0.1:3306/siglume_sdrp
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      SIGLUME_SDRP_DYNAMODB_ENDPOINT: http://127.0.0.1:8000
+      SIGLUME_SDRP_MONGODB_URL: mongodb://127.0.0.1:27017
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+      GOOGLE_CLOUD_PROJECT: siglume-sdrp-test
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -68,6 +88,23 @@ jobs:
       - run: npm run test:orm-matrix
         env:
           SIGLUME_SDRP_ORM_MATRIX: "1"
+      - name: Start Firestore emulator
+        shell: bash
+        run: |
+          docker run -d --name siglume-firestore -p 8080:8080 \
+            gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators \
+            gcloud beta emulators firestore start --host-port=0.0.0.0:8080 --project="${GOOGLE_CLOUD_PROJECT}"
+          for _ in {1..30}; do
+            if (echo > /dev/tcp/127.0.0.1/8080) >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs siglume-firestore
+          exit 1
+      - run: npm run test:nosql-matrix
+        env:
+          SIGLUME_SDRP_NOSQL_MATRIX: "1"
       - name: Check whether this npm version already exists
         id: npm_version
         shell: bash

@@ -1,6 +1,6 @@
 {
   "name": "@siglume/direct-request-payment",
-  "version": "0.4.25",
+  "version": "0.4.26",
   "description": "SDK for the Siglume Direct Request Payment SDRP payment protocol",
   "keywords": [
     "siglume",
@@ -78,9 +78,13 @@
     "test": "npm run build && vitest run",
     "prisma:generate:test": "prisma generate --schema test/prisma/schema.prisma",
     "test:orm-matrix": "vitest run test/express-orm-matrix.integration.test.ts",
+    "test:nosql-matrix": "vitest run test/express-nosql-matrix.integration.test.ts",
     "pack:check": "npm pack --json"
   },
   "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1073.0",
+    "@aws-sdk/lib-dynamodb": "^3.1073.0",
+    "@google-cloud/firestore": "^8.6.0",
     "@prisma/client": "^6.19.3",
     "@types/express": "^5.0.6",
     "@types/node": "^20.16.5",
@@ -89,6 +93,7 @@
     "drizzle-orm": "^0.45.2",
     "esbuild": "^0.28.1",
     "express": "^5.2.1",
+    "mongodb": "^7.3.0",
     "mysql2": "^3.22.5",
     "pg": "^8.22.0",
     "prisma": "^6.19.3",

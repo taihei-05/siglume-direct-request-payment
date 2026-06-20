@@ -111,9 +111,11 @@ Checkout availability before route mounting. `siglume-check verify` additionally
 requires a signed webhook test delivery, so run it only after your webhook route
 is mounted and your app is running.
 
-The FastAPI templates include both sync `Session` and async `AsyncSession`
-SQLAlchemy adapters. The sandbox also exposes metered summary endpoints so you
-can verify Micro / Nano seller-borne fee fields before using live credentials.
+The Express templates include SQL/ORM adapters plus DynamoDB, MongoDB, and
+Firestore order stores. The FastAPI templates include both sync `Session` and
+async `AsyncSession` SQLAlchemy adapters. The sandbox also exposes metered
+summary endpoints so you can verify Micro / Nano seller-borne fee fields before
+using live credentials.
 
 Before implementation, confirm Hosted Checkout readiness in
 [Troubleshooting](./docs/troubleshooting.md#hosted-checkout-readiness). For
