@@ -173,6 +173,9 @@ class DynamoDbSiglumeOrderStore implements SiglumeSdrpOrderStore {
       ":checkout_url": input.checkout_url,
       ":expires_at": timestampOrNull(input.expires_at),
       ":updated_at": timestamp(),
+    };
+    const activeValues = {
+      ...values,
       ":attempt_id": input.attempt_id,
     };
     await this.options.client.send(new TransactWriteCommand({
@@ -184,7 +187,7 @@ class DynamoDbSiglumeOrderStore implements SiglumeSdrpOrderStore {
             UpdateExpression: "SET #status = :pending, stable_nonce = :stable_nonce, challenge_hash = :challenge_hash, checkout_session_id = :checkout_session_id, checkout_url = :checkout_url, expires_at = :expires_at, updated_at = :updated_at REMOVE creation_owner_id, creation_lease_expires_at, error_message",
             ConditionExpression: "attempt_id = :attempt_id AND #status = :creating",
             ExpressionAttributeNames: { "#status": "status" },
-            ExpressionAttributeValues: values,
+            ExpressionAttributeValues: activeValues,
           },
         },
         {
@@ -192,9 +195,9 @@ class DynamoDbSiglumeOrderStore implements SiglumeSdrpOrderStore {
             TableName: this.options.checkout_attempts_table,
             Key: { pk: attemptPk(input.attempt_id) },
             UpdateExpression: "SET #status = :pending, stable_nonce = :stable_nonce, challenge_hash = :challenge_hash, checkout_session_id = :checkout_session_id, checkout_url = :checkout_url, expires_at = :expires_at, updated_at = :updated_at REMOVE creation_owner_id, creation_lease_expires_at, error_message",
-            ConditionExpression: "#status = :creating",
+            ConditionExpression: "attempt_id = :attempt_id AND #status = :creating",
             ExpressionAttributeNames: { "#status": "status" },
-            ExpressionAttributeValues: values,
+            ExpressionAttributeValues: activeValues,
           },
         },
       ],
@@ -422,6 +425,7 @@ class DynamoDbSiglumeOrderStore implements SiglumeSdrpOrderStore {
     const result = await this.options.client.send(new GetCommand({
       TableName: this.options.checkout_attempts_table,
       Key: { pk: activePk(orderId) },
+      ConsistentRead: true,
     }));
     return result.Item ?? null;
   }
