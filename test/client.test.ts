@@ -426,6 +426,77 @@ describe("DirectRequestPaymentMerchantClient", () => {
     });
   });
 
+  it("reads webhook subscriptions and probes delivery status", async () => {
+    const calls: Array<{ url: string; method?: string; body: any }> = [];
+    const responses = [
+      envelope([
+        {
+          id: "whsub_test",
+          callback_url: "https://merchant.example/webhooks/siglume",
+          status: "active",
+          event_types: ["direct_payment.confirmed"],
+          signing_secret_hint: "hint",
+        },
+      ]),
+      envelope({
+        queued: true,
+        event: { id: "evt_probe", type: "direct_payment.confirmed" },
+      }),
+      envelope([
+        {
+          id: "whdel_test",
+          subscription_id: "whsub_test",
+          event_id: "evt_probe",
+          event_type: "direct_payment.confirmed",
+          delivery_status: "delivered",
+          response_status: 204,
+        },
+      ]),
+    ];
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      calls.push({
+        url: String(input),
+        method: init.method,
+        body: init.body ? JSON.parse(String(init.body)) : null,
+      });
+      return new Response(JSON.stringify(responses.shift()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const client = new DirectRequestPaymentMerchantClient({
+      auth_token: "merchant_jwt",
+      base_url: "https://siglume.example/v1",
+      fetch: fetchImpl,
+    });
+
+    const subscriptions = await client.listWebhookSubscriptions();
+    const queued = await client.queueWebhookTestDelivery({
+      event_type: "direct_payment.confirmed",
+      subscription_ids: ["whsub_test"],
+      data: { mode: "readiness_probe" },
+    });
+    const deliveries = await client.listWebhookDeliveries({
+      subscription_id: "whsub_test",
+      event_type: "direct_payment.confirmed",
+      limit: 10,
+    });
+
+    expect(subscriptions[0]?.id).toBe("whsub_test");
+    expect(queued.event).toMatchObject({ id: "evt_probe" });
+    expect(deliveries[0]?.delivery_status).toBe("delivered");
+    expect(calls.map((call) => [call.method, call.url])).toEqual([
+      ["GET", "https://siglume.example/v1/market/webhooks/subscriptions"],
+      ["POST", "https://siglume.example/v1/market/webhooks/test-deliveries"],
+      ["GET", "https://siglume.example/v1/market/webhooks/deliveries?subscription_id=whsub_test&event_type=direct_payment.confirmed&limit=10"],
+    ]);
+    expect(calls[1]?.body).toEqual({
+      event_type: "direct_payment.confirmed",
+      subscription_ids: ["whsub_test"],
+      data: { mode: "readiness_probe" },
+    });
+  });
+
   it("registers checkout_allowed_origins (normalized) on setupMerchant", async () => {
     const calls: Array<{ url: string; body: any }> = [];
     const fetchImpl: typeof fetch = async (input, init = {}) => {

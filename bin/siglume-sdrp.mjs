@@ -52,7 +52,7 @@ Readiness options:
   --amount-minor <amount>   Standard-band probe amount. Defaults to 501 for JPY, 301 for USD.
   --base-url <url>          Siglume API base URL. Defaults to SIGLUME_API_BASE or production.
   --no-api                  Validate local config only; do not call Siglume.
-  --no-probe                Call getMerchant only; do not create an unpaid checkout session.
+  --no-probe                Partial API check only; readiness will not be reported as ready.
   --json                    Print machine-readable JSON.
 `);
 }
@@ -89,6 +89,7 @@ async function readiness(options) {
   const merchant = options.merchant || process.env.SIGLUME_DIRECT_PAYMENT_MERCHANT || "";
   const origin = options.origin || process.env.SHOP_PUBLIC_ORIGIN || "";
   const webhookUrl = options.webhookUrl || process.env.SHOP_WEBHOOK_URL || "";
+  const webhookSecret = process.env.SIGLUME_WEBHOOK_SECRET || "";
   const token = process.env.SIGLUME_MERCHANT_AUTH_TOKEN || process.env.SIGLUME_AUTH_TOKEN || "";
   const currency = normalizeCurrency(options.currency || process.env.SIGLUME_DIRECT_PAYMENT_TEST_CURRENCY || "JPY");
   const amountMinor = Number(options.amountMinor || process.env.SIGLUME_DIRECT_PAYMENT_TEST_AMOUNT_MINOR || (currency === "USD" ? 301 : 501));
@@ -97,6 +98,7 @@ async function readiness(options) {
   check(checks, "merchant_token", Boolean(token) && !token.startsWith("cli_"), "Set SIGLUME_MERCHANT_AUTH_TOKEN to a merchant Siglume bearer token, not a cli_ key.");
   check(checks, "shop_origin", isHttpsOrigin(origin), "Set SHOP_PUBLIC_ORIGIN to an https origin, for example https://www.example.com.");
   check(checks, "webhook_url", isHttpsUrl(webhookUrl), "Set SHOP_WEBHOOK_URL to a public https webhook URL.");
+  check(checks, "webhook_secret_present", Boolean(webhookSecret) && webhookSecret.startsWith("whsec_"), "Set SIGLUME_WEBHOOK_SECRET to the webhook signing secret returned by setupCheckout/setup_checkout.");
   check(checks, "standard_probe_amount", isStandardAmount(currency, amountMinor), "Use a Standard-band probe amount: JPY 501+ or USD 301+ minor units.");
 
   if (options.api && !hasFailures(checks)) {
@@ -104,15 +106,44 @@ async function readiness(options) {
       auth_token: token,
       base_url: options.baseUrl || process.env.SIGLUME_API_BASE,
     });
+    let matchingWebhookSubscription = null;
     try {
       const merchantResponse = await merchantClient.getMerchant(merchant);
       const account = merchantResponse.merchant_account || {};
       check(checks, "merchant_exists", Boolean(account.merchant), "Run merchant setup before checkout.");
-      check(checks, "billing_mandate", Boolean(account.billing_mandate_id) || activeLike(account.billing_status), "Complete the merchant billing mandate wallet approval.");
+      check(checks, "billing_mandate", Boolean(account.billing_mandate_id), "Complete the merchant billing mandate wallet approval.");
+      check(checks, "billing_status_active", activeLike(account.billing_status), `Billing status is ${account.billing_status || "unknown"}; it must be active before accepting payments.`);
       warnIf(checks, "merchant_status", account.status && !activeLike(account.status), `Merchant status is ${account.status}; confirm it is allowed to accept payments.`);
-      warnIf(checks, "billing_status", account.billing_status && !activeLike(account.billing_status), `Billing status is ${account.billing_status}; confirm it is active before accepting payments.`);
     } catch (error) {
       check(checks, "merchant_api", false, apiErrorMessage(error, "Could not read the merchant account."));
+    }
+
+    if (!hasFailures(checks)) {
+      try {
+        const subscriptions = await merchantClient.listWebhookSubscriptions();
+        const activeSubscriptions = subscriptions.filter((subscription) => activeLike(subscription.status));
+        matchingWebhookSubscription = activeSubscriptions.find((subscription) => urlsEqual(subscription.callback_url, webhookUrl)) || null;
+        check(checks, "webhook_subscription_exists", activeSubscriptions.length > 0, "Create an active webhook subscription before checkout.");
+        check(checks, "webhook_callback_matches", Boolean(matchingWebhookSubscription), `No active webhook subscription points at ${webhookUrl}.`);
+        check(
+          checks,
+          "direct_payment_confirmed_subscribed",
+          Boolean(matchingWebhookSubscription) && includesEventType(matchingWebhookSubscription.event_types, "direct_payment.confirmed"),
+          "The matching webhook subscription must include direct_payment.confirmed.",
+        );
+        check(
+          checks,
+          "webhook_secret_matches_subscription_hint",
+          Boolean(matchingWebhookSubscription?.signing_secret_hint) && webhookSecret.endsWith(String(matchingWebhookSubscription.signing_secret_hint)),
+          "SIGLUME_WEBHOOK_SECRET does not match the signing_secret_hint for the matching subscription. Rotate or re-save the webhook secret.",
+        );
+      } catch (error) {
+        check(checks, "webhook_subscription_api", false, apiErrorMessage(error, "Could not read webhook subscriptions."));
+      }
+    }
+
+    if (!options.probe && !hasFailures(checks)) {
+      check(checks, "hosted_checkout_probe", false, "--no-probe skips Hosted Checkout and webhook delivery probes. Remove --no-probe for readiness.");
     }
 
     if (options.probe && !hasFailures(checks)) {
@@ -134,6 +165,13 @@ async function readiness(options) {
         check(checks, "hosted_checkout", false, message);
       }
     }
+
+    if (options.probe && !hasFailures(checks)) {
+      await checkWebhookDeliveryProbe(checks, merchantClient, {
+        merchant,
+        subscription: matchingWebhookSubscription,
+      });
+    }
   }
 
   const ok = !hasFailures(checks);
@@ -144,7 +182,11 @@ async function readiness(options) {
       const mark = item.status === "pass" ? "OK" : item.status === "warn" ? "WARN" : "FAIL";
       console.log(`${mark} ${item.name}: ${item.message}`);
     }
-    console.log(ok ? "Ready for 10-minute SDRP integration." : "Not ready. Fix the FAIL items before coding checkout.");
+    if (ok && !options.api) {
+      console.log("Local config checks passed. API, Hosted Checkout, and webhook delivery readiness were not verified.");
+    } else {
+      console.log(ok ? "Ready for 10-minute SDRP integration." : "Not ready. Fix the FAIL items before coding checkout.");
+    }
   }
   if (!ok) {
     process.exitCode = 1;
@@ -163,9 +205,30 @@ async function init(args) {
   }
   const from = join(rootDir, "templates", framework);
   const to = resolve(process.cwd(), target);
+  if (!Boolean(parsed.force)) {
+    const conflicts = await findCopyConflicts(from, to);
+    if (conflicts.length) {
+      throw new Error(`Refusing to overwrite existing files. Re-run with --force to overwrite:\n${conflicts.join("\n")}`);
+    }
+  }
   await copyDir(from, to, Boolean(parsed.force));
   console.log(`Copied ${framework} SDRP integration files to ${to}`);
   console.log("Wire the exported router into your app, then run siglume-check readiness before opening checkout.");
+}
+
+async function findCopyConflicts(from, to) {
+  const conflicts = [];
+  for (const entry of await readdir(from)) {
+    const src = join(from, entry);
+    const dst = join(to, entry);
+    const info = await stat(src);
+    if (info.isDirectory()) {
+      conflicts.push(...await findCopyConflicts(src, dst));
+    } else if (await exists(dst)) {
+      conflicts.push(dst);
+    }
+  }
+  return conflicts;
 }
 
 async function copyDir(from, to, force) {
@@ -257,6 +320,74 @@ function isStandardAmount(currency, amountMinor) {
 
 function activeLike(value) {
   return /^(active|ready|current|ok|enabled|paid|complete|completed)$/i.test(String(value || ""));
+}
+
+function includesEventType(eventTypes, eventType) {
+  if (!Array.isArray(eventTypes) || eventTypes.length === 0) return true;
+  return eventTypes.map((item) => String(item)).includes(eventType);
+}
+
+function urlsEqual(left, right) {
+  try {
+    const leftUrl = new URL(String(left || ""));
+    const rightUrl = new URL(String(right || ""));
+    return leftUrl.href === rightUrl.href;
+  } catch {
+    return false;
+  }
+}
+
+function subscriptionId(subscription) {
+  return String(subscription?.id || subscription?.webhook_subscription_id || subscription?.subscription_id || "");
+}
+
+async function checkWebhookDeliveryProbe(checks, merchantClient, { merchant, subscription }) {
+  const id = subscriptionId(subscription);
+  if (!id) {
+    check(checks, "webhook_delivery_probe_passed", false, "Cannot run webhook delivery probe without a matching subscription id.");
+    return;
+  }
+  try {
+    const queued = await merchantClient.queueWebhookTestDelivery({
+      event_type: "direct_payment.confirmed",
+      subscription_ids: [id],
+      data: {
+        mode: "readiness_probe",
+        merchant,
+        direct_payment_requirement_id: `dpr_readiness_${Date.now()}`,
+        requirement_id: `dpr_readiness_${Date.now()}`,
+        challenge_hash: "sha256:readiness_probe",
+        pricing_band: "standard",
+        settlement_status: "readiness_probe",
+      },
+    });
+    const eventId = String(queued?.event?.id || "");
+    const deadline = Date.now() + 10000;
+    while (eventId && Date.now() < deadline) {
+      const deliveries = await merchantClient.listWebhookDeliveries({
+        subscription_id: id,
+        event_type: "direct_payment.confirmed",
+        limit: 10,
+      });
+      const delivery = deliveries.find((item) => String(item.event_id || "") === eventId);
+      if (delivery?.delivery_status === "delivered") {
+        check(checks, "webhook_delivery_probe_passed", true, "ready");
+        return;
+      }
+      if (delivery?.delivery_status === "failed") {
+        check(checks, "webhook_delivery_probe_passed", false, `Webhook delivery failed with response_status=${delivery.response_status ?? "unknown"}.`);
+        return;
+      }
+      await sleep(1000);
+    }
+    check(checks, "webhook_delivery_probe_passed", false, "Webhook test delivery was queued but did not report delivered before timeout. Check callback reachability and delivery logs.");
+  } catch (error) {
+    check(checks, "webhook_delivery_probe_passed", false, apiErrorMessage(error, "Webhook delivery probe failed."));
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function apiErrorMessage(error, fallback) {

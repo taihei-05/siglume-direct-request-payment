@@ -21,6 +21,7 @@ jobs:
       - run: node bin/siglume-sdrp.mjs readiness --no-api --merchant example_merchant --origin https://shop.example.com --webhook-url https://api.example.com/payments/webhooks/siglume
         env:
           SIGLUME_MERCHANT_AUTH_TOKEN: test_merchant_token
+          SIGLUME_WEBHOOK_SECRET: whsec_test
       - run: node bin/siglume-sdrp.mjs init express --target /tmp/siglume-sdrp-express
       - run: node bin/siglume-sdrp.mjs init fastapi --target /tmp/siglume-sdrp-fastapi
       - run: npm install --no-package-lock
@@ -43,6 +44,7 @@ jobs:
       - run: python -m siglume_direct_request_payment._cli readiness --no-api --merchant example_merchant --origin https://shop.example.com --webhook-url https://api.example.com/payments/webhooks/siglume
         env:
           SIGLUME_MERCHANT_AUTH_TOKEN: test_merchant_token
+          SIGLUME_WEBHOOK_SECRET: whsec_test
       - run: python -m siglume_direct_request_payment._cli init fastapi --target /tmp/siglume-sdrp-fastapi-py
       - run: python -m py_compile examples/hosted-checkout-python/app.py examples/hosted-checkout-python/order_store.py
       - run: python -m build

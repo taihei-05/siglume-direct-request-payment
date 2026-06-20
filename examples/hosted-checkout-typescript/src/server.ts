@@ -10,9 +10,9 @@ import {
 
 import {
   allOrders,
+  beginCheckoutAttempt,
   findOrderByChallengeHash,
-  getOrder,
-  markWebhookEventProcessedOnce,
+  processWebhookEventOnce,
   saveOrder,
 } from "./order-store.js";
 
@@ -40,13 +40,23 @@ app.post(
   express.json(),
   asyncRoute(async (req, res) => {
     const orderId = String(req.body?.order_id || "");
-    const order = getOrder(orderId);
+    const order = beginCheckoutAttempt(orderId);
     if (!order) {
       res.status(404).json({ error: "order_not_found" });
       return;
     }
 
-    order.payment_attempt += 1;
+    if (order.siglume_checkout_url && order.siglume_checkout_session_id) {
+      res.json({
+        order_id: order.id,
+        amount_minor: order.amount_minor,
+        currency: order.currency,
+        checkout_url: order.siglume_checkout_url,
+        session_id: order.siglume_checkout_session_id,
+      });
+      return;
+    }
+
     const session = await siglumeMerchant.createCheckoutSession({
       merchant: merchantKey,
       amount_minor: order.amount_minor,
@@ -58,6 +68,7 @@ app.post(
     });
 
     order.siglume_challenge_hash = session.challenge_hash;
+    order.siglume_checkout_url = session.checkout_url;
     order.siglume_checkout_session_id = session.session_id;
     order.siglume_payment_status = "pending";
     saveOrder(order);
@@ -82,41 +93,42 @@ app.post(
       req.header("siglume-signature") || "",
     );
 
-    if (!markWebhookEventProcessedOnce(event.id)) {
+    const result = await processWebhookEventOnce(event.id, async () => {
+      if (event.type === "direct_payment.confirmed") {
+        const confirmation = classifyDirectPaymentConfirmation(event);
+
+        if (confirmation.kind === "standard_settled") {
+          const order = findOrderByChallengeHash(confirmation.challenge_hash);
+          if (order) {
+            order.siglume_payment_status = "paid";
+            order.siglume_requirement_id = confirmation.requirement_id;
+            order.siglume_chain_receipt_id = confirmation.chain_receipt_id;
+            saveOrder(order);
+          }
+        } else if (confirmation.kind === "metered_usage_accepted") {
+          console.warn("Micro/Nano settlement integration is required before automatic fulfillment", {
+            event_id: event.id,
+            requirement_id: confirmation.requirement_id,
+            pricing_band: confirmation.pricing_band,
+          });
+        } else if (confirmation.kind === "metered_batch_settled") {
+          console.info("metered batch settled", {
+            settlement_batch_id: confirmation.settlement_batch_id,
+            chain_receipt_id: confirmation.chain_receipt_id,
+          });
+        } else {
+          console.warn("manual payment review required", {
+            event_id: event.id,
+            reason: confirmation.reason,
+            requirement_id: confirmation.requirement_id,
+          });
+        }
+      }
+    });
+
+    if (result === "duplicate") {
       res.status(204).send();
       return;
-    }
-
-    if (event.type === "direct_payment.confirmed") {
-      const confirmation = classifyDirectPaymentConfirmation(event);
-
-      if (confirmation.kind === "standard_settled") {
-        const order = findOrderByChallengeHash(confirmation.challenge_hash);
-        if (order) {
-          order.siglume_payment_status = "paid";
-          order.siglume_requirement_id = confirmation.requirement_id;
-          order.siglume_chain_receipt_id = confirmation.chain_receipt_id;
-          saveOrder(order);
-        }
-      } else if (confirmation.kind === "metered_usage_accepted") {
-        const order = findOrderByChallengeHash(confirmation.challenge_hash);
-        if (order) {
-          order.siglume_payment_status = "fulfilled_unsettled";
-          order.siglume_requirement_id = confirmation.requirement_id;
-          saveOrder(order);
-        }
-      } else if (confirmation.kind === "metered_batch_settled") {
-        console.info("metered batch settled", {
-          settlement_batch_id: confirmation.settlement_batch_id,
-          chain_receipt_id: confirmation.chain_receipt_id,
-        });
-      } else {
-        console.warn("manual payment review required", {
-          event_id: event.id,
-          reason: confirmation.reason,
-          requirement_id: confirmation.requirement_id,
-        });
-      }
     }
 
     res.status(204).send();

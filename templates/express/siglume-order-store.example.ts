@@ -1,10 +1,13 @@
 import type { Request } from "express";
 
-import type { SiglumeCheckoutOrder, SiglumeSdrpOrderStore } from "./siglume-sdrp-routes.js";
+import type { SiglumeCheckoutAttempt, SiglumeCheckoutOrder, SiglumeSdrpOrderStore } from "./siglume-sdrp-routes.js";
 
 type Order = SiglumeCheckoutOrder & {
   status: "created" | "pending" | "paid" | "fulfilled_unsettled" | "review_required";
+  attempt_id?: string;
+  stable_nonce?: string;
   challenge_hash?: string;
+  checkout_url?: string;
   checkout_session_id?: string;
   requirement_id?: string;
   chain_receipt_id?: string;
@@ -16,20 +19,33 @@ const orders = new Map<string, Order>([
 const processedEvents = new Set<string>();
 
 export const siglumeOrderStore: SiglumeSdrpOrderStore = {
-  async getOrderForCheckout(orderId: string, _req: Request) {
-    return orders.get(orderId) || null;
+  async beginCheckoutAttempt(orderId: string, _req: Request): Promise<SiglumeCheckoutAttempt | null> {
+    const order = orders.get(orderId);
+    if (!order) return null;
+    order.attempt_id ||= `${order.id}_attempt_1`;
+    order.stable_nonce ||= `${order.id}-attempt_1`;
+    return {
+      ...order,
+      order_id: order.id,
+      attempt_id: order.attempt_id,
+      stable_nonce: order.stable_nonce,
+    };
   },
   async markCheckoutPending(input) {
     const order = orders.get(input.order_id);
     if (!order) return;
     order.status = "pending";
+    order.attempt_id = input.attempt_id;
+    order.stable_nonce = input.stable_nonce;
     order.challenge_hash = input.challenge_hash;
     order.checkout_session_id = input.checkout_session_id;
+    order.checkout_url = input.checkout_url;
   },
-  async recordWebhookEventOnce(eventId) {
-    if (processedEvents.has(eventId)) return false;
+  async processWebhookEventOnce(eventId, handler) {
+    if (processedEvents.has(eventId)) return "duplicate";
+    await handler();
     processedEvents.add(eventId);
-    return true;
+    return "processed";
   },
   async findOrderByChallengeHash(challengeHash) {
     return [...orders.values()].find((order) => order.challenge_hash === challengeHash) || null;

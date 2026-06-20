@@ -195,9 +195,12 @@ Threshold-control fields:
 - `settlement_trigger`: `amount_threshold` or `scheduled_close`
 - `settlement_threshold_minor`: JPY `10000` or USD `10000` minor units
 - `threshold_reached_at`: set when the fixed amount threshold closed the batch
-- `total_unsettled_exposure_minor`: open plus `notice_pending`, `ready`,
-  `submitted`, retrying, and `past_due` provider gross exposure for the same
-  buyer / provider / token / pricing band
+- `total_unsettled_exposure_minor`: chargeable provider gross exposure for the
+  same buyer / provider / token / pricing band where the batch is not
+  `settled`, `uncollectible`, or `written_off`. This includes open usage,
+  `notice_pending`, `notice_delivery_failed`, `ready`, `submitted`,
+  `submitted_reconcile_required`, `failed_retryable`, `retrying`, and
+  `past_due`.
 
 JPY 10,000 and USD 100.00 are market-specific fixed thresholds, not FX
 conversions of one another.
@@ -318,7 +321,7 @@ Important batch fields:
 | `settlement_trigger` | `amount_threshold` for early threshold close, or `scheduled_close` for weekly/monthly close |
 | `settlement_threshold_minor` | Fixed market threshold for early settlement: JPY `10000` or USD `10000` minor units |
 | `threshold_reached_at` | Timestamp when the fixed threshold closed the batch, otherwise null |
-| `total_unsettled_exposure_minor` | Current open plus notice/ready/submitted/retrying/past-due provider gross exposure for the same buyer / provider / token / pricing band |
+| `total_unsettled_exposure_minor` | Chargeable provider gross exposure for the same buyer / provider / token / pricing band where status is not `settled`, `uncollectible`, or `written_off`; includes open, notice, ready, submitted, reconcile-required, retryable, retrying, and past-due states |
 | `expected_scheduled_debit_at` | Expected debit time for an open period before a batch exists |
 | `scheduled_debit_at` | Scheduled debit time after batch creation |
 | `not_before_attempt_at` | Earliest allowed debit attempt; this is the close-plus-3-day gate |
@@ -398,10 +401,10 @@ Siglume retries failed Micro / Nano settlement every 6 hours for up to 28
 automatic attempts. After that the batch remains `past_due` until operator
 requeue.
 
-New Micro / Nano usage for the same buyer / provider / token is paused while
-the total unsettled exposure is at or above the fixed threshold, and while a
-failed or past-due block remains. The provider API is not called for the
-rejected request, and the request is not charged.
+New Micro / Nano usage for the same buyer / provider / token / pricing band is
+paused while the total unsettled exposure is at or above the fixed threshold,
+and while a failed or past-due block remains. The provider API is not called for
+the rejected request, and the request is not charged.
 
 Public failure fields are sanitized. Show `failure_reason_code`,
 `failure_reason_label`, `failure_reason_help`, and `support_reference` to users
@@ -449,13 +452,12 @@ using stable idempotency keys and provider-side completion records.
 | --- | --- | --- | --- | --- |
 | `notice_delivery_failed` | Buyer debit is not yet allowed; provider revenue remains unsettled | Notice delivery can be retried or reviewed | Required if delivery keeps failing | Do not attempt your own debit notice or mark revenue settled. Show support context only. |
 | `submitted_reconcile_required` | A settlement submission exists but final on-chain outcome is not yet reconciled | Reconciliation may complete if a receipt is found | Required if reconciliation stalls | Do not retry payment yourself. Wait for `settled`, `failed_retryable`, or `past_due`. |
-| `past_due` | Buyer has an unresolved settlement block; provider sees past-due revenue | New Micro / Nano usage for the same buyer / plan / token is paused | Operator requeue or manual resolution only | Do not promise collection or provider payment. Ask the buyer to repair balance / allowance / BudgetVault / caps and reference `support_reference`. |
+| `past_due` | Buyer has an unresolved settlement block; provider sees past-due revenue | New Micro / Nano usage for the same buyer / provider / token / pricing band is paused | Operator requeue or manual resolution only | Do not promise collection or provider payment. Ask the buyer to repair balance / allowance / BudgetVault / caps and reference `support_reference`. |
 | `failed_chargeable` | Usage is still chargeable because provider work was accepted or completed | Included in later settlement attempts | Review if the provider disputes completion | Keep fulfillment idempotent and preserve evidence keyed by idempotency key. |
 
-Future platform versions may add explicit terminal states such as
-`closed_unpaid`, `uncollectible`, or `written_off`. Treat unknown terminal
-settlement states as not settled unless `status === "settled"` and
-`chain_receipt_id` is present.
+Terminal public states include `uncollectible` and `written_off` after operator
+review. Treat unknown terminal settlement states as not settled unless
+`status === "settled"` and `chain_receipt_id` is present.
 
 ## Operational Recipes
 

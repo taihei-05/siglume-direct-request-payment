@@ -11,22 +11,45 @@ _processed_events: set[str] = set()
 
 
 class ExampleSiglumeOrderStore:
-    async def get_order_for_checkout(self, order_id: str, request: Request) -> dict[str, Any] | None:
-        return _orders.get(order_id)
+    async def begin_checkout_attempt(self, order_id: str, request: Request) -> dict[str, Any] | None:
+        order = _orders.get(order_id)
+        if order is None:
+            return None
+        order.setdefault("attempt_id", f"{order['id']}_attempt_1")
+        order.setdefault("stable_nonce", f"{order['id']}-attempt_1")
+        return {
+            **order,
+            "order_id": order["id"],
+            "attempt_id": order["attempt_id"],
+            "stable_nonce": order["stable_nonce"],
+        }
 
-    async def mark_checkout_pending(self, *, order_id: str, challenge_hash: str, checkout_session_id: str) -> None:
+    async def mark_checkout_pending(
+        self,
+        *,
+        order_id: str,
+        attempt_id: str,
+        stable_nonce: str,
+        challenge_hash: str,
+        checkout_session_id: str,
+        checkout_url: str,
+    ) -> None:
         order = _orders.get(order_id)
         if not order:
             return
         order["status"] = "pending"
+        order["attempt_id"] = attempt_id
+        order["stable_nonce"] = stable_nonce
         order["challenge_hash"] = challenge_hash
         order["checkout_session_id"] = checkout_session_id
+        order["checkout_url"] = checkout_url
 
-    async def record_webhook_event_once(self, event_id: str) -> bool:
+    async def process_webhook_event_once(self, event_id: str, handler) -> str:
         if event_id in _processed_events:
-            return False
+            return "duplicate"
+        await handler()
         _processed_events.add(event_id)
-        return True
+        return "processed"
 
     async def find_order_by_challenge_hash(self, challenge_hash: str) -> dict[str, Any] | None:
         for order in _orders.values():

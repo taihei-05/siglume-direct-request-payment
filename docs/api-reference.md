@@ -356,7 +356,8 @@ Returns:
 `merchant.merchant_account.metadata_jsonb.metered_risk_acceptance` records the
 merchant's Micro / Nano delayed-settlement risk acceptance receipt with
 `terms_version`, `accepted_at`, `principal_user_id`, `receipt_id`, and fixed
-market thresholds `JPY: 10000` / `USD: 10000`.
+market thresholds JPY 10,000 / USD 100.00 (`settlement_threshold_minor` is
+`10000` for both JPY minor units and USD cents).
 
 Secrets are returned only when created or rotated. Existing secrets are not
 replayed by `getMerchant` / `get_merchant`.
@@ -372,7 +373,9 @@ POST /v1/sdrp/direct-payments/merchants
 Creates or updates the merchant account for the authenticated merchant user.
 Accepts the optional `checkout_allowed_origins: string[]` return-URL origin
 allowlist described under `setupCheckout` above; the same normalization and
-webhook-origin auto-allow apply.
+webhook-origin auto-allow apply. Python annotates this direct response as
+`DirectRequestPaymentMerchantResponse`; `setup_checkout(...)` returns
+`DirectRequestPaymentCheckoutSetupResult`.
 
 ### `createCheckoutSession(input)` / `create_checkout_session(...)`
 
@@ -534,6 +537,41 @@ POST /v1/market/webhooks/subscriptions
 Defaults event types to `direct_payment.confirmed` and
 `direct_payment.spent`. The returned `signing_secret` is shown only at creation
 or rotation.
+
+### `listWebhookSubscriptions()` / `list_webhook_subscriptions()`
+
+Calls:
+
+```text
+GET /v1/market/webhooks/subscriptions
+```
+
+Returns the current user's webhook subscriptions without the full signing
+secret. Use `signing_secret_hint` to confirm that the local
+`SIGLUME_WEBHOOK_SECRET` is the expected secret.
+
+### `queueWebhookTestDelivery(input)` / `queue_webhook_test_delivery(...)`
+
+Calls:
+
+```text
+POST /v1/market/webhooks/test-deliveries
+```
+
+Queues a signed test event to one or more subscription ids. `siglume-check
+readiness` uses this for a harmless `direct_payment.confirmed` readiness probe.
+
+### `listWebhookDeliveries(input)` / `list_webhook_deliveries(...)`
+
+Calls:
+
+```text
+GET /v1/market/webhooks/deliveries
+```
+
+Supports `subscription_id`, `event_type`, `status`, and `limit`. Readiness polls
+this list after queueing the test delivery and only passes when the matching
+delivery status becomes `delivered`.
 
 ## `DirectRequestPaymentClient`
 
@@ -1012,10 +1050,10 @@ the `Siglume-Signature` header; use
 `verifyDirectRequestPaymentWebhook(...)` /
 `verify_direct_request_payment_webhook(...)` for signature verification and
 parsing together. Throws
-`SiglumeWebhookPayloadError` on a malformed event, or when a
-`direct_payment.confirmed` event does not carry a supported Direct Request
-Payment mode (`external_402` or `metered_settlement_batch`). The `payload`
-argument is positional in both languages.
+`SiglumeWebhookPayloadError` on a malformed event. It does not reject an
+unsupported `direct_payment.confirmed` mode by itself; the classifier returns
+`kind: "unknown"` with `reason: "unsupported_confirmation_mode"` for that case.
+The `payload` argument is positional in both languages.
 
 For `direct_payment.confirmed`, inspect `event.data.pricing_band`,
 `event.data.settlement_cadence`, `event.data.finality`,
@@ -1039,13 +1077,15 @@ Recommended branch: call `classifyDirectPaymentConfirmation(event)` /
   pricing, per-payment on-chain finality, settled status, non-empty
   `requirement_id`, non-empty `challenge_hash`, and non-empty
   `chain_receipt_id`.
-- `metered_usage_accepted`: treat the usage as accepted but unsettled. This
-  requires Micro / Nano pricing, `finality === "aggregated_onchain_settlement"`,
-  the matching settlement cadence (`micro` -> `weekly`, `nano` -> `monthly`),
+- `metered_usage_accepted`: treat the usage as accepted but unsettled only if
+  your integration has explicitly enabled Micro / Nano delayed-settlement
+  handling. This requires Micro / Nano pricing,
+  `finality === "aggregated_onchain_settlement"`, the matching settlement
+  cadence (`micro` -> `weekly`, `nano` -> `monthly`),
   `settlement_status === "pending_settlement"`, non-empty `requirement_id`, and
-  non-empty `challenge_hash`. SDRP merchant setup and terms assume the merchant
-  accepts this delayed aggregated settlement model for Micro / Nano amount
-  bands; reconcile final revenue from statement APIs / settlement batches.
+  non-empty `challenge_hash`. Standard-only integrations should route this to
+  review or return `METERED_INTEGRATION_REQUIRED`; Micro / Nano integrations
+  must reconcile final revenue from statement APIs / settlement batches.
 - `unknown`: do not mark paid or fulfilled from the event type alone; fetch the
   requirement or route the event to manual review.
 
@@ -1153,7 +1193,11 @@ package exports `TypedDict` names for the high-risk response shapes:
 - `DirectRequestPaymentPastDueBlock`
 - `DirectRequestPaymentProviderMeteredTotals`
 - `DirectRequestPaymentListResponse`
-- `DirectRequestPaymentMerchantSetupResponse`
+- `DirectRequestPaymentMerchantResponse`
+- `DirectRequestPaymentCheckoutSetupResult`
+- `DirectRequestPaymentMerchantSetupResponse` (compatibility alias for checkout setup result)
+- `DirectRequestPaymentWebhookSubscription`
+- `DirectRequestPaymentWebhookDelivery`
 - `DirectRequestPaymentWebhookVerification`
 - `DirectRequestPaymentConfirmationClassification`
 

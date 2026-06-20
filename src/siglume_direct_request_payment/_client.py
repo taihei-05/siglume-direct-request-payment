@@ -25,7 +25,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.19"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.20"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
 DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain"
@@ -168,11 +168,45 @@ class HostedCheckoutSession(TypedDict, total=False):
     metadata_jsonb: dict[str, Any]
 
 
-class DirectRequestPaymentMerchantSetupResponse(TypedDict, total=False):
+class DirectRequestPaymentMerchantResponse(TypedDict, total=False):
+    merchant_account: dict[str, Any]
+    challenge_secret: str | None
+    challenge_secret_created: bool
+    created: bool | None
+    listing_id: str | None
+    mandate: dict[str, Any] | None
+    next_steps: dict[str, Any]
+
+
+class DirectRequestPaymentWebhookSubscription(TypedDict, total=False):
+    webhook_subscription_id: str
+    subscription_id: str
+    id: str
+    callback_url: str
+    signing_secret: str
+    signing_secret_hint: str
+    status: str
+    event_types: list[str]
+
+
+class DirectRequestPaymentWebhookDelivery(TypedDict, total=False):
+    id: str
+    subscription_id: str
+    event_id: str
+    event_type: str
+    delivery_status: str
+    response_status: int | None
+    delivered_at: str | None
+
+
+class DirectRequestPaymentCheckoutSetupResult(TypedDict, total=False):
     merchant: dict[str, Any]
     billing_mandate: dict[str, Any]
-    webhook_subscription: dict[str, Any]
+    webhook_subscription: DirectRequestPaymentWebhookSubscription
     env: dict[str, str]
+
+
+DirectRequestPaymentMerchantSetupResponse = DirectRequestPaymentCheckoutSetupResult
 
 
 class DirectRequestPaymentWebhookVerification(TypedDict, total=False):
@@ -460,7 +494,7 @@ class DirectRequestPaymentClient:
             ),
         )
 
-    def _request(self, method: str, path: str, *, json_body: Any | None = None) -> dict[str, Any]:
+    def _request(self, method: str, path: str, *, json_body: Any | None = None) -> Any:
         headers = {
             "Accept": "application/json",
             "Authorization": f"Bearer {self._auth_token}",
@@ -539,7 +573,7 @@ class DirectRequestPaymentMerchantClient:
         billing_mandate_cap_minor: int | None = None,
         max_amount_minor: int | None = None,
         checkout_allowed_origins: list[str] | tuple[str, ...] | None = None,
-    ) -> DirectRequestPaymentMerchantSetupResponse:
+    ) -> DirectRequestPaymentMerchantResponse:
         payload: dict[str, Any] = {
             "merchant": _normalize_self_service_merchant(merchant),
             "billing_plan": _normalize_billing_plan(billing_plan),
@@ -635,7 +669,7 @@ class DirectRequestPaymentMerchantClient:
         description: str | None = None,
         event_types: list[str] | tuple[str, ...] | None = None,
         metadata: Mapping[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> DirectRequestPaymentWebhookSubscription:
         payload: dict[str, Any] = {
             "callback_url": _normalize_https_url(callback_url, "callback_url"),
             "event_types": [
@@ -648,6 +682,45 @@ class DirectRequestPaymentMerchantClient:
         if metadata is not None:
             payload["metadata"] = _clone_json_object(metadata, "metadata")
         return self._request("POST", "/market/webhooks/subscriptions", json_body=payload)
+
+    def list_webhook_subscriptions(self) -> list[DirectRequestPaymentWebhookSubscription]:
+        response = self._request("GET", "/market/webhooks/subscriptions")
+        return response if isinstance(response, list) else []
+
+    def queue_webhook_test_delivery(
+        self,
+        *,
+        event_type: str,
+        data: Mapping[str, Any] | None = None,
+        subscription_ids: list[str] | tuple[str, ...] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"event_type": _require_non_empty(event_type, "event_type")}
+        if data is not None:
+            payload["data"] = _clone_json_object(data, "data")
+        if subscription_ids is not None:
+            payload["subscription_ids"] = [_require_non_empty(subscription_id, "subscription_id") for subscription_id in subscription_ids]
+        return self._request("POST", "/market/webhooks/test-deliveries", json_body=payload)
+
+    def list_webhook_deliveries(
+        self,
+        *,
+        subscription_id: str | None = None,
+        event_type: str | None = None,
+        status: str | None = None,
+        limit: int | None = None,
+    ) -> list[DirectRequestPaymentWebhookDelivery]:
+        params: dict[str, str] = {}
+        if subscription_id is not None:
+            params["subscription_id"] = _require_non_empty(subscription_id, "subscription_id")
+        if event_type is not None:
+            params["event_type"] = _require_non_empty(event_type, "event_type")
+        if status is not None:
+            params["status"] = _require_non_empty(status, "status")
+        if limit is not None:
+            params["limit"] = str(_positive_int(limit, "limit"))
+        query = f"?{urlencode(params)}" if params else ""
+        response = self._request("GET", f"/market/webhooks/deliveries{query}")
+        return response if isinstance(response, list) else []
 
     def setup_checkout(
         self,
@@ -665,7 +738,7 @@ class DirectRequestPaymentMerchantClient:
         prepare_billing_mandate: bool = True,
         webhook_event_types: list[str] | tuple[str, ...] | None = None,
         webhook_description: str | None = None,
-    ) -> DirectRequestPaymentMerchantSetupResponse:
+    ) -> DirectRequestPaymentCheckoutSetupResult:
         merchant_setup = self.setup_merchant(
             merchant=merchant,
             display_name=display_name,
@@ -746,9 +819,8 @@ class DirectRequestPaymentMerchantClient:
             message = error.get("message") or (parsed.get("message") if isinstance(parsed, dict) else None) or response.reason_phrase
             raise SiglumeApiError(str(message), status=response.status_code, code=str(code), data=parsed)
         if isinstance(parsed, dict) and "data" in parsed:
-            data = parsed["data"]
-            return data if isinstance(data, dict) else {"data": data}
-        return parsed if isinstance(parsed, dict) else {"data": parsed}
+            return parsed["data"]
+        return parsed
 
     def _request_hosted_checkout(self, method: str, path: str, *, json_body: Any | None = None) -> dict[str, Any]:
         try:

@@ -6,6 +6,7 @@ export interface Order {
   currency: "JPY" | "USD";
   payment_attempt: number;
   siglume_challenge_hash?: string;
+  siglume_checkout_url?: string;
   siglume_checkout_session_id?: string;
   siglume_requirement_id?: string;
   siglume_chain_receipt_id?: string;
@@ -31,6 +32,15 @@ export function getOrder(orderId: string): Order | undefined {
   return orders.get(orderId);
 }
 
+export function beginCheckoutAttempt(orderId: string): Order | undefined {
+  const order = orders.get(orderId);
+  if (!order) return undefined;
+  if (!order.payment_attempt) {
+    order.payment_attempt = 1;
+  }
+  return order;
+}
+
 export function allOrders(): Order[] {
   return [...orders.values()];
 }
@@ -43,10 +53,11 @@ export function findOrderByChallengeHash(challengeHash: string): Order | undefin
   return [...orders.values()].find((order) => order.siglume_challenge_hash === challengeHash);
 }
 
-export function markWebhookEventProcessedOnce(eventId: string): boolean {
+export async function processWebhookEventOnce(eventId: string, handler: () => Promise<void>): Promise<"processed" | "duplicate"> {
   if (processedWebhookEvents.has(eventId)) {
-    return false;
+    return "duplicate";
   }
+  await handler();
   processedWebhookEvents.add(eventId);
-  return true;
+  return "processed";
 }

@@ -357,6 +357,76 @@ def test_merchant_client_sets_up_checkout() -> None:
 
 
 @respx.mock
+def test_merchant_client_reads_webhook_subscriptions_and_delivery_status() -> None:
+    subscriptions_route = respx.get("https://siglume.test/v1/market/webhooks/subscriptions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "whsub_test",
+                        "callback_url": "https://merchant.example/webhooks/siglume",
+                        "status": "active",
+                        "event_types": ["direct_payment.confirmed"],
+                        "signing_secret_hint": "hint",
+                    }
+                ]
+            },
+        )
+    )
+    probe_route = respx.post("https://siglume.test/v1/market/webhooks/test-deliveries").mock(
+        return_value=httpx.Response(
+            202,
+            json={"data": {"queued": True, "event": {"id": "evt_probe", "type": "direct_payment.confirmed"}}},
+        )
+    )
+    deliveries_route = respx.get(
+        "https://siglume.test/v1/market/webhooks/deliveries",
+        params={"subscription_id": "whsub_test", "event_type": "direct_payment.confirmed", "limit": "10"},
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "whdel_test",
+                        "subscription_id": "whsub_test",
+                        "event_id": "evt_probe",
+                        "event_type": "direct_payment.confirmed",
+                        "delivery_status": "delivered",
+                        "response_status": 204,
+                    }
+                ]
+            },
+        )
+    )
+    client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
+
+    subscriptions = client.list_webhook_subscriptions()
+    queued = client.queue_webhook_test_delivery(
+        event_type="direct_payment.confirmed",
+        subscription_ids=["whsub_test"],
+        data={"mode": "readiness_probe"},
+    )
+    deliveries = client.list_webhook_deliveries(
+        subscription_id="whsub_test",
+        event_type="direct_payment.confirmed",
+        limit=10,
+    )
+
+    assert subscriptions[0]["id"] == "whsub_test"
+    assert queued["event"]["id"] == "evt_probe"
+    assert deliveries[0]["delivery_status"] == "delivered"
+    assert json.loads(probe_route.calls.last.request.content) == {
+        "event_type": "direct_payment.confirmed",
+        "data": {"mode": "readiness_probe"},
+        "subscription_ids": ["whsub_test"],
+    }
+    assert subscriptions_route.called
+    assert deliveries_route.called
+
+
+@respx.mock
 def test_merchant_client_registers_checkout_allowed_origins() -> None:
     route = respx.post("https://siglume.test/v1/sdrp/direct-payments/merchants").mock(
         return_value=httpx.Response(201, json={"data": {"merchant_account": {"merchant": "shop"}}})

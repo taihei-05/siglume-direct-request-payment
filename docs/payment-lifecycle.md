@@ -32,7 +32,7 @@ checkout open or agent/API payment starts
   -> usage accepted
   -> direct_payment.confirmed webhook
   -> classifier kind: metered_usage_accepted
-  -> merchant may fulfill as fulfilled_unsettled
+  -> merchant may fulfill as fulfilled_unsettled only after enabling Micro/Nano handling
   -> open period closes by amount threshold or schedule
   -> final notice window
   -> submitted / retrying / past_due if needed
@@ -41,10 +41,12 @@ checkout open or agent/API payment starts
   -> provider revenue is settled
 ```
 
-For Micro / Nano, `metered_usage_accepted` means the usage can be fulfilled
-under the SDRP delayed settlement model, but provider revenue is not settled
-yet. Provider revenue becomes settled only when the settlement batch is settled
-on-chain and has a `chain_receipt_id`.
+For Micro / Nano, `metered_usage_accepted` means the usage can be fulfilled only
+by an integration that has explicitly accepted SDRP delayed settlement and
+implemented fulfilled-but-unsettled state, settlement reconciliation, past-due
+handling, and terminal accounting. Provider revenue is not settled yet. Provider
+revenue becomes settled only when the settlement batch is settled on-chain and
+has a `chain_receipt_id`.
 
 ## Field meanings
 
@@ -52,7 +54,7 @@ on-chain and has a `chain_receipt_id`.
 | --- | --- | --- |
 | Hosted Checkout `status: "paid"` | The checkout session accepted the wallet payment flow. | For Micro / Nano, it does not mean provider revenue is settled. |
 | `standard_settled` | Standard payment is on-chain settled and can mark an order paid. | It is not used for Micro / Nano accepted usage. |
-| `metered_usage_accepted` | Micro / Nano usage is accepted and may be fulfilled as unsettled. | It is not settled provider revenue. |
+| `metered_usage_accepted` | Micro / Nano usage is accepted for integrations that have enabled delayed settlement handling. | It is not settled provider revenue, and Standard-only integrations should not fulfill it. |
 | `fulfilled_unsettled` | Your merchant system delivered the item before Micro / Nano settlement. | It is not a Siglume settlement status. |
 | `metered_batch_settled` | Aggregated Micro / Nano batch settled on-chain. | It does not identify one order by challenge hash. |
 | `pending_settlement` | Micro / Nano usage is waiting for aggregated settlement. | It is not a failure by itself. |
@@ -65,9 +67,10 @@ on-chain and has a `chain_receipt_id`.
   re-stringified JSON object.
 - Store `challenge_hash` on the order before redirecting the buyer.
 - For Standard, mark paid only from `standard_settled`.
-- For Micro / Nano, use a separate local state such as
-  `fulfilled_unsettled`; reconcile final revenue from statement APIs and batch
-  settlement events.
+- For Micro / Nano, fulfill only after you have explicitly enabled delayed
+  settlement handling. Use a separate local state such as
+  `fulfilled_unsettled`, then reconcile final revenue from statement APIs and
+  batch settlement events.
 - Treat `unknown` classifications as manual review. Do not mark paid or
   fulfilled from the event name alone.
 

@@ -49,6 +49,7 @@ def main() -> None:
 def _readiness(args: argparse.Namespace) -> bool:
     checks: list[dict[str, str]] = []
     token = os.getenv("SIGLUME_MERCHANT_AUTH_TOKEN") or os.getenv("SIGLUME_AUTH_TOKEN") or ""
+    webhook_secret = os.getenv("SIGLUME_WEBHOOK_SECRET") or ""
     currency = str(args.currency).upper()
     amount_minor = int(args.amount_minor or os.getenv("SIGLUME_DIRECT_PAYMENT_TEST_AMOUNT_MINOR") or (301 if currency == "USD" else 501))
 
@@ -56,10 +57,12 @@ def _readiness(args: argparse.Namespace) -> bool:
     _check(checks, "merchant_token", bool(token) and not token.startswith("cli_"), "Set SIGLUME_MERCHANT_AUTH_TOKEN to a merchant Siglume bearer token, not a cli_ key.")
     _check(checks, "shop_origin", _is_https_origin(args.origin), "Set SHOP_PUBLIC_ORIGIN to an https origin, for example https://www.example.com.")
     _check(checks, "webhook_url", _is_https_url(args.webhook_url), "Set SHOP_WEBHOOK_URL to a public https webhook URL.")
+    _check(checks, "webhook_secret_present", bool(webhook_secret) and webhook_secret.startswith("whsec_"), "Set SIGLUME_WEBHOOK_SECRET to the webhook signing secret returned by setup_checkout.")
     _check(checks, "standard_probe_amount", _is_standard_amount(currency, amount_minor), "Use a Standard-band probe amount: JPY 501+ or USD 301+ minor units.")
 
     if not args.no_api and not _has_failures(checks):
         merchant = DirectRequestPaymentMerchantClient(auth_token=token, base_url=args.base_url)
+        matching_subscription: dict[str, object] | None = None
         try:
             response = merchant.get_merchant(args.merchant)
             account = response.get("merchant_account") or {}
@@ -67,15 +70,48 @@ def _readiness(args: argparse.Namespace) -> bool:
             _check(
                 checks,
                 "billing_mandate",
-                bool(account.get("billing_mandate_id")) or _active_like(account.get("billing_status")),
+                bool(account.get("billing_mandate_id")),
                 "Complete the merchant billing mandate wallet approval.",
+            )
+            _check(
+                checks,
+                "billing_status_active",
+                _active_like(account.get("billing_status")),
+                f"Billing status is {account.get('billing_status') or 'unknown'}; it must be active before accepting payments.",
             )
             if account.get("status") and not _active_like(account.get("status")):
                 checks.append({"name": "merchant_status", "status": "warn", "message": f"Merchant status is {account.get('status')}; confirm it is allowed to accept payments."})
-            if account.get("billing_status") and not _active_like(account.get("billing_status")):
-                checks.append({"name": "billing_status", "status": "warn", "message": f"Billing status is {account.get('billing_status')}; confirm it is active before accepting payments."})
         except Exception as exc:  # noqa: BLE001 - CLI must convert all failures to readiness output.
             _check(checks, "merchant_api", False, _api_error_message(exc, "Could not read the merchant account."))
+
+        if not _has_failures(checks):
+            try:
+                subscriptions = merchant.list_webhook_subscriptions()
+                active_subscriptions = [subscription for subscription in subscriptions if _active_like(subscription.get("status"))]
+                for subscription in active_subscriptions:
+                    if _urls_equal(str(subscription.get("callback_url") or ""), str(args.webhook_url)):
+                        matching_subscription = subscription
+                        break
+                _check(checks, "webhook_subscription_exists", bool(active_subscriptions), "Create an active webhook subscription before checkout.")
+                _check(checks, "webhook_callback_matches", matching_subscription is not None, f"No active webhook subscription points at {args.webhook_url}.")
+                _check(
+                    checks,
+                    "direct_payment_confirmed_subscribed",
+                    matching_subscription is not None and _includes_event_type(matching_subscription.get("event_types"), "direct_payment.confirmed"),
+                    "The matching webhook subscription must include direct_payment.confirmed.",
+                )
+                hint = str((matching_subscription or {}).get("signing_secret_hint") or "")
+                _check(
+                    checks,
+                    "webhook_secret_matches_subscription_hint",
+                    bool(hint) and webhook_secret.endswith(hint),
+                    "SIGLUME_WEBHOOK_SECRET does not match the signing_secret_hint for the matching subscription. Rotate or re-save the webhook secret.",
+                )
+            except Exception as exc:  # noqa: BLE001
+                _check(checks, "webhook_subscription_api", False, _api_error_message(exc, "Could not read webhook subscriptions."))
+
+        if args.no_probe and not _has_failures(checks):
+            _check(checks, "hosted_checkout_probe", False, "--no-probe skips Hosted Checkout and webhook delivery probes. Remove --no-probe for readiness.")
 
         if not args.no_probe and not _has_failures(checks):
             try:
@@ -94,6 +130,9 @@ def _readiness(args: argparse.Namespace) -> bool:
             except Exception as exc:  # noqa: BLE001
                 _check(checks, "hosted_checkout", False, _api_error_message(exc, "Hosted Checkout probe failed. Check checkout_allowed_origins, currency, amount, and billing mandate."))
 
+        if not args.no_probe and not _has_failures(checks):
+            _check_webhook_delivery_probe(checks, merchant, merchant_key=args.merchant, subscription=matching_subscription)
+
     ok = not _has_failures(checks)
     if args.json:
         print(json.dumps({"ok": ok, "checks": checks}, indent=2))
@@ -101,7 +140,10 @@ def _readiness(args: argparse.Namespace) -> bool:
         for item in checks:
             mark = "OK" if item["status"] == "pass" else "WARN" if item["status"] == "warn" else "FAIL"
             print(f"{mark} {item['name']}: {item['message']}")
-        print("Ready for 10-minute SDRP integration." if ok else "Not ready. Fix the FAIL items before coding checkout.")
+        if ok and args.no_api:
+            print("Local config checks passed. API, Hosted Checkout, and webhook delivery readiness were not verified.")
+        else:
+            print("Ready for 10-minute SDRP integration." if ok else "Not ready. Fix the FAIL items before coding checkout.")
     return ok
 
 
@@ -109,10 +151,18 @@ def _init_fastapi(target: Path, *, force: bool) -> None:
     target = target.resolve()
     target.mkdir(parents=True, exist_ok=True)
     source = resources.files("siglume_direct_request_payment").joinpath("templates/fastapi")
-    for item in source.iterdir():
+    items = list(source.iterdir())
+    conflicts: list[Path] = []
+    if not force:
+        for item in items:
+            destination = target / item.name
+            if destination.exists():
+                conflicts.append(destination)
+        if conflicts:
+            joined = "\n".join(str(path) for path in conflicts)
+            raise SystemExit(f"Refusing to overwrite existing files. Re-run with --force to overwrite:\n{joined}")
+    for item in items:
         destination = target / item.name
-        if destination.exists() and not force:
-            raise SystemExit(f"{destination} already exists. Re-run with --force to overwrite.")
         with resources.as_file(item) as path:
             if path.is_file():
                 shutil.copyfile(path, destination)
@@ -161,6 +211,80 @@ def _is_standard_amount(currency: str, amount_minor: int) -> bool:
 
 def _active_like(value: object) -> bool:
     return str(value or "").lower() in {"active", "ready", "current", "ok", "enabled", "paid", "complete", "completed"}
+
+
+def _includes_event_type(event_types: object, event_type: str) -> bool:
+    if not isinstance(event_types, list) or not event_types:
+        return True
+    return event_type in {str(item) for item in event_types}
+
+
+def _urls_equal(left: str, right: str) -> bool:
+    try:
+        return urlsplit(left).geturl() == urlsplit(right).geturl()
+    except Exception:
+        return False
+
+
+def _subscription_id(subscription: dict[str, object] | None) -> str:
+    if not subscription:
+        return ""
+    return str(subscription.get("id") or subscription.get("webhook_subscription_id") or subscription.get("subscription_id") or "")
+
+
+def _check_webhook_delivery_probe(
+    checks: list[dict[str, str]],
+    merchant: DirectRequestPaymentMerchantClient,
+    *,
+    merchant_key: str,
+    subscription: dict[str, object] | None,
+) -> None:
+    subscription_id = _subscription_id(subscription)
+    if not subscription_id:
+        _check(checks, "webhook_delivery_probe_passed", False, "Cannot run webhook delivery probe without a matching subscription id.")
+        return
+    try:
+        nonce = int(time.time() * 1000)
+        queued = merchant.queue_webhook_test_delivery(
+            event_type="direct_payment.confirmed",
+            subscription_ids=[subscription_id],
+            data={
+                "mode": "readiness_probe",
+                "merchant": merchant_key,
+                "direct_payment_requirement_id": f"dpr_readiness_{nonce}",
+                "requirement_id": f"dpr_readiness_{nonce}",
+                "challenge_hash": "sha256:readiness_probe",
+                "pricing_band": "standard",
+                "settlement_status": "readiness_probe",
+            },
+        )
+        event = queued.get("event") if isinstance(queued.get("event"), dict) else {}
+        event_id = str(event.get("id") or "")
+        deadline = time.time() + 10
+        while event_id and time.time() < deadline:
+            deliveries = merchant.list_webhook_deliveries(
+                subscription_id=subscription_id,
+                event_type="direct_payment.confirmed",
+                limit=10,
+            )
+            for delivery in deliveries:
+                if str(delivery.get("event_id") or "") != event_id:
+                    continue
+                if delivery.get("delivery_status") == "delivered":
+                    _check(checks, "webhook_delivery_probe_passed", True, "ready")
+                    return
+                if delivery.get("delivery_status") == "failed":
+                    _check(
+                        checks,
+                        "webhook_delivery_probe_passed",
+                        False,
+                        f"Webhook delivery failed with response_status={delivery.get('response_status') or 'unknown'}.",
+                    )
+                    return
+            time.sleep(1)
+        _check(checks, "webhook_delivery_probe_passed", False, "Webhook test delivery was queued but did not report delivered before timeout. Check callback reachability and delivery logs.")
+    except Exception as exc:  # noqa: BLE001
+        _check(checks, "webhook_delivery_probe_passed", False, _api_error_message(exc, "Webhook delivery probe failed."))
 
 
 def _api_error_message(error: object, fallback: str) -> str:

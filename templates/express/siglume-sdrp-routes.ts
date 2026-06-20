@@ -13,14 +13,28 @@ export interface SiglumeCheckoutOrder {
   currency: DirectRequestPaymentCurrency | string;
 }
 
+export interface SiglumeCheckoutAttempt extends SiglumeCheckoutOrder {
+  order_id: string;
+  attempt_id: string;
+  stable_nonce: string;
+  checkout_url?: string;
+  checkout_session_id?: string;
+}
+
 export interface SiglumeSdrpOrderStore {
-  getOrderForCheckout(orderId: string, req: express.Request): Promise<SiglumeCheckoutOrder | null>;
+  beginCheckoutAttempt(orderId: string, req: express.Request): Promise<SiglumeCheckoutAttempt | null>;
   markCheckoutPending(input: {
     order_id: string;
+    attempt_id: string;
+    stable_nonce: string;
     challenge_hash: string;
     checkout_session_id: string;
+    checkout_url: string;
   }): Promise<void>;
-  recordWebhookEventOnce(eventId: string): Promise<boolean>;
+  processWebhookEventOnce(
+    eventId: string,
+    handler: () => Promise<void>,
+  ): Promise<"processed" | "duplicate">;
   findOrderByChallengeHash(challengeHash: string): Promise<{ id: string } | null>;
   markOrderPaidOnce(input: {
     order_id: string;
@@ -41,9 +55,10 @@ export interface SiglumeSdrpRouterOptions {
   webhook_secret: string;
   shop_public_origin: string;
   order_store: SiglumeSdrpOrderStore;
+  allow_metered_payments?: boolean;
 }
 
-export function createSiglumeSdrpRouter(options: SiglumeSdrpRouterOptions): express.Router {
+export function createSiglumeSdrpCheckoutRouter(options: SiglumeSdrpRouterOptions): express.Router {
   const router = express.Router();
   const merchant = new DirectRequestPaymentMerchantClient({
     auth_token: options.merchant_auth_token,
@@ -52,94 +67,42 @@ export function createSiglumeSdrpRouter(options: SiglumeSdrpRouterOptions): expr
   router.post("/checkout/siglume/start", express.json(), async (req, res, next) => {
     try {
       const orderId = String(req.body?.order_id || "");
-      const order = await options.order_store.getOrderForCheckout(orderId, req);
-      if (!order) {
+      const attempt = await options.order_store.beginCheckoutAttempt(orderId, req);
+      if (!attempt) {
         res.status(404).json({ error: "order_not_found" });
+        return;
+      }
+
+      if (!options.allow_metered_payments && !isStandardCheckoutAmount(attempt.currency, attempt.amount_minor)) {
+        res.status(409).json({ error: "METERED_INTEGRATION_REQUIRED" });
+        return;
+      }
+
+      if (attempt.checkout_url && attempt.checkout_session_id) {
+        res.json({ checkout_url: attempt.checkout_url, session_id: attempt.checkout_session_id });
         return;
       }
 
       const session = await merchant.createCheckoutSession({
         merchant: options.merchant,
-        amount_minor: order.amount_minor,
-        currency: order.currency,
-        nonce: `${order.id}-attempt_${Date.now()}`,
+        amount_minor: attempt.amount_minor,
+        currency: attempt.currency,
+        nonce: attempt.stable_nonce,
         success_url: `${options.shop_public_origin}/checkout/siglume/success`,
         cancel_url: `${options.shop_public_origin}/checkout/siglume/cancel`,
-        metadata: { order_id: order.id },
+        metadata: { order_id: attempt.order_id, attempt_id: attempt.attempt_id },
       });
 
       await options.order_store.markCheckoutPending({
-        order_id: order.id,
+        order_id: attempt.order_id,
+        attempt_id: attempt.attempt_id,
+        stable_nonce: attempt.stable_nonce,
         challenge_hash: session.challenge_hash,
         checkout_session_id: session.session_id,
+        checkout_url: session.checkout_url,
       });
 
       res.json({ checkout_url: session.checkout_url, session_id: session.session_id });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.post("/webhooks/siglume", express.raw({ type: "application/json" }), async (req, res, next) => {
-    try {
-      const { event } = await verifyDirectRequestPaymentWebhook(
-        options.webhook_secret,
-        req.body,
-        req.header("siglume-signature") || "",
-      );
-
-      if (!(await options.order_store.recordWebhookEventOnce(event.id))) {
-        res.status(204).send();
-        return;
-      }
-
-      if (event.type === "direct_payment.confirmed") {
-        const confirmation = classifyDirectPaymentConfirmation(event);
-
-        if (confirmation.kind === "standard_settled") {
-          const order = await options.order_store.findOrderByChallengeHash(confirmation.challenge_hash);
-          if (order) {
-            await options.order_store.markOrderPaidOnce({
-              order_id: order.id,
-              requirement_id: confirmation.requirement_id,
-              chain_receipt_id: confirmation.chain_receipt_id,
-            });
-          } else {
-            await options.order_store.flagPaymentReview({
-              reason: "unknown_challenge_hash",
-              requirement_id: confirmation.requirement_id,
-            });
-          }
-        } else if (confirmation.kind === "metered_usage_accepted") {
-          const order = await options.order_store.findOrderByChallengeHash(confirmation.challenge_hash);
-          if (order) {
-            await options.order_store.markOrderFulfilledUnsettledOnce({
-              order_id: order.id,
-              requirement_id: confirmation.requirement_id,
-              pricing_band: confirmation.pricing_band,
-            });
-          } else {
-            await options.order_store.flagPaymentReview({
-              reason: "unknown_metered_challenge_hash",
-              requirement_id: confirmation.requirement_id,
-            });
-          }
-        } else if (confirmation.kind === "metered_batch_settled") {
-          await options.order_store.flagPaymentReview({
-            reason: "metered_batch_settled_reconcile_statement_api",
-            settlement_batch_id: confirmation.settlement_batch_id,
-            chain_receipt_id: confirmation.chain_receipt_id,
-          });
-        } else {
-          await options.order_store.flagPaymentReview({
-            reason: confirmation.reason,
-            requirement_id: confirmation.requirement_id,
-            settlement_batch_id: confirmation.settlement_batch_id,
-          });
-        }
-      }
-
-      res.status(204).send();
     } catch (error) {
       next(error);
     }
@@ -154,4 +117,115 @@ export function createSiglumeSdrpRouter(options: SiglumeSdrpRouterOptions): expr
   });
 
   return router;
+}
+
+export function createSiglumeSdrpWebhookHandler(options: SiglumeSdrpRouterOptions): express.RequestHandler {
+  return async (req, res, next) => {
+    try {
+      const { event } = await verifyDirectRequestPaymentWebhook(
+        options.webhook_secret,
+        req.body,
+        req.header("siglume-signature") || "",
+      );
+
+      const result = await options.order_store.processWebhookEventOnce(event.id, async () => {
+        await processSiglumeWebhookEvent(options, event);
+      });
+
+      if (result === "duplicate") {
+        res.status(204).send();
+        return;
+      }
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+export function createSiglumeSdrpRouter(options: SiglumeSdrpRouterOptions): express.Router {
+  const router = createSiglumeSdrpCheckoutRouter(options);
+  router.post(
+    "/webhooks/siglume",
+    express.raw({ type: "application/json" }),
+    createSiglumeSdrpWebhookHandler(options),
+  );
+  return router;
+}
+
+async function processSiglumeWebhookEvent(
+  options: SiglumeSdrpRouterOptions,
+  event: Awaited<ReturnType<typeof verifyDirectRequestPaymentWebhook>>["event"],
+): Promise<void> {
+  if (event.type !== "direct_payment.confirmed") {
+    return;
+  }
+
+  const confirmation = classifyDirectPaymentConfirmation(event);
+
+  if (confirmation.kind === "standard_settled") {
+    const order = await options.order_store.findOrderByChallengeHash(confirmation.challenge_hash);
+    if (order) {
+      await options.order_store.markOrderPaidOnce({
+        order_id: order.id,
+        requirement_id: confirmation.requirement_id,
+        chain_receipt_id: confirmation.chain_receipt_id,
+      });
+    } else {
+      await options.order_store.flagPaymentReview({
+        reason: "unknown_challenge_hash",
+        requirement_id: confirmation.requirement_id,
+      });
+    }
+    return;
+  }
+
+  if (confirmation.kind === "metered_usage_accepted") {
+    if (!options.allow_metered_payments) {
+      await options.order_store.flagPaymentReview({
+        reason: "metered_integration_required",
+        requirement_id: confirmation.requirement_id,
+        pricing_band: confirmation.pricing_band,
+      });
+      return;
+    }
+    const order = await options.order_store.findOrderByChallengeHash(confirmation.challenge_hash);
+    if (order) {
+      await options.order_store.markOrderFulfilledUnsettledOnce({
+        order_id: order.id,
+        requirement_id: confirmation.requirement_id,
+        pricing_band: confirmation.pricing_band,
+      });
+    } else {
+      await options.order_store.flagPaymentReview({
+        reason: "unknown_metered_challenge_hash",
+        requirement_id: confirmation.requirement_id,
+      });
+    }
+    return;
+  }
+
+  if (confirmation.kind === "metered_batch_settled") {
+    await options.order_store.flagPaymentReview({
+      reason: "metered_batch_settled_reconcile_statement_api",
+      settlement_batch_id: confirmation.settlement_batch_id,
+      chain_receipt_id: confirmation.chain_receipt_id,
+    });
+    return;
+  }
+
+  await options.order_store.flagPaymentReview({
+    reason: confirmation.reason,
+    requirement_id: confirmation.requirement_id,
+    settlement_batch_id: confirmation.settlement_batch_id,
+  });
+}
+
+function isStandardCheckoutAmount(currency: string, amountMinor: number): boolean {
+  if (!Number.isSafeInteger(amountMinor)) return false;
+  const normalizedCurrency = String(currency || "").toUpperCase();
+  if (normalizedCurrency === "JPY") return amountMinor >= 501;
+  if (normalizedCurrency === "USD") return amountMinor >= 301;
+  return false;
 }

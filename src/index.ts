@@ -9,7 +9,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.19";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.20";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain";
@@ -477,6 +477,30 @@ export interface DirectRequestPaymentWebhookSubscription {
   status?: string;
   event_types?: string[];
   [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentWebhookTestDeliveryInput {
+  event_type: string;
+  data?: Record<string, unknown>;
+  subscription_ids?: string[];
+}
+
+export interface DirectRequestPaymentWebhookDelivery {
+  id?: string;
+  subscription_id?: string;
+  event_id?: string;
+  event_type?: string;
+  delivery_status?: string;
+  response_status?: number | null;
+  delivered_at?: string | null;
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentWebhookDeliveryListInput {
+  subscription_id?: string;
+  event_type?: string;
+  status?: string;
+  limit?: number;
 }
 
 export interface DirectRequestPaymentCheckoutSetupInput extends DirectRequestPaymentMerchantSetupInput {
@@ -985,6 +1009,35 @@ export class DirectRequestPaymentMerchantClient {
       payload.metadata = cloneJsonObject(input.metadata, "metadata");
     }
     return this.request<DirectRequestPaymentWebhookSubscription>("POST", "/market/webhooks/subscriptions", payload);
+  }
+
+  async listWebhookSubscriptions(): Promise<DirectRequestPaymentWebhookSubscription[]> {
+    return this.request<DirectRequestPaymentWebhookSubscription[]>("GET", "/market/webhooks/subscriptions");
+  }
+
+  async queueWebhookTestDelivery(input: DirectRequestPaymentWebhookTestDeliveryInput): Promise<Record<string, unknown>> {
+    const payload: Record<string, unknown> = {
+      event_type: requireNonEmpty(input.event_type, "event_type"),
+    };
+    if (input.data !== undefined) {
+      payload.data = cloneJsonObject(input.data, "data");
+    }
+    if (input.subscription_ids !== undefined) {
+      payload.subscription_ids = input.subscription_ids.map((subscriptionId) => requireNonEmpty(subscriptionId, "subscription_id"));
+    }
+    return this.request<Record<string, unknown>>("POST", "/market/webhooks/test-deliveries", payload);
+  }
+
+  async listWebhookDeliveries(
+    input: DirectRequestPaymentWebhookDeliveryListInput = {},
+  ): Promise<DirectRequestPaymentWebhookDelivery[]> {
+    const params = new URLSearchParams();
+    if (input.subscription_id !== undefined) params.set("subscription_id", requireNonEmpty(input.subscription_id, "subscription_id"));
+    if (input.event_type !== undefined) params.set("event_type", requireNonEmpty(input.event_type, "event_type"));
+    if (input.status !== undefined) params.set("status", requireNonEmpty(input.status, "status"));
+    if (input.limit !== undefined) params.set("limit", String(positiveInteger(input.limit, "limit")));
+    const query = params.toString();
+    return this.request<DirectRequestPaymentWebhookDelivery[]>("GET", `/market/webhooks/deliveries${query ? `?${query}` : ""}`);
   }
 
   async setupCheckout(input: DirectRequestPaymentCheckoutSetupInput): Promise<DirectRequestPaymentCheckoutSetupResult> {

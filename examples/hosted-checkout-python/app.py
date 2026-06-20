@@ -13,9 +13,9 @@ from siglume_direct_request_payment import (
 
 from order_store import (
     all_orders,
+    begin_checkout_attempt,
     find_order_by_challenge_hash,
-    get_order,
-    mark_webhook_event_processed_once,
+    process_webhook_event_once,
     save_order,
 )
 
@@ -37,11 +37,21 @@ def orders():
 @app.post("/checkout/siglume/start")
 def start_checkout():
     order_id = str((request.get_json(silent=True) or {}).get("order_id") or "")
-    order = get_order(order_id)
+    order = begin_checkout_attempt(order_id)
     if order is None:
         return jsonify({"error": "order_not_found"}), 404
 
-    order["payment_attempt"] = int(order.get("payment_attempt") or 0) + 1
+    if order.get("siglume_checkout_url") and order.get("siglume_checkout_session_id"):
+        return jsonify(
+            {
+                "order_id": order["id"],
+                "amount_minor": order["amount_minor"],
+                "currency": order["currency"],
+                "checkout_url": order["siglume_checkout_url"],
+                "session_id": order["siglume_checkout_session_id"],
+            }
+        )
+
     session = siglume_merchant.create_checkout_session(
         merchant=merchant_key,
         amount_minor=int(order["amount_minor"]),
@@ -53,6 +63,7 @@ def start_checkout():
     )
 
     order["siglume_challenge_hash"] = session["challenge_hash"]
+    order["siglume_checkout_url"] = session["checkout_url"]
     order["siglume_checkout_session_id"] = session["session_id"]
     order["siglume_payment_status"] = "pending"
     save_order(order)
@@ -77,34 +88,38 @@ def siglume_webhook():
     )
     event = verified["event"]
 
-    if not mark_webhook_event_processed_once(str(event["id"])):
+    def handler() -> None:
+        if event["type"] == "direct_payment.confirmed":
+            confirmation = classify_direct_payment_confirmation(event)
+
+            if confirmation["kind"] == "standard_settled":
+                order = find_order_by_challenge_hash(confirmation["challenge_hash"])
+                if order is not None:
+                    order["siglume_payment_status"] = "paid"
+                    order["siglume_requirement_id"] = confirmation["requirement_id"]
+                    order["siglume_chain_receipt_id"] = confirmation["chain_receipt_id"]
+                    save_order(order)
+            elif confirmation["kind"] == "metered_usage_accepted":
+                app.logger.warning(
+                    "Micro/Nano settlement integration is required before automatic fulfillment",
+                    extra={
+                        "event_id": event["id"],
+                        "requirement_id": confirmation["requirement_id"],
+                        "pricing_band": confirmation["pricing_band"],
+                    },
+                )
+            else:
+                app.logger.warning(
+                    "manual payment review required",
+                    extra={
+                        "event_id": event["id"],
+                        "reason": confirmation.get("reason"),
+                        "requirement_id": confirmation.get("requirement_id"),
+                    },
+                )
+
+    if process_webhook_event_once(str(event["id"]), handler) == "duplicate":
         return "", 204
-
-    if event["type"] == "direct_payment.confirmed":
-        confirmation = classify_direct_payment_confirmation(event)
-
-        if confirmation["kind"] == "standard_settled":
-            order = find_order_by_challenge_hash(confirmation["challenge_hash"])
-            if order is not None:
-                order["siglume_payment_status"] = "paid"
-                order["siglume_requirement_id"] = confirmation["requirement_id"]
-                order["siglume_chain_receipt_id"] = confirmation["chain_receipt_id"]
-                save_order(order)
-        elif confirmation["kind"] == "metered_usage_accepted":
-            order = find_order_by_challenge_hash(confirmation["challenge_hash"])
-            if order is not None:
-                order["siglume_payment_status"] = "fulfilled_unsettled"
-                order["siglume_requirement_id"] = confirmation["requirement_id"]
-                save_order(order)
-        else:
-            app.logger.warning(
-                "manual payment review required",
-                extra={
-                    "event_id": event["id"],
-                    "reason": confirmation.get("reason"),
-                    "requirement_id": confirmation.get("requirement_id"),
-                },
-            )
 
     return "", 204
 

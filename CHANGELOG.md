@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.4.20 - 2026-06-20
+
+Close the v0.4.19 public onboarding safety review.
+
+- Fixed generated Express/FastAPI webhook handling so webhook event ids are
+  recorded as processed only after the order update or durable review write
+  succeeds. A retry after a mid-handler failure is no longer discarded as a
+  duplicate.
+- Added stable checkout attempts/nonces to generated routes and starters so a
+  retry or double click reuses the active attempt instead of creating a fresh
+  timestamp nonce.
+- Split Express checkout and webhook mounting helpers so production apps can
+  mount the raw-body webhook before global `express.json()`.
+- Strengthened `siglume-check readiness` to require `SIGLUME_WEBHOOK_SECRET`,
+  active billing, matching active webhook subscription, subscribed
+  `direct_payment.confirmed`, matching signing-secret hint, Hosted Checkout
+  probe, and signed webhook delivery probe.
+- Added webhook subscription/test-delivery/delivery-list client helpers in
+  TypeScript and Python.
+- Made generated 10-minute routes Standard-only by default; Micro / Nano now
+  require explicit delayed-settlement reconciliation before fulfillment.
+- Clarified Micro / Nano unsettled-exposure scope and terminal states across
+  pricing, announcement, lifecycle, troubleshooting, and API reference docs.
+- Added readiness negative tests and webhook API client tests.
+
 ## 0.4.19 - 2026-06-20
 
 Make the 10-minute integration path a real product-integration path instead of

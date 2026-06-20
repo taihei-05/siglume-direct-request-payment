@@ -1,7 +1,7 @@
 # Pricing
 
 This page documents the trial-phase merchant pricing for Siglume Direct Request
-Payment as of SDK v0.4.19. Pricing can change by agreement or future product
+Payment as of SDK v0.4.20. Pricing can change by agreement or future product
 release; the Siglume platform response is the source of truth for per-payment
 fee data returned at runtime.
 
@@ -156,9 +156,12 @@ confirmed payment turns into money in your settlement wallet.
 - While the same buyer / provider / token / pricing band has total unsettled
   exposure at or above the fixed threshold, new Micro/Nano usage is paused with the
   machine-readable error `METERED_SETTLEMENT_PAST_DUE`; the provider API is not
-  called. Exposure includes open usage plus `notice_pending`, `ready`,
-  `submitted`, retrying, and `past_due` batches, and remains paused while
-  settlement failure or `past_due` is unresolved.
+  called. Exposure is chargeable provider gross where status is not `settled`,
+  `uncollectible`, or `written_off`; it includes open usage,
+  `notice_pending`, `notice_delivery_failed`, `ready`, `submitted`,
+  `submitted_reconcile_required`, `failed_retryable`, `retrying`, and
+  `past_due`. Usage remains paused while settlement failure or `past_due` is
+  unresolved.
 - Outstanding amounts remain attached to the failed settlement and are retried
   under this policy. They are not settled revenue, and Siglume does not advance,
   guarantee, or insure provider revenue before on-chain settlement succeeds.

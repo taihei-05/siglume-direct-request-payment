@@ -459,16 +459,9 @@ if (confirmation.kind === "standard_settled") {
 }
 
 if (confirmation.kind === "metered_usage_accepted") {
-  const order = await orders.findByChallengeHash(confirmation.challenge_hash);
-  if (!order) {
-    await orders.flagForPaymentStateReview({
-      reason: "unknown_metered_challenge_hash",
-      requirement_id: confirmation.requirement_id,
-    });
-    return new Response(null, { status: 204 });
-  }
-  await orders.markFulfilledButUnsettledOnce(order.id, {
-    siglume_requirement_id: confirmation.requirement_id,
+  await orders.flagForPaymentStateReview({
+    reason: "metered_integration_required",
+    requirement_id: confirmation.requirement_id,
     pricing_band: confirmation.pricing_band,
   });
   return new Response(null, { status: 204 });
@@ -531,16 +524,9 @@ if confirmation["kind"] == "standard_settled":
     return "", 204
 
 if confirmation["kind"] == "metered_usage_accepted":
-    order = orders.find_by_challenge_hash(confirmation["challenge_hash"])
-    if not order:
-        orders.flag_for_payment_state_review(
-            reason="unknown_metered_challenge_hash",
-            requirement_id=confirmation["requirement_id"],
-        )
-        return "", 204
-    orders.mark_fulfilled_but_unsettled_once(
-        order["id"],
-        siglume_requirement_id=confirmation["requirement_id"],
+    orders.flag_for_payment_state_review(
+        reason="metered_integration_required",
+        requirement_id=confirmation["requirement_id"],
         pricing_band=confirmation["pricing_band"],
     )
     return "", 204

@@ -20,6 +20,15 @@ def get_order(order_id: str) -> Order | None:
     return _orders.get(order_id)
 
 
+def begin_checkout_attempt(order_id: str) -> Order | None:
+    order = _orders.get(order_id)
+    if order is None:
+        return None
+    if not int(order.get("payment_attempt") or 0):
+        order["payment_attempt"] = 1
+    return order
+
+
 def all_orders() -> list[Order]:
     return list(_orders.values())
 
@@ -35,8 +44,9 @@ def find_order_by_challenge_hash(challenge_hash: str) -> Order | None:
     return None
 
 
-def mark_webhook_event_processed_once(event_id: str) -> bool:
+def process_webhook_event_once(event_id: str, handler) -> str:
     if event_id in _processed_webhook_events:
-        return False
+        return "duplicate"
+    handler()
     _processed_webhook_events.add(event_id)
-    return True
+    return "processed"

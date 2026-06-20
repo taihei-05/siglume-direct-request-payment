@@ -98,7 +98,8 @@ siglume-sdrp init fastapi --target app/siglume
 ```
 
 The readiness command checks account, billing, origin, webhook, and Hosted
-Checkout availability before you write checkout code.
+Checkout availability before you write checkout code. It also confirms the
+webhook subscription and signed test delivery when API probes are enabled.
 
 Before implementation, confirm Hosted Checkout readiness in
 [Troubleshooting](./docs/troubleshooting.md#hosted-checkout-readiness). For
@@ -119,8 +120,8 @@ fulfilling orders.
 
 | Use case | Recommended path | 10-minute integration path? | Production work still required |
 | --- | --- | --- | --- |
-| EC one-time Standard payment | Hosted Checkout | Yes, with `siglume-check readiness` and `siglume-sdrp init` | Refund/support process and monitoring |
-| Game consumables | Hosted Checkout or agent/API | Conditional | Idempotent entitlement grants, disconnect recovery, Micro / Nano unsettled-risk handling |
+| EC one-time Standard payment | Hosted Checkout | Yes, with `siglume-check readiness` and `siglume-sdrp init` | Product DB adapter, refund/support process, monitoring |
+| Game consumables | Hosted Checkout or agent/API | Conditional | Idempotent entitlement grants, disconnect recovery, Micro / Nano settlement reconciliation and past-due handling |
 | Paid API / AtoA | Direct API or Siglume marketplace tool | Conditional | Request idempotency, buyer auth context, reconciliation |
 | SaaS subscription | Recurring challenge plus raw API | No | Renewal, cancellation, failed renewal, plan-change lifecycle |
 | Scheduled autopay | Recurring challenge plus schedule token | No | Scheduler, token custody, budget failure handling |
@@ -171,8 +172,8 @@ redirect(session.checkout_url); // -> https://siglume.com/pay/<session_id>
 
 // 3. Handle the signed direct_payment.confirmed webhook. Use
 //    classifyDirectPaymentConfirmation(event). Fulfill Standard only for
-//    standard_settled; treat metered_usage_accepted as fulfilled-unsettled
-//    until the later metered_batch_settled event arrives.
+//    standard_settled. Do not fulfill metered_usage_accepted unless you have
+//    explicitly enabled Micro / Nano settlement reconciliation.
 //    Poll merchant.getCheckoutSession(session.session_id) if you also want to
 //    show status in your own UI.
 ```
@@ -206,8 +207,8 @@ redirect(session["checkout_url"])  # -> https://siglume.com/pay/<session_id>
 
 # 3. Handle the signed direct_payment.confirmed webhook. Use
 #    classify_direct_payment_confirmation(event). Fulfill Standard only for
-#    standard_settled; treat metered_usage_accepted as fulfilled-unsettled
-#    until the later metered_batch_settled event arrives.
+#    standard_settled. Do not fulfill metered_usage_accepted unless you have
+#    explicitly enabled Micro / Nano settlement reconciliation.
 #    Poll merchant.get_checkout_session(session["session_id"]) if you also want
 #    to show status in your own UI.
 ```
@@ -631,7 +632,8 @@ if (event.type === "direct_payment.confirmed") {
   } else if (confirmation.kind === "standard_settled") {
     // Mark the order paid once if event.data.challenge_hash/order mapping matches.
   } else if (confirmation.kind === "metered_usage_accepted") {
-    // Mark fulfilled-but-unsettled after matching confirmation.challenge_hash.
+    // Default Standard-only integrations should not fulfill this.
+    // Enable Micro / Nano only with settlement reconciliation and past-due handling.
   } else {
     // Route confirmation.reason to manual review. Do not mark paid or fulfilled.
   }
@@ -662,7 +664,8 @@ if verified["event"]["type"] == "direct_payment.confirmed":
         # Mark the order paid once if event.data.challenge_hash/order mapping matches.
         pass
     elif confirmation["kind"] == "metered_usage_accepted":
-        # Mark fulfilled-but-unsettled after matching confirmation["challenge_hash"].
+        # Default Standard-only integrations should not fulfill this.
+        # Enable Micro / Nano only with settlement reconciliation and past-due handling.
         pass
     else:
         # Route confirmation["reason"] to manual review. Do not mark paid or fulfilled.

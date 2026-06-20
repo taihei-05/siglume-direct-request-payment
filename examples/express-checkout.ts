@@ -36,9 +36,19 @@ app.use((req, res, next) => {
 });
 
 const orders = new Map<string, any>();
+const processedWebhookEvents = new Set<string>();
 
 async function flagForPaymentStateReview(payload: Record<string, any>): Promise<void> {
   console.warn("payment state review required", payload);
+}
+
+async function processWebhookEventOnce(eventId: string, handler: () => Promise<void>): Promise<"processed" | "duplicate"> {
+  if (processedWebhookEvents.has(eventId)) {
+    return "duplicate";
+  }
+  await handler();
+  processedWebhookEvents.add(eventId);
+  return "processed";
 }
 
 async function handleDirectPaymentConfirmed(event: any): Promise<void> {
@@ -67,16 +77,11 @@ async function handleDirectPaymentConfirmed(event: any): Promise<void> {
   }
 
   if (classification.kind === "metered_usage_accepted") {
-    const order = [...orders.values()].find((item) => item.siglume_challenge_hash === classification.challenge_hash);
-    if (order) {
-      order.siglume_payment_status = "fulfilled_unsettled";
-      order.siglume_requirement_id = classification.requirement_id;
-    } else {
-      await flagForPaymentStateReview({
-        reason: "unknown_metered_challenge_hash",
-        requirement_id: classification.requirement_id,
-      });
-    }
+    await flagForPaymentStateReview({
+      reason: "metered_integration_required",
+      requirement_id: classification.requirement_id,
+      pricing_band: classification.pricing_band,
+    });
     return;
   }
 
@@ -102,7 +107,19 @@ app.post("/checkout/siglume/start", asyncRoute(async (req, res) => {
     return;
   }
 
-  order.payment_attempt = Number(order.payment_attempt || 0) + 1;
+  if (!Number(order.payment_attempt || 0)) {
+    order.payment_attempt = 1;
+  }
+  if (order.siglume_checkout_url && order.siglume_checkout_session_id) {
+    res.json({
+      order_id: order.id,
+      amount_minor: order.amount_minor,
+      currency: order.currency,
+      checkout_url: order.siglume_checkout_url,
+      session_id: order.siglume_checkout_session_id,
+    });
+    return;
+  }
   const session = await siglumeMerchant.createCheckoutSession({
     merchant: merchantKey,
     amount_minor: order.amount_minor,
@@ -114,6 +131,7 @@ app.post("/checkout/siglume/start", asyncRoute(async (req, res) => {
   });
 
   order.siglume_challenge_hash = session.challenge_hash;
+  order.siglume_checkout_url = session.checkout_url;
   order.siglume_checkout_session_id = session.session_id;
   order.siglume_payment_status = "pending";
 
@@ -134,8 +152,14 @@ app.post("/siglume/webhook", express.raw({ type: "application/json" }), asyncRou
     header,
   );
 
-  if (event.type === "direct_payment.confirmed") {
-    await handleDirectPaymentConfirmed(event);
+  const result = await processWebhookEventOnce(event.id, async () => {
+    if (event.type === "direct_payment.confirmed") {
+      await handleDirectPaymentConfirmed(event);
+    }
+  });
+  if (result === "duplicate") {
+    res.status(204).send();
+    return;
   }
 
   res.status(204).send();

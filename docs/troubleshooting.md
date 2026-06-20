@@ -14,16 +14,22 @@ building a human web checkout:
 npx siglume-check readiness
 ```
 
-The command validates local configuration, reads the merchant account, and
-creates one unpaid expiring checkout session to prove Hosted Checkout is
-available for this merchant account.
+The command validates local configuration, reads the merchant account, checks
+the active billing mandate, confirms the webhook subscription, creates one
+unpaid expiring checkout session, and queues a signed webhook test delivery.
 
 - The merchant account exists.
 - The merchant billing mandate is active.
-- The webhook callback URL is HTTPS and reachable.
+- `SIGLUME_WEBHOOK_SECRET` is present and matches the subscription secret hint.
+- The webhook callback URL is HTTPS and matches an active subscription.
+- The subscription includes `direct_payment.confirmed`.
 - The checkout return URL origins are registered through
   `checkout_allowed_origins`.
 - The account has Hosted Checkout enabled.
+- The signed webhook test delivery reaches the endpoint and returns success.
+
+`--no-api` is only for local config smoke tests. `--no-probe` is a partial API
+check and does not report readiness as ready.
 
 If `createCheckoutSession(...)` or `getCheckoutSession(...)` raises
 `HostedCheckoutNotAvailableError`, do not show the raw 404/409 to the buyer.
@@ -46,10 +52,11 @@ contact for Hosted Checkout enablement.
 
 - Verify the exact raw request body bytes or raw body string.
 - Do not verify a parsed JSON object or a re-stringified JSON body.
-- Return a 2xx only after you have durably recorded the event or safely decided
-  it is duplicate/ignored.
-- Store processed webhook event ids or settlement identifiers durably; an
-  in-memory set is not enough for production.
+- Return a 2xx only after the order update or durable manual-review write has
+  succeeded, or after you safely decided the event is duplicate/ignored.
+- Store processed webhook event ids or settlement identifiers durably, in the
+  same database transaction as the order update/review write. An in-memory set
+  is not enough for production.
 - Do not assume delivery order. A settlement batch event may be reconciled from
   statement APIs rather than from one order challenge.
 - On signature failure, return a non-2xx status and do not mutate order state.
