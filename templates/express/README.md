@@ -44,9 +44,14 @@ Use one of the durable database-backed adapters before opening checkout to
 users:
 
 - `siglume-order-store.sql.ts`: Prisma, TypeORM, Sequelize, Drizzle, or any
-  driver that can implement the small `SiglumeSqlExecutor` interface. Run
-  `createSiglumeSdrpSqlSchema({ dialect: "postgres" })` once in a migration or
-  translate the returned SQL into your migration tool.
+  driver that can implement the small `SiglumeSqlExecutor` interface. For an
+  existing product database, run
+  `createSiglumeSdrpSqlSchema({ dialect: "postgres", include_orders_table: false })`
+  once in a migration or translate the returned SQL into your migration tool.
+  Your own order table must expose the mapped `id`, `amount_minor`, and
+  `currency` columns. `status` and `updated_at` are optional but recommended
+  when you want the adapter to write paid/fulfilled state back to your table.
+  Use `include_orders_table: true` only for the sample `orders` table.
 - `siglume-order-store.dynamodb.ts`: DynamoDB with conditional writes and
   `TransactWrite`.
 - `siglume-order-store.mongodb.ts`: MongoDB with unique indexes for the active

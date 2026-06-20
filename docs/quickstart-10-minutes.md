@@ -29,8 +29,8 @@ pip install siglume-direct-request-payment
 
 For FastAPI projects, the Python package supplies `init`, `preflight`, and
 `verify` commands. The local sandbox server is currently provided by the npm
-CLI, so install Node.js/npm as well when you want local sandbox checkout
-verification.
+CLI, so install Node.js 20.19+ or 22.12+ with npm as well when you want local
+sandbox checkout verification.
 
 ## 1. Optional live preflight
 

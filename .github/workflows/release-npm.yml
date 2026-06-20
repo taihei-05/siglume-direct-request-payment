@@ -124,3 +124,33 @@ jobs:
       - name: Skip publish because version already exists
         if: steps.npm_version.outputs.exists == 'true'
         run: echo "${{ steps.npm_version.outputs.package_name }}@${{ steps.npm_version.outputs.package_version }} is already published."
+      - name: Verify npm registry artifact
+        shell: bash
+        run: |
+          PACKAGE_NAME="${{ steps.npm_version.outputs.package_name }}"
+          PACKAGE_VERSION="${{ steps.npm_version.outputs.package_version }}"
+          export EXPECTED_GIT_HEAD="$(git rev-parse HEAD)"
+          for _ in {1..30}; do
+            node <<'NODE' && exit 0 || true
+          const { execFileSync } = require("node:child_process");
+          const packageName = process.env.PACKAGE_NAME;
+          const packageVersion = process.env.PACKAGE_VERSION;
+          const expectedGitHead = process.env.EXPECTED_GIT_HEAD;
+          const metadata = JSON.parse(execFileSync("npm", ["view", `${packageName}@${packageVersion}`, "version", "gitHead", "readme", "--json"], { encoding: "utf8" }));
+          if (metadata.version !== packageVersion) {
+            throw new Error(`npm version ${metadata.version} did not match ${packageVersion}`);
+          }
+          if (metadata.gitHead && metadata.gitHead !== expectedGitHead) {
+            throw new Error(`npm gitHead ${metadata.gitHead} did not match ${expectedGitHead}`);
+          }
+          if (!String(metadata.readme || "").includes("FastAPI sandbox verification currently requires Node.js/npm")) {
+            throw new Error("npm README did not contain the expected FastAPI sandbox note");
+          }
+          NODE
+            sleep 5
+          done
+          echo "npm registry did not expose the expected artifact after waiting."
+          exit 1
+        env:
+          PACKAGE_NAME: ${{ steps.npm_version.outputs.package_name }}
+          PACKAGE_VERSION: ${{ steps.npm_version.outputs.package_version }}

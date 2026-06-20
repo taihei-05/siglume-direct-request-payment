@@ -49,3 +49,30 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+      - name: Verify PyPI registry artifact
+        shell: bash
+        run: |
+          export PACKAGE_VERSION="$(python - <<'PY'
+          import tomllib
+          print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])
+          PY
+          )"
+          for _ in {1..30}; do
+            python - <<'PY' && exit 0 || true
+          import json
+          import os
+          import urllib.request
+
+          version = os.environ["PACKAGE_VERSION"]
+          with urllib.request.urlopen(f"https://pypi.org/pypi/siglume-direct-request-payment/{version}/json", timeout=20) as response:
+              payload = json.load(response)
+          info = payload["info"]
+          if info["version"] != version:
+              raise SystemExit(f"PyPI version {info['version']} did not match {version}.")
+          if "FastAPI sandbox verification currently requires Node.js/npm" not in (info.get("description") or ""):
+              raise SystemExit("PyPI long description did not contain the expected FastAPI sandbox note.")
+          PY
+            sleep 5
+          done
+          echo "PyPI did not expose the expected artifact after waiting."
+          exit 1

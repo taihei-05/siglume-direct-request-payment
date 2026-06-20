@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.27 - 2026-06-20
+
+- Changed the Express SQL migration docs for existing products to use
+  `include_orders_table: false` by default and list the required mapped order
+  columns.
+- Aligned the public Node.js requirement with the current CI/development
+  toolchain and generated Express templates.
+- Pinned the TypeORM matrix dependency to the Node-compatible 0.3 line instead
+  of the new 1.0 engine range.
+- Clarified that FastAPI sandbox verification currently uses the npm sandbox
+  server.
+
 ## 0.4.26 - 2026-06-20
 
 - Added official Express NoSQL order-store templates for DynamoDB, MongoDB, and

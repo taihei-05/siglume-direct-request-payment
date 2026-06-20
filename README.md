@@ -98,7 +98,8 @@ or:
 ```bash
 pip install siglume-direct-request-payment
 siglume-sdrp init fastapi --target app/siglume
-# mount the routes, start your app, then use the npm sandbox for local checkout:
+# mount the routes, start your app, then use the npm sandbox for local checkout.
+# FastAPI sandbox verification currently requires Node.js/npm:
 npx siglume-sdrp sandbox --webhook-url http://localhost:3000/payments/webhooks/siglume
 siglume-check verify --sandbox
 ```
@@ -336,7 +337,8 @@ npm install @siglume/direct-request-payment
 pip install siglume-direct-request-payment
 ```
 
-Node.js 18 or later is required for the TypeScript SDK. Python 3.11 or later is
+Node.js 20.19 or later, or Node.js 22.12 or later, is required for the
+TypeScript SDK and generated Express templates. Python 3.11 or later is
 required for the Python SDK.
 
 ## Pricing
