@@ -866,6 +866,14 @@ Buyer-facing amount names are centered on the debit:
 - `threshold_reached_at`
 - `total_unsettled_exposure_minor`
 
+For threshold close, the comparison
+`accrued_provider_gross_minor >= settlement_threshold_minor` uses an internal
+calculation name. `accrued_provider_gross_minor` is the active-batch sum of
+accepted open-period `provider_gross_amount_minor` rows for the same buyer /
+provider / token / pricing band. The threshold-crossing usage event is accepted
+into that closing batch; any threshold overshoot is bounded by that event's
+`provider_gross_amount_minor`.
+
 ### Provider summary
 
 ```text

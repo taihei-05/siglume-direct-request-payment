@@ -55,6 +55,13 @@ function sqliteExecutor(db: Database): SiglumeSqlExecutor {
 
 async function createApp(options: SiglumeSdrpRouterOptions) {
   const app = express();
+  app.use((req, _res, next) => {
+    const auth = req.header("authorization") || "";
+    if (auth.startsWith("Bearer ")) {
+      (req as express.Request & { user?: { id: string } }).user = { id: auth.slice("Bearer ".length) };
+    }
+    next();
+  });
   app.post(
     "/payments/webhooks/siglume",
     express.raw({ type: "application/json" }),
@@ -76,10 +83,10 @@ async function createApp(options: SiglumeSdrpRouterOptions) {
   };
 }
 
-async function postJson(url: string, body: unknown): Promise<Response> {
+async function postJson(url: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> {
   return fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
 }
@@ -135,14 +142,27 @@ describe("Express 10-minute template E2E", () => {
     for (const statement of createSiglumeSdrpSqlSchema({ dialect: "sqlite" })) {
       db.run(statement);
     }
+    db.run(`ALTER TABLE "orders" ADD COLUMN "customer_id" TEXT`);
     db.run(
-      `INSERT INTO "orders" ("id", "amount_minor", "currency", "status") VALUES
-       ('order_123', 1200, 'JPY', 'created'),
-       ('order_retry', 1300, 'JPY', 'created'),
-       ('order_micro', 100, 'JPY', 'created')`,
+      `INSERT INTO "orders" ("id", "customer_id", "amount_minor", "currency", "status") VALUES
+       ('order_123', 'user_123', 1200, 'JPY', 'created'),
+       ('order_retry', 'user_123', 1300, 'JPY', 'created'),
+       ('order_micro', 'user_123', 100, 'JPY', 'created'),
+       ('order_other_user', 'user_456', 1200, 'JPY', 'created')`,
     );
 
-    const store = createSqlSiglumeOrderStore({ executor, dialect: "sqlite" });
+    const store = createSqlSiglumeOrderStore({
+      executor,
+      dialect: "sqlite",
+      authorize_order: async (order, req) => {
+        const userId = (req as express.Request & { user?: { id?: string } }).user?.id;
+        const rows = await executor.query<{ customer_id?: unknown }>(
+          `SELECT "customer_id" FROM "orders" WHERE "id" = ?`,
+          [String(order.id)],
+        );
+        return Boolean(userId && rows[0]?.customer_id === userId);
+      },
+    });
     const options: SiglumeSdrpRouterOptions = {
       merchant: "sandbox_merchant",
       merchant_auth_token: "merchant_jwt",
@@ -174,12 +194,29 @@ describe("Express 10-minute template E2E", () => {
 
     const app = await createApp(options);
     try {
-      const firstStart = await postJson(`${app.baseUrl}/payments/checkout/siglume/start`, { order_id: "order_123" });
+      const unauthenticated = await postJson(`${app.baseUrl}/payments/checkout/siglume/start`, { order_id: "order_123" });
+      expect(unauthenticated.status).toBe(404);
+      const wrongOwner = await postJson(
+        `${app.baseUrl}/payments/checkout/siglume/start`,
+        { order_id: "order_other_user" },
+        { authorization: "Bearer user_123" },
+      );
+      expect(wrongOwner.status).toBe(404);
+
+      const firstStart = await postJson(
+        `${app.baseUrl}/payments/checkout/siglume/start`,
+        { order_id: "order_123" },
+        { authorization: "Bearer user_123" },
+      );
       expect(firstStart.status).toBe(200);
       const firstBody = await firstStart.json() as { checkout_url: string; session_id: string };
       expect(firstBody.checkout_url).toBe("https://siglume.test/pay/chk_e2e_1");
 
-      const replayStart = await postJson(`${app.baseUrl}/payments/checkout/siglume/start`, { order_id: "order_123" });
+      const replayStart = await postJson(
+        `${app.baseUrl}/payments/checkout/siglume/start`,
+        { order_id: "order_123" },
+        { authorization: "Bearer user_123" },
+      );
       expect(replayStart.status).toBe(200);
       await expect(replayStart.json()).resolves.toMatchObject(firstBody);
       expect(checkoutCalls).toHaveLength(1);
@@ -198,7 +235,11 @@ describe("Express 10-minute template E2E", () => {
       expect(duplicate.status).toBe(204);
       expect(await executor.query(`SELECT event_id FROM "siglume_webhook_events" WHERE event_id = ?`, ["evt_paid"])).toHaveLength(1);
 
-      const retryStart = await postJson(`${app.baseUrl}/payments/checkout/siglume/start`, { order_id: "order_retry" });
+      const retryStart = await postJson(
+        `${app.baseUrl}/payments/checkout/siglume/start`,
+        { order_id: "order_retry" },
+        { authorization: "Bearer user_123" },
+      );
       expect(retryStart.status).toBe(200);
       let failOnce = true;
       const realMarkPaid = store.markOrderPaidOnce.bind(store);
@@ -219,7 +260,11 @@ describe("Express 10-minute template E2E", () => {
       expect((await executor.query(`SELECT status FROM "orders" WHERE "id" = ?`, ["order_retry"]))[0]?.status).toBe("paid");
       expect(await executor.query(`SELECT event_id FROM "siglume_webhook_events" WHERE event_id = ?`, ["evt_retry"])).toHaveLength(1);
 
-      const microStart = await postJson(`${app.baseUrl}/payments/checkout/siglume/start`, { order_id: "order_micro" });
+      const microStart = await postJson(
+        `${app.baseUrl}/payments/checkout/siglume/start`,
+        { order_id: "order_micro" },
+        { authorization: "Bearer user_123" },
+      );
       expect(microStart.status).toBe(409);
       await expect(microStart.json()).resolves.toEqual({ error: "METERED_INTEGRATION_REQUIRED" });
       expect(checkoutCalls).toHaveLength(2);

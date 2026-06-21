@@ -1,7 +1,16 @@
 # 10-Minute Standard Checkout Integration
 
-This guide is the supported 10-minute path for adding SDRP Hosted Checkout to
-an existing product when these prerequisites are already ready:
+This guide has two paths:
+
+- **Account-free 10-minute sandbox.** Use the local sandbox, a local product
+  server, an authenticated test user, and one Standard-band test order. This
+  proves the checkout route, webhook route, DB update, and duplicate-delivery
+  handling without live Siglume credentials.
+- **Prepared merchant live go-live.** Use the same mounted routes after live
+  merchant credentials, Hosted Checkout access, billing mandate, public HTTPS
+  webhook, and monitoring are ready.
+
+The live path requires these prerequisites:
 
 - merchant credentials are available,
 - the merchant billing mandate is active,
@@ -11,10 +20,9 @@ an existing product when these prerequisites are already ready:
 - the live path has a public HTTPS webhook URL.
 
 The 10-minute scope is Standard Payment plumbing in sandbox, not full payment
-operations or a live go-live. Start with dependencies installed and merchant
-credentials ready; finish the 10-minute sandbox phase when a sandbox Standard
-checkout succeeds, a signed webhook reaches your product, the DB order becomes
-paid, and duplicate delivery does not update the order twice.
+operations or a live go-live. Finish the 10-minute sandbox phase when a sandbox
+Standard checkout succeeds, a signed webhook reaches your product, the DB order
+becomes paid, and duplicate delivery does not update the order twice.
 
 The goal is to add two routes to your own server:
 
@@ -48,7 +56,8 @@ sandbox checkout verification.
 
 ## 1. Optional live preflight
 
-Set these environment variables in your app or `.env`:
+Skip this step for the account-free sandbox path. For live go-live, set these
+environment variables in your app or `.env`:
 
 ```bash
 SIGLUME_MERCHANT_AUTH_TOKEN=<merchant Siglume bearer token>
@@ -102,7 +111,47 @@ siglume-sdrp init fastapi --target app/siglume
 These commands copy framework-specific route files into your codebase. The
 generated files are intentionally small and are meant to be edited.
 
-## 3. Mount the routes
+## 3. Run the SDRP table migration
+
+The generated adapters need SDRP-owned tables for checkout attempts, webhook
+event ids, and manual review rows. Add these tables with your normal migration
+tool before starting checkout.
+
+Express SQL / ORM adapters:
+
+```ts
+import { writeFileSync } from "node:fs";
+import { createSiglumeSdrpSqlSchema } from "./src/siglume/siglume-order-store.sql.js";
+
+writeFileSync(
+  "migrations/20260621_add_siglume_sdrp.sql",
+  createSiglumeSdrpSqlSchema({
+    dialect: "postgres",
+    include_orders_table: false,
+  }).join("\n\n"),
+);
+```
+
+Use `include_orders_table: false` for an existing product. Your own order table
+must already provide the mapped order id, amount, currency, and owner fields
+used by `authorize_order`.
+
+FastAPI / SQLAlchemy:
+
+```py
+from app.siglume.siglume_order_store_sqlalchemy_async import (
+    create_async_sqlalchemy_engine,
+    create_async_sqlalchemy_siglume_schema,
+)
+
+engine = create_async_sqlalchemy_engine(os.environ["DATABASE_URL"])
+await create_async_sqlalchemy_siglume_schema(engine)
+```
+
+Run the schema creation in your migration/startup path once. It creates only
+SDRP tables by default. Use `include_orders_table=True` only for a sample app.
+
+## 4. Mount the routes
 
 Express:
 
@@ -163,34 +212,46 @@ app.use(express.json());
 app.use("/payments", createSiglumeSdrpCheckoutRouter(siglumeOptions));
 ```
 
-FastAPI:
+FastAPI uses the async SQLAlchemy adapter by default in ASGI apps:
 
 <!-- siglume-example: py quickstart-fastapi -->
 ```py
+from contextlib import asynccontextmanager
+import os
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from .auth import current_user_id
-from .database import SessionLocal, user_can_pay_order
-from .siglume.siglume_order_store_sqlalchemy import SQLAlchemySiglumeOrderStore
+from .database import async_user_can_pay_order
+from .siglume.siglume_order_store_sqlalchemy_async import (
+    AsyncSQLAlchemySiglumeOrderStore,
+    create_async_sqlalchemy_engine,
+)
 from .siglume.siglume_sdrp_routes import create_siglume_sdrp_router
 
-app = FastAPI()
-
-def authorize_order(order: dict, request) -> bool:
+async def authorize_order(order: dict, request) -> bool:
     user_id = current_user_id(request)
-    return bool(user_id and user_can_pay_order(SessionLocal, str(order["id"]), user_id))
+    return bool(user_id and await async_user_can_pay_order(str(order["id"]), user_id))
 
-order_store = SQLAlchemySiglumeOrderStore(
+engine = create_async_sqlalchemy_engine(os.environ["DATABASE_URL"])
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+order_store = AsyncSQLAlchemySiglumeOrderStore(
     SessionLocal,
     authorize_order=authorize_order,
 )
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await engine.dispose()
+
+app = FastAPI(lifespan=lifespan)
 app.include_router(
     create_siglume_sdrp_router(order_store, allow_metered_payments=False),
     prefix="/payments",
 )
 ```
 
-## 4. Adapter responsibilities
+## 5. Adapter responsibilities
 
 Replace the example store with your product's order database. The adapter must:
 
@@ -214,7 +275,7 @@ Micro / Nano, checkout returns `METERED_INTEGRATION_REQUIRED` until you set
 fulfilled-but-unsettled state, settlement reconciliation, past-due handling, and
 terminal write-off handling.
 
-## 5. Use a real database adapter
+## 6. Use a real database adapter
 
 The copied files include durable database adapters. Use these before opening
 checkout to users. The `*.example.*` stores are sandbox-only interface examples;
@@ -317,7 +378,27 @@ const order_store = createFirestoreSiglumeOrderStore({
 });
 ```
 
-FastAPI:
+FastAPI production recommendation:
+
+```py
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from .siglume.siglume_order_store_sqlalchemy_async import (
+    AsyncSQLAlchemySiglumeOrderStore,
+    create_async_sqlalchemy_engine,
+    create_async_sqlalchemy_siglume_schema,
+)
+
+engine = create_async_sqlalchemy_engine(os.environ["DATABASE_URL"])
+# Run create_async_sqlalchemy_siglume_schema(engine) during migration/startup.
+SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+order_store = AsyncSQLAlchemySiglumeOrderStore(SessionLocal, authorize_order=authorize_order)
+```
+
+The sync `SQLAlchemySiglumeOrderStore` remains available for existing sync
+SQLAlchemy code, but it performs synchronous database work and is not the
+default recommendation for an async FastAPI request path.
+
+Sync SQLAlchemy compatibility:
 
 ```py
 from sqlalchemy.orm import sessionmaker
@@ -342,24 +423,6 @@ order_store = SQLAlchemySiglumeOrderStore(
 )
 ```
 
-If your FastAPI app already uses SQLAlchemy `AsyncSession`, use the async
-adapter instead:
-
-```py
-from sqlalchemy.ext.asyncio import async_sessionmaker
-from .siglume.siglume_order_store_sqlalchemy_async import (
-    AsyncSQLAlchemySiglumeOrderStore,
-    create_async_sqlalchemy_engine,
-    create_async_sqlalchemy_siglume_schema,
-)
-
-engine = create_async_sqlalchemy_engine(os.environ["DATABASE_URL"])
-# Run this during your FastAPI startup/lifespan initialization.
-await create_async_sqlalchemy_siglume_schema(engine)
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
-order_store = AsyncSQLAlchemySiglumeOrderStore(SessionLocal, authorize_order=authorize_order)
-```
-
 `create_sqlalchemy_siglume_schema(engine)` creates only SDRP-owned tables by
 default. Use `include_orders_table=True` only for the sample `orders` table.
 
@@ -369,7 +432,24 @@ retries, create a new attempt after expiry/failure, record webhook event ids
 only after the order update/review write succeeds, and keep duplicate
 deliveries from double-fulfilling an order.
 
-## 6. Start your app and run sandbox verify
+## 7. Seed one authenticated Standard test order
+
+Create a Standard-band test order owned by a product test user. Use your own
+schema and auth system; the important point is that the same authenticated user
+must be allowed by `authorize_order`.
+
+Example shape:
+
+```sql
+INSERT INTO orders (id, customer_id, amount_minor, currency, status)
+VALUES ('order_sdrp_sandbox_001', 'user_sdrp_sandbox', 1200, 'JPY', 'created');
+```
+
+If your product stores camelCase columns or a separate ownership table, create
+the equivalent row there and keep `userCanPayOrder(...)` / `authorize_order`
+checking that ownership.
+
+## 8. Start your app and run sandbox verify
 
 Start your product locally with the mounted checkout and webhook routes. Then,
 in another terminal, start the sandbox and point it at your local webhook route:
@@ -401,19 +481,40 @@ npx siglume-check verify --sandbox
 
 `verify --sandbox` must pass before you switch to live credentials.
 
-## 7. Start checkout from your frontend
+## 9. Start checkout from your frontend
 
-Call your own server route:
+Call your own server route as the product test user. Use either the same session
+cookie your browser would send, or a product-side Bearer token that your auth
+middleware turns into `req.user` / `current_user_id`.
 
 ```bash
-curl -X POST https://api.your-product.example/payments/checkout/siglume/start \
+curl -X POST http://localhost:3000/payments/checkout/siglume/start \
   -H "content-type: application/json" \
-  -d "{\"order_id\":\"order_123\"}"
+  -H "authorization: Bearer <product-test-user-token>" \
+  -d "{\"order_id\":\"order_sdrp_sandbox_001\"}"
 ```
 
 Redirect the shopper to the returned `checkout_url`.
 
-## 8. 10-Minute Sandbox Complete
+Open the sandbox `checkout_url` and confirm the payment. Then verify the product
+DB changed exactly once:
+
+```sql
+SELECT status FROM orders WHERE id = 'order_sdrp_sandbox_001';
+SELECT event_id, status FROM siglume_webhook_events ORDER BY created_at DESC LIMIT 3;
+```
+
+Expected result: the order is `paid`, one webhook event is `processed`, and
+clicking sandbox confirm again for the same checkout session does not create a
+second processed webhook event or a second fulfillment.
+
+For the reference Express app path, this is also machine-tested in
+`test/express-template.e2e.test.ts`: it creates the SDRP tables, seeds an
+authenticated Standard test order, rejects an unauthenticated checkout, starts
+checkout with a Bearer token, marks the DB order paid from a signed webhook, and
+replays the same webhook idempotently.
+
+## 10. 10-Minute Sandbox Complete
 
 Your local Standard checkout plumbing is integrated when:
 
@@ -421,11 +522,15 @@ Your local Standard checkout plumbing is integrated when:
 - your product has mounted checkout and webhook routes,
 - your order database uses the SQL/ORM, DynamoDB, MongoDB, Firestore, or
   SQLAlchemy adapter, or an equivalent durable store,
+- your SDRP migration has created `siglume_checkout_attempts`,
+  `siglume_webhook_events`, and `siglume_payment_reviews`,
+- your authenticated product test user can start checkout for their own
+  Standard-band test order and cannot start checkout without that authentication,
 - the signed webhook verifies against the raw body,
 - `standard_settled` marks the order paid once,
 - a failed webhook handler is retried and duplicate webhook deliveries do not double-fulfill the order.
 
-## 9. Live Go-Live Complete
+## 11. Live Go-Live Complete
 
 Your live checkout path is ready only after the sandbox phase above and all of
 these live checks pass:

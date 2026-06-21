@@ -5,6 +5,9 @@ const root = process.cwd();
 function walkMarkdown(dir) {
   const files = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (["node_modules", "dist", ".venv", "__pycache__"].includes(entry.name)) {
+      continue;
+    }
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       files.push(...walkMarkdown(fullPath));
@@ -15,7 +18,12 @@ function walkMarkdown(dir) {
   return files;
 }
 
-const markdownFiles = ["README.md", ...walkMarkdown(path.join(root, "docs"))];
+const markdownFiles = [
+  "README.md",
+  ...walkMarkdown(path.join(root, "docs")),
+  ...walkMarkdown(path.join(root, "templates")),
+  ...walkMarkdown(path.join(root, "examples")),
+];
 
 const failures = [];
 
@@ -116,13 +124,30 @@ function checkInvariants() {
   for (const expected of [
     "# 10-Minute Standard Checkout Integration",
     "import { prisma } from \"../database/prisma.js\";",
-    "## 8. 10-Minute Sandbox Complete",
-    "## 9. Live Go-Live Complete",
+    "## 10. 10-Minute Sandbox Complete",
+    "## 11. Live Go-Live Complete",
+    "createSiglumeSdrpSqlSchema({",
+    "order_sdrp_sandbox_001",
+    "authorization: Bearer <product-test-user-token>",
     "durable claim,",
   ]) {
     if (!quickstart.includes(expected)) {
       fail(`docs/quickstart-10-minutes.md is missing: ${expected}`);
     }
+  }
+
+  for (const templateReadme of ["templates/express/README.md", "templates/fastapi/README.md"]) {
+    const templateText = read(templateReadme);
+    for (const expected of ["authorize_order", "Do not run a production checkout route without `authorize_order`"]) {
+      if (!templateText.includes(expected)) {
+        fail(`${templateReadme} is missing production order authorization guidance: ${expected}`);
+      }
+    }
+  }
+
+  const pricing = read("docs/pricing.md");
+  if (!/`accrued_provider_gross_minor`\s+is the\s+active-batch sum/s.test(pricing)) {
+    fail("docs/pricing.md must define accrued_provider_gross_minor as a calculation name.");
   }
 }
 

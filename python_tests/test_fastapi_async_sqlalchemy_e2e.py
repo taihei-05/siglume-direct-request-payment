@@ -76,7 +76,11 @@ async def test_fastapi_async_sqlalchemy_adapter_concurrency_and_webhooks(tmp_pat
         await seed_async_sqlalchemy_order(session, order_id="order_async_parallel", amount_minor=1200, currency="JPY")
         await seed_async_sqlalchemy_order(session, order_id="order_async_expiring", amount_minor=1400, currency="JPY")
 
-    store = AsyncSQLAlchemySiglumeOrderStore(SessionLocal)
+    async def authorize_order(order: dict[str, object], request) -> bool:
+        await asyncio.sleep(0)
+        return request.headers.get("authorization") == "Bearer user_async" and str(order["id"]).startswith("order_async_")
+
+    store = AsyncSQLAlchemySiglumeOrderStore(SessionLocal, authorize_order=authorize_order)
     app = FastAPI()
     app.include_router(create_siglume_sdrp_router(store, allow_metered_payments=False), prefix="/payments")
 
@@ -107,8 +111,15 @@ async def test_fastapi_async_sqlalchemy_adapter_concurrency_and_webhooks(tmp_pat
 
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        unauthenticated = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_async_parallel"})
+        assert unauthenticated.status_code == 404
+
         starts = await asyncio.gather(*[
-            client.post("/payments/checkout/siglume/start", json={"order_id": "order_async_parallel"})
+            client.post(
+                "/payments/checkout/siglume/start",
+                json={"order_id": "order_async_parallel"},
+                headers={"authorization": "Bearer user_async"},
+            )
             for _ in range(25)
         ])
         assert {response.status_code for response in starts} == {200}
@@ -129,7 +140,11 @@ async def test_fastapi_async_sqlalchemy_adapter_concurrency_and_webhooks(tmp_pat
                 ).all()
             ) == 1
 
-        expiring_start = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_async_expiring"})
+        expiring_start = await client.post(
+            "/payments/checkout/siglume/start",
+            json={"order_id": "order_async_expiring"},
+            headers={"authorization": "Bearer user_async"},
+        )
         assert expiring_start.status_code == 200
         assert expiring_start.json()["session_id"] == "chk_async_2"
         async with SessionLocal.begin() as session:
@@ -139,7 +154,11 @@ async def test_fastapi_async_sqlalchemy_adapter_concurrency_and_webhooks(tmp_pat
                 .where(checkout_attempts.c.status == "pending")
                 .values(expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc))
             )
-        retry_expired = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_async_expiring"})
+        retry_expired = await client.post(
+            "/payments/checkout/siglume/start",
+            json={"order_id": "order_async_expiring"},
+            headers={"authorization": "Bearer user_async"},
+        )
         assert retry_expired.status_code == 200
         assert retry_expired.json()["session_id"] == "chk_async_3"
         async with SessionLocal() as session:

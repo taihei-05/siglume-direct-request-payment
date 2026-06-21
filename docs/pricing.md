@@ -1,7 +1,7 @@
 # Pricing
 
 This page documents the trial-phase merchant pricing for Siglume Direct Request
-Payment as of SDK v0.4.29. Pricing can change by agreement or future product
+Payment as of SDK v0.4.30. Pricing can change by agreement or future product
 release; the Siglume platform response is the source of truth for per-payment
 fee data returned at runtime.
 
@@ -110,8 +110,15 @@ confirmed payment turns into money in your settlement wallet.
   threshold before the weekly close, Siglume atomically closes the active batch
   and starts the same final-notice and settlement flow. The comparison is
   `accrued_provider_gross_minor >= settlement_threshold_minor`; the basis is
-  provider gross before protocol-fee deduction. JPY 10,000 and USD 100.00 are
-  market-specific fixed thresholds, not FX conversions of one another.
+  provider gross before protocol-fee deduction. `accrued_provider_gross_minor`
+  is the active-batch sum of accepted open-period
+  `provider_gross_amount_minor` rows for that buyer / provider / token /
+  pricing band; it is a threshold calculation name, not a separate required API
+  field. The payment that reaches or crosses the threshold is accepted into the
+  closing batch, so the maximum threshold overshoot is bounded by that accepted
+  payment's `provider_gross_amount_minor`. New usage is then paused while total
+  unsettled exposure remains at or above the threshold. JPY 10,000 and USD
+  100.00 are market-specific fixed thresholds, not FX conversions of one another.
 - **Timezone.** Period boundaries are evaluated in the buyer's configured
   settlement timezone, defaulting to UTC. Assigned slots are persisted and are
   not recalculated on the fly.
@@ -134,8 +141,15 @@ confirmed payment turns into money in your settlement wallet.
   threshold before the monthly close, Siglume atomically closes the active batch
   and starts the same final-notice and settlement flow. The comparison is
   `accrued_provider_gross_minor >= settlement_threshold_minor`; the basis is
-  provider gross before protocol-fee deduction. JPY 10,000 and USD 100.00 are
-  market-specific fixed thresholds, not FX conversions of one another.
+  provider gross before protocol-fee deduction. `accrued_provider_gross_minor`
+  is the active-batch sum of accepted open-period
+  `provider_gross_amount_minor` rows for that buyer / provider / token /
+  pricing band; it is a threshold calculation name, not a separate required API
+  field. The payment that reaches or crosses the threshold is accepted into the
+  closing batch, so the maximum threshold overshoot is bounded by that accepted
+  payment's `provider_gross_amount_minor`. New usage is then paused while total
+  unsettled exposure remains at or above the threshold. JPY 10,000 and USD
+  100.00 are market-specific fixed thresholds, not FX conversions of one another.
 - **Timezone.** As with Micro, period boundaries use the buyer's configured
   settlement timezone, defaulting to UTC. Assigned slots are persisted and are
   not recalculated on the fly.

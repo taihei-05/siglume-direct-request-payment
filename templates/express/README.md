@@ -5,6 +5,7 @@ needs the raw request body; `express.json()` cannot recreate it after parsing.
 
 ```ts
 import express from "express";
+import type { Request } from "express";
 import {
   createSiglumeSdrpCheckoutRouter,
   createSiglumeSdrpWebhookHandler,
@@ -13,12 +14,28 @@ import {
 import { createPrismaSiglumeOrderStore } from "./siglume/siglume-order-store.sql.js";
 import { prisma } from "../db/prisma.js";
 
+function currentUserId(req: Request): string | null {
+  return String((req as Request & { user?: { id?: string } }).user?.id || "") || null;
+}
+
+async function userCanPayOrder(orderId: string, userId: string): Promise<boolean> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { customerId: true, status: true },
+  });
+  return Boolean(order && order.customerId === userId && order.status === "created");
+}
+
 const siglumeOrderStore = createPrismaSiglumeOrderStore(prisma, {
   dialect: "postgres",
   orders_table: "orders",
   order_id_column: "id",
   amount_minor_column: "amount_minor",
   currency_column: "currency",
+  authorize_order: async (order, req) => {
+    const userId = currentUserId(req);
+    return Boolean(userId && await userCanPayOrder(String(order.id), userId));
+  },
 });
 
 const siglumeOptions: SiglumeSdrpRouterOptions = {
@@ -63,7 +80,14 @@ Keep `processWebhookEventOnce()` durable: use one database transaction where
 your database supports it, and otherwise use the official adapter's equivalent
 durable claim, stale-lease recovery, and idempotent order-repair pattern. Record
 the webhook event as processed only after the order update or review write
-succeeds. The generated route defaults to Standard-only. Enable
+succeeds.
+
+Do not run a production checkout route without `authorize_order`. It must
+fail-closed unless the authenticated product user owns the order and the order is
+still payable. Without this check, anyone who can guess an order id could start
+checkout for someone else's order.
+
+The generated route defaults to Standard-only. Enable
 `allow_metered_payments` only after you implement Micro / Nano settlement
 reconciliation and past-due handling.
 The route paths become:

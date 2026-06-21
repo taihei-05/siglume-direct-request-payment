@@ -28,7 +28,13 @@ choose a custom close day. Amount-threshold close creates a batch before the
 account-assigned weekly or monthly close when
 `accrued_provider_gross_minor >= settlement_threshold_minor`. The scope is the
 same buyer / provider / token / pricing band, and the basis is provider gross
-before protocol-fee deduction.
+before protocol-fee deduction. `accrued_provider_gross_minor` is the
+active-batch sum of accepted open-period `provider_gross_amount_minor` rows for
+that scope; it names the threshold calculation and is not a separate required
+API field. The usage event that reaches or crosses the threshold is accepted
+into the closing batch, so threshold overshoot is bounded by that event's
+`provider_gross_amount_minor`. After the close, new usage for the same scope is
+paused while `total_unsettled_exposure_minor` remains at or above the threshold.
 
 The important timestamp is `not_before_attempt_at`. Siglume does not execute the
 debit before this timestamp. It is always after the final debit notice is

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.30 - 2026-06-21
+
+- Completed the 10-minute sandbox walkthrough with explicit SDRP table
+  migration, authenticated Standard test-order setup, Bearer/session checkout,
+  DB paid-state verification, and duplicate webhook checks.
+- Added production `authorize_order` guidance to generated Express and FastAPI
+  README files, and expanded docs CI to cover generated template and example
+  Markdown.
+- Made the FastAPI async SQLAlchemy adapter accept async authorization callbacks
+  and changed the FastAPI guide default to the async adapter.
+- Documented `accrued_provider_gross_minor` as the active-batch threshold
+  calculation over `provider_gross_amount_minor`, including threshold-crossing
+  acceptance and bounded overshoot.
+- Added README warning that raw Hosted Checkout snippets are API-shape examples
+  and production code must persist the durable checkout-attempt mapping before
+  redirect.
+
 ## 0.4.29 - 2026-06-21
 
 - Made Micro / Nano amount-threshold close wording normative across pricing and

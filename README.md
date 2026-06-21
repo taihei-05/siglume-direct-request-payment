@@ -185,6 +185,14 @@ you must inspect the settlement machine fields before deciding whether the event
 means Standard settled payment, Micro / Nano accepted usage, or aggregated
 Micro / Nano settlement.
 
+The snippets below show the raw Hosted Checkout API shape. In production, prefer
+the generated checkout route and database adapter, or implement the same durable
+checkout-attempt pattern yourself: claim one active attempt, call
+`createCheckoutSession(...)`, then persist `challenge_hash`,
+`checkout_session_id`, and `checkout_url` before redirecting. If your process
+stops after session creation but before that mapping is saved, the later signed
+webhook cannot be matched safely to the order.
+
 <!-- siglume-example: ts readme-hosted-checkout -->
 ```ts
 import { DirectRequestPaymentMerchantClient } from "@siglume/direct-request-payment";

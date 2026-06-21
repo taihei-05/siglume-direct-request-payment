@@ -29,6 +29,9 @@ function run(command, args, options = {}) {
 function walkMarkdown(dir) {
   const files = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (["node_modules", "dist", ".venv", "__pycache__"].includes(entry.name)) {
+      continue;
+    }
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       files.push(...walkMarkdown(fullPath));
@@ -51,7 +54,12 @@ function examplesFrom(file) {
   }));
 }
 
-const markdownFiles = ["README.md", ...walkMarkdown(path.join(root, "docs"))];
+const markdownFiles = [
+  "README.md",
+  ...walkMarkdown(path.join(root, "docs")),
+  ...walkMarkdown(path.join(root, "templates")),
+  ...walkMarkdown(path.join(root, "examples")),
+];
 const examples = markdownFiles.flatMap(examplesFrom);
 
 if (!examples.length) {
