@@ -10,12 +10,12 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.33";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.5.0";
+export const SIGLUME_ACCOUNT_REQUIRED = "SIGLUME_ACCOUNT_REQUIRED";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain";
 export const DIRECT_REQUEST_PAYMENT_METERED_FINALITY = "aggregated_onchain_settlement";
-export const SIGLUME_ACCOUNT_REQUIRED = "SIGLUME_ACCOUNT_REQUIRED";
 const DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = new Set([DIRECT_REQUEST_PAYMENT_MODE, "metered_settlement_batch"]);
 
 export type DirectRequestPaymentCurrency = "JPY" | "USD";
@@ -401,6 +401,12 @@ export interface DirectRequestPaymentMerchantSetupInput {
   // entry is an absolute origin such as "https://shop.example.com". The origin
   // of webhook_callback_url is auto-allowed in addition to these.
   checkout_allowed_origins?: string[];
+  standard_terms_accepted?: boolean;
+  terms_accepted?: boolean;
+  terms_version?: string;
+  sandbox_confirmed?: boolean;
+  sandbox_session_id?: string;
+  live_mode_requested?: boolean;
 }
 
 export interface HostedCheckoutSessionCreateInput {
@@ -447,6 +453,63 @@ export interface HostedCheckoutSession {
   [key: string]: unknown;
 }
 
+export interface DirectRequestPaymentHostedCheckoutReadiness {
+  scope: "standard_hosted_checkout" | string;
+  ready: boolean;
+  status: string;
+  checks: Array<Record<string, unknown>>;
+  missing_requirements: string[];
+  blockers: string[];
+  live_mode_requested?: boolean;
+  live_mode_enabled?: boolean;
+  business_verification_status?: string;
+  ga_blockers?: string[];
+  [key: string]: unknown;
+}
+
+export interface DirectRequestPaymentRefundCreateInput {
+  idempotency_key: string;
+  requirement_id?: string;
+  direct_payment_requirement_id?: string;
+  checkout_session_id?: string;
+  amount_minor?: number;
+  reason?: string;
+  refund_chain_receipt_id?: string;
+}
+
+export interface DirectRequestPaymentRefundFailInput {
+  failure_code?: string;
+  failure_message?: string;
+  reason?: string;
+}
+
+export interface DirectRequestPaymentRefund {
+  refund_id: string;
+  id: string;
+  merchant: string;
+  merchant_user_id: string;
+  buyer_user_id: string;
+  checkout_session_id?: string | null;
+  direct_payment_requirement_id?: string | null;
+  direct_payment_requirement_row_id?: string | null;
+  payment_chain_receipt_id?: string | null;
+  refund_chain_receipt_id?: string | null;
+  currency: string;
+  token_symbol: string;
+  amount_minor: number;
+  reason?: string | null;
+  status: "pending" | "succeeded" | "failed" | string;
+  failure_code?: string | null;
+  failure_message?: string | null;
+  metadata_jsonb?: Record<string, unknown>;
+  requested_at?: string | null;
+  succeeded_at?: string | null;
+  failed_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+}
+
 export interface DirectRequestPaymentMerchantBillingMandateInput {
   currency?: DirectRequestPaymentCurrency | string;
   billing_currency?: DirectRequestPaymentCurrency | string;
@@ -460,6 +523,7 @@ export interface DirectRequestPaymentMerchantResponse {
   created?: boolean | null;
   listing_id?: string | null;
   mandate?: Record<string, unknown> | null;
+  standard_hosted_checkout_readiness?: DirectRequestPaymentHostedCheckoutReadiness | null;
   next_steps?: Record<string, unknown>;
 }
 
@@ -656,7 +720,7 @@ export class SiglumeApiError extends SiglumeDirectRequestPaymentError {
 }
 
 export class HostedCheckoutNotAvailableError extends SiglumeApiError {
-  constructor(message = "Hosted Checkout is not enabled for this account yet (server rollout in progress).") {
+  constructor(message = "Hosted Checkout is disabled by the platform rollout switch.") {
     super(message, { status: 409, code: "HOSTED_CHECKOUT_NOT_ENABLED" });
     this.name = "HostedCheckoutNotAvailableError";
   }
@@ -919,6 +983,24 @@ export class DirectRequestPaymentMerchantClient {
     if (input.checkout_allowed_origins !== undefined) {
       payload.checkout_allowed_origins = normalizeOriginList(input.checkout_allowed_origins);
     }
+    if (input.standard_terms_accepted !== undefined) {
+      payload.standard_terms_accepted = Boolean(input.standard_terms_accepted);
+    }
+    if (input.terms_accepted !== undefined) {
+      payload.terms_accepted = Boolean(input.terms_accepted);
+    }
+    if (input.terms_version !== undefined) {
+      payload.terms_version = requireNonEmpty(input.terms_version, "terms_version");
+    }
+    if (input.sandbox_confirmed !== undefined) {
+      payload.sandbox_confirmed = Boolean(input.sandbox_confirmed);
+    }
+    if (input.sandbox_session_id !== undefined) {
+      payload.sandbox_session_id = requireNonEmpty(input.sandbox_session_id, "sandbox_session_id");
+    }
+    if (input.live_mode_requested !== undefined) {
+      payload.live_mode_requested = Boolean(input.live_mode_requested);
+    }
     return this.request<DirectRequestPaymentMerchantResponse>("POST", "/sdrp/direct-payments/merchants", payload);
   }
 
@@ -969,6 +1051,14 @@ export class DirectRequestPaymentMerchantClient {
     );
   }
 
+  async getMerchantReadiness(merchant: string): Promise<DirectRequestPaymentHostedCheckoutReadiness> {
+    const response = await this.request<Record<string, unknown>>(
+      "GET",
+      `/sdrp/direct-payments/merchants/${encodeURIComponent(normalizeSelfServiceMerchant(merchant))}/readiness`,
+    );
+    return (response.standard_hosted_checkout_readiness ?? response) as DirectRequestPaymentHostedCheckoutReadiness;
+  }
+
   async rotateChallengeSecret(merchant: string): Promise<DirectRequestPaymentMerchantResponse> {
     return this.request<DirectRequestPaymentMerchantResponse>(
       "POST",
@@ -993,6 +1083,67 @@ export class DirectRequestPaymentMerchantClient {
     return this.request<DirectRequestPaymentMerchantResponse>(
       "POST",
       `/sdrp/direct-payments/merchants/${encodeURIComponent(normalizeSelfServiceMerchant(merchant))}/billing-mandate`,
+      payload,
+    );
+  }
+
+  async createRefund(input: DirectRequestPaymentRefundCreateInput): Promise<DirectRequestPaymentRefund> {
+    const payload: Record<string, unknown> = {};
+    if (input.requirement_id !== undefined) {
+      payload.requirement_id = requireNonEmpty(input.requirement_id, "requirement_id");
+    }
+    if (input.direct_payment_requirement_id !== undefined) {
+      payload.direct_payment_requirement_id = requireNonEmpty(
+        input.direct_payment_requirement_id,
+        "direct_payment_requirement_id",
+      );
+    }
+    if (input.checkout_session_id !== undefined) {
+      payload.checkout_session_id = requireNonEmpty(input.checkout_session_id, "checkout_session_id");
+    }
+    if (input.amount_minor !== undefined) {
+      payload.amount_minor = positiveInteger(input.amount_minor, "amount_minor");
+    }
+    if (input.reason !== undefined) {
+      payload.reason = requireNonEmpty(input.reason, "reason");
+    }
+    if (input.refund_chain_receipt_id !== undefined) {
+      payload.refund_chain_receipt_id = requireNonEmpty(input.refund_chain_receipt_id, "refund_chain_receipt_id");
+    }
+    return this.request<DirectRequestPaymentRefund>(
+      "POST",
+      "/sdrp/direct-payments/refunds",
+      payload,
+      { "Idempotency-Key": requireNonEmpty(input.idempotency_key, "idempotency_key") },
+    );
+  }
+
+  async listRefunds(input: { status?: string; limit?: number } = {}): Promise<DirectRequestPaymentListResponse<DirectRequestPaymentRefund>> {
+    const params = new URLSearchParams();
+    if (input.status !== undefined) params.set("status", requireNonEmpty(input.status, "status"));
+    if (input.limit !== undefined) params.set("limit", String(positiveInteger(input.limit, "limit")));
+    const query = params.toString();
+    return this.request<DirectRequestPaymentListResponse<DirectRequestPaymentRefund>>(
+      "GET",
+      `/sdrp/direct-payments/refunds${query ? `?${query}` : ""}`,
+    );
+  }
+
+  async getRefund(refund_id: string): Promise<DirectRequestPaymentRefund> {
+    return this.request<DirectRequestPaymentRefund>(
+      "GET",
+      `/sdrp/direct-payments/refunds/${encodeURIComponent(requireNonEmpty(refund_id, "refund_id"))}`,
+    );
+  }
+
+  async failRefund(refund_id: string, input: DirectRequestPaymentRefundFailInput = {}): Promise<DirectRequestPaymentRefund> {
+    const payload: Record<string, unknown> = {};
+    if (input.failure_code !== undefined) payload.failure_code = requireNonEmpty(input.failure_code, "failure_code");
+    if (input.failure_message !== undefined) payload.failure_message = requireNonEmpty(input.failure_message, "failure_message");
+    if (input.reason !== undefined) payload.reason = requireNonEmpty(input.reason, "reason");
+    return this.request<DirectRequestPaymentRefund>(
+      "POST",
+      `/sdrp/direct-payments/refunds/${encodeURIComponent(requireNonEmpty(refund_id, "refund_id"))}/fail`,
       payload,
     );
   }
@@ -1075,7 +1226,12 @@ export class DirectRequestPaymentMerchantClient {
     return { merchant, billing_mandate, webhook_subscription, env };
   }
 
-  async request<T>(method: string, path: string, json_body?: unknown): Promise<T> {
+  async request<T>(
+    method: string,
+    path: string,
+    json_body?: unknown,
+    extra_headers: Record<string, string> = {},
+  ): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeout_ms);
     try {
@@ -1083,6 +1239,7 @@ export class DirectRequestPaymentMerchantClient {
         "Accept": "application/json",
         "Authorization": `Bearer ${this.#authToken}`,
         "User-Agent": this.user_agent,
+        ...extra_headers,
       };
       let body: string | undefined;
       if (json_body !== undefined) {

@@ -1,14 +1,17 @@
 # Changelog
 
-## 0.4.33 - 2026-06-21
+## 0.5.0 - 2026-06-21
 
-- Made generated checkout adapters fail closed by default when `authorize_order`
-  is missing, with explicit `allow_unverified_order_lookup` required for guest
-  checkout and `ORDER_AUTHORIZATION_REQUIRED` responses for misconfiguration.
-- Updated sandbox documentation and `/redeliver` responses so webhook delivery
-  failures surface as failed delivery status and HTTP 502.
-- Exported `SIGLUME_ACCOUNT_REQUIRED` as a TypeScript/Python constant for
-  agent and custom buyer onboarding flows.
+- Added self-service Standard Hosted Checkout readiness fields and SDK helpers
+  for merchant setup, readiness reads, and live-mode requests.
+- Added Standard refund SDK helpers for create/list/get/fail flows with
+  `Idempotency-Key` support.
+- Added public operating-draft docs for status/SLA, API stability, refund
+  handling, reconciliation, and Beta-separated Micro/Nano scope.
+- Made official checkout adapters fail closed when `authorize_order` is missing
+  unless `allow_unverified_order_lookup` is explicitly set, added the
+  `SIGLUME_ACCOUNT_REQUIRED` export, and made sandbox redelivery expose failed
+  webhook delivery status.
 
 ## 0.4.32 - 2026-06-21
 

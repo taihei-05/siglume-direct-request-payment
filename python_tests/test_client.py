@@ -463,6 +463,113 @@ def test_merchant_client_registers_checkout_allowed_origins() -> None:
 
 
 @respx.mock
+def test_merchant_client_readiness_and_refunds() -> None:
+    readiness_route = respx.get("https://siglume.test/v1/sdrp/direct-payments/merchants/shop/readiness").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "merchant": "shop",
+                    "standard_hosted_checkout_readiness": {
+                        "scope": "standard_hosted_checkout",
+                        "ready": True,
+                        "status": "ready",
+                        "checks": [],
+                        "missing_requirements": [],
+                        "blockers": [],
+                    },
+                }
+            },
+        )
+    )
+    create_refund_route = respx.post("https://siglume.test/v1/sdrp/direct-payments/refunds").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "data": {
+                    "refund_id": "rfnd_123",
+                    "id": "row_123",
+                    "merchant": "shop",
+                    "merchant_user_id": "usr_merchant",
+                    "buyer_user_id": "usr_buyer",
+                    "currency": "JPY",
+                    "token_symbol": "JPYC",
+                    "amount_minor": 500,
+                    "status": "pending",
+                    "metadata_jsonb": {},
+                }
+            },
+        )
+    )
+    list_refunds_route = respx.get("https://siglume.test/v1/sdrp/direct-payments/refunds?status=pending&limit=10").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "items": [
+                        {
+                            "refund_id": "rfnd_123",
+                            "id": "row_123",
+                            "merchant": "shop",
+                            "merchant_user_id": "usr_merchant",
+                            "buyer_user_id": "usr_buyer",
+                            "currency": "JPY",
+                            "token_symbol": "JPYC",
+                            "amount_minor": 500,
+                            "status": "pending",
+                        }
+                    ],
+                    "next_cursor": None,
+                }
+            },
+        )
+    )
+    fail_refund_route = respx.post("https://siglume.test/v1/sdrp/direct-payments/refunds/rfnd_123/fail").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "refund_id": "rfnd_123",
+                    "id": "row_123",
+                    "merchant": "shop",
+                    "merchant_user_id": "usr_merchant",
+                    "buyer_user_id": "usr_buyer",
+                    "currency": "JPY",
+                    "token_symbol": "JPYC",
+                    "amount_minor": 500,
+                    "status": "failed",
+                }
+            },
+        )
+    )
+    client = DirectRequestPaymentMerchantClient(auth_token="merchant_jwt", base_url="https://siglume.test/v1")
+
+    readiness = client.get_merchant_readiness("Shop")
+    refund = client.create_refund(
+        idempotency_key="refund-key-1",
+        checkout_session_id="chk_123",
+        amount_minor=500,
+        reason="customer_request",
+    )
+    refunds = client.list_refunds(status="pending", limit=10)
+    failed = client.fail_refund("rfnd_123", failure_code="MANUAL_REFUND_FAILED")
+
+    assert readiness["ready"] is True
+    assert refund["refund_id"] == "rfnd_123"
+    assert refunds["items"][0]["refund_id"] == "rfnd_123"
+    assert failed["status"] == "failed"
+    assert create_refund_route.calls.last.request.headers["idempotency-key"] == "refund-key-1"
+    assert json.loads(create_refund_route.calls.last.request.content) == {
+        "checkout_session_id": "chk_123",
+        "amount_minor": 500,
+        "reason": "customer_request",
+    }
+    assert list_refunds_route.calls.last.request.url.query == b"status=pending&limit=10"
+    assert json.loads(fail_refund_route.calls.last.request.content) == {"failure_code": "MANUAL_REFUND_FAILED"}
+    assert readiness_route.called
+
+
+@respx.mock
 def test_merchant_client_creates_and_reads_checkout_session() -> None:
     create_route = respx.post("https://siglume.test/v1/sdrp/direct-payments/checkout-sessions").mock(
         return_value=httpx.Response(

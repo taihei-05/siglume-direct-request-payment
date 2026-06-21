@@ -10,13 +10,14 @@ is `siglume-direct-request-payment` and imports as
 - [One-time challenge helpers](#createdirectrequestpaymentchallengeinput-create_direct_request_payment_challenge)
 - [Recurring challenge helpers](#createdirectrequestpaymentrecurringchallengeinput-create_direct_request_payment_recurring_challenge)
 - [Hosted Checkout](#createcheckoutsessioninput-create_checkout_session)
+- [Refunds](#refunds)
 - [Webhook subscription helpers](#createwebhooksubscriptioninput-create_webhook_subscription)
 - [Webhook verification](#webhook-helpers)
 - [Payment classification](#classifydirectpaymentconfirmationevent-classify_direct_payment_confirmationevent)
 - [Statement APIs](#metered-statement-apis)
 - [Constants and compatibility aliases](#exported-constants)
 
-## Current Public Beta Scope
+## Current Public Scope
 
 SDRP currently settles JPYC / USDC on **Polygon PoS only**. The public SDK does
 not expose chain selection, cross-chain payment, multiple merchant settlement
@@ -30,7 +31,7 @@ SDRP serves two kinds of buyer, and you integrate each differently. In both
 cases the buyer pays from a Siglume wallet (JPYC for JPY, USDC for USD) — not a
 card — and the merchant SDK never authenticates the buyer.
 
-- **Human web shopper → Hosted Checkout (Beta; server rollout in progress).** Call
+- **Human web shopper → Standard Hosted Checkout.** Call
   [`createCheckoutSession`](#createcheckoutsessioninput-create_checkout_session)
   on `DirectRequestPaymentMerchantClient` and redirect the shopper to the
   returned `checkout_url`. The shopper signs into Siglume on the hosted page,
@@ -364,6 +365,14 @@ Input:
   use `https`. Development `http` origins are accepted only for `localhost`,
   `127.0.0.1`, or `[::1]`. Userinfo is rejected. Entries are normalized to bare,
   lowercased origins and deduped.
+- `terms_accepted` / `standard_terms_accepted`: records Standard Hosted Checkout
+  merchant terms acceptance.
+- `terms_version`: optional terms version override.
+- `sandbox_confirmed`: records that the merchant completed sandbox checkout and
+  webhook confirmation.
+- `sandbox_session_id`: optional sandbox evidence reference.
+- `live_mode_requested`: requests live mode. Live mode remains blocked until
+  billing, webhook, terms, sandbox, and business verification checks pass.
 
 In addition to the `setupMerchant` inputs above, `setupCheckout` accepts these
 orchestration toggles:
@@ -413,17 +422,18 @@ webhook-origin auto-allow apply. Python annotates this direct response as
 
 ### `createCheckoutSession(input)` / `create_checkout_session(...)`
 
-Beta / server rollout: Hosted Checkout is rolling out account by account. If the
-server endpoint is not enabled for the merchant yet, the SDK raises
+Standard Hosted Checkout requires merchant readiness: merchant registration,
+settlement wallet, active billing mandate, HTTPS webhook, terms acceptance,
+sandbox confirmation, business verification, and live mode. If readiness is
+incomplete, the API returns `HOSTED_CHECKOUT_READINESS_REQUIRED` with the missing
+checks. If the platform switch or route is unavailable, the SDK raises
 `HostedCheckoutNotAvailableError` (TS + Py) rather than leaking a raw rollout
-404/409. Payment handling must still key off the signed
-`direct_payment.confirmed` webhook and its settlement machine fields, not the
-event name alone.
+404/409. Payment handling must still key off the signed `direct_payment.confirmed`
+webhook and its settlement machine fields, not the event name alone.
 Run `siglume-check preflight` before mounting routes, then run
 `siglume-check verify` after your webhook route is live; see
-[Troubleshooting](./troubleshooting.md#hosted-checkout-readiness). A human web
-checkout does not have a drop-in fallback if this account-level feature is not
-enabled yet.
+[Troubleshooting](./troubleshooting.md#hosted-checkout-readiness). Do not show
+Siglume checkout to buyers until readiness passes.
 
 Creates a single-use, expiring Hosted Checkout session for a human web shopper
 and returns the URL to redirect them to. Requires the merchant's Siglume bearer
@@ -542,6 +552,18 @@ GET /v1/sdrp/direct-payments/merchants/{merchant}
 
 Returns setup and billing status without returning the challenge secret.
 
+### `getMerchantReadiness(merchant)` / `get_merchant_readiness(merchant)`
+
+Calls:
+
+```text
+GET /v1/sdrp/direct-payments/merchants/{merchant}/readiness
+```
+
+Returns the Standard Hosted Checkout readiness object with `ready`, `status`,
+`checks`, `missing_requirements`, `blockers`, `live_mode_enabled`, and
+`business_verification_status`.
+
 ### `rotateChallengeSecret(merchant)` / `rotate_challenge_secret(merchant)`
 
 Calls:
@@ -551,6 +573,56 @@ POST /v1/sdrp/direct-payments/merchants/{merchant}/challenge-secret/rotate
 ```
 
 Returns the new challenge secret once.
+
+### Refunds
+
+Standard Payment refunds are merchant-authenticated and idempotent. The
+`Idempotency-Key` header is required for create.
+
+```ts
+const refund = await merchant.createRefund({
+  idempotency_key: `refund-${order.id}-1`,
+  checkout_session_id: "chk_...",
+  amount_minor: 500,
+  reason: "customer_request",
+});
+```
+
+```py
+refund = merchant.create_refund(
+    idempotency_key=f"refund-{order['id']}-1",
+    checkout_session_id="chk_...",
+    amount_minor=500,
+    reason="customer_request",
+)
+```
+
+Calls:
+
+```text
+POST /v1/sdrp/direct-payments/refunds
+GET /v1/sdrp/direct-payments/refunds/{refund_id}
+GET /v1/sdrp/direct-payments/refunds
+POST /v1/sdrp/direct-payments/refunds/{refund_id}/fail
+GET /v1/sdrp/direct-payments/refunds.csv
+```
+
+Create input:
+
+- `idempotency_key`: SDK field sent as `Idempotency-Key` header
+- `checkout_session_id` or `requirement_id` / `direct_payment_requirement_id`
+- `amount_minor`: optional positive integer; omit for full remaining refund
+- `reason`: optional merchant reason
+- `refund_chain_receipt_id`: optional confirmed refund receipt reference
+
+Response fields include `refund_id`, `status` (`pending`, `succeeded`, or
+`failed`), `amount_minor`, `reason`, payment/refund receipt ids, and
+`metadata_jsonb.accounting` with remaining refundable amount and provider payout
+cap metadata.
+
+The refund API records and caps the merchant refund workflow. It does not claim
+that the current DirectPaymentHub contract can claw back the original transfer
+without a separate refund transfer/receipt.
 
 ### `prepareBillingMandate(merchant, input)` / `prepare_billing_mandate(...)`
 
@@ -1269,20 +1341,17 @@ Both packages export these importable constants:
 | `DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE` | `sdrp_direct_payment_requirement` |
 | `DEFAULT_WEBHOOK_TOLERANCE_SECONDS` | `300` |
 | `DIRECT_REQUEST_PAYMENT_SDK_VERSION` | package version string |
+| `SIGLUME_ACCOUNT_REQUIRED` | recommended product-level error code for buyer account / MCP connection onboarding |
 | `DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS` | `settled` |
 | `DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS` | `pending_settlement` |
 | `DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY` | `per_payment_onchain` |
 | `DIRECT_REQUEST_PAYMENT_METERED_FINALITY` | `aggregated_onchain_settlement` |
-| `SIGLUME_ACCOUNT_REQUIRED` | `SIGLUME_ACCOUNT_REQUIRED` |
 
 The `external_402` / `siglume-external-402-*` values are internal identifiers
 that reflect SDRP's HTTP 402 Payment Required lineage; they are not public
 product names, and they do **not** imply x402 wire compatibility (SDRP uses a
 different challenge/payment-payload design — see the README "Relationship to
 HTTP 402"). The SDK sets and reads them for you.
-`SIGLUME_ACCOUNT_REQUIRED` is the stable application-level code your product can
-return when an agent or custom buyer flow has not connected a Siglume account
-yet; it is not a Siglume charge-attempt error.
 
 ## Aliases
 

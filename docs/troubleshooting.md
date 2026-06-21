@@ -9,9 +9,9 @@ GitHub issues.
 
 ## Hosted Checkout readiness
 
-Hosted Checkout is enabled account by account during beta. Use `preflight`
-before route mounting, then use `verify` after the webhook route is mounted and
-your app is running:
+Standard Hosted Checkout is available when the merchant readiness checks pass.
+Use `preflight` before route mounting, then use `verify` after the webhook route
+is mounted and your app is running:
 
 ```bash
 npx siglume-check preflight
@@ -22,10 +22,11 @@ npx siglume-check verify
 Run `verify --sandbox` against the local SDK sandbox first. Then run `verify`
 without `--sandbox` against live credentials. `verify` validates local
 configuration, reads the merchant account, checks the active billing mandate,
-confirms the webhook subscription, creates one unpaid expiring checkout session,
-and queues a signed webhook test delivery. `preflight` skips the delivery probe
-so it can run before your webhook endpoint exists, but it still creates the
-unpaid expiring checkout session to confirm Hosted Checkout access.
+confirms the webhook subscription, checks readiness, creates one unpaid expiring
+checkout session, and queues a signed webhook test delivery. `preflight` skips
+the delivery probe so it can run before your webhook endpoint exists, but it
+still creates the unpaid expiring checkout session to confirm Hosted Checkout
+readiness.
 
 - The merchant account exists.
 - The merchant billing mandate is active.
@@ -34,7 +35,10 @@ unpaid expiring checkout session to confirm Hosted Checkout access.
 - The subscription includes `direct_payment.confirmed`.
 - The checkout return URL origins are registered through
   `checkout_allowed_origins`.
-- The account has Hosted Checkout enabled.
+- Standard Hosted Checkout terms are accepted.
+- A sandbox checkout/webhook confirmation is recorded.
+- Business verification and live mode are approved. If a real KYC provider is
+  not integrated for your account, this remains an operator-review blocker.
 - The signed webhook test delivery reaches the endpoint and returns success.
 
 `--no-api` is only for local config smoke tests. `--no-probe` is a partial API
@@ -46,29 +50,32 @@ If sandbox readiness fails, make sure `SIGLUME_ENV=sandbox`,
 `SHOP_WEBHOOK_URL` all point to your local product, and that
 `siglume-sdrp sandbox --webhook-url ...` is still running.
 
-If `createCheckoutSession(...)` or `getCheckoutSession(...)` raises
-`HostedCheckoutNotAvailableError`, do not show the raw 404/409 to the buyer.
-Stop the human checkout flow and contact Siglume support or your Siglume account
-contact for Hosted Checkout enablement.
+If `createCheckoutSession(...)` raises `HOSTED_CHECKOUT_READINESS_REQUIRED`,
+read the readiness details and complete the missing merchant action before
+showing Siglume checkout to buyers. If `createCheckoutSession(...)` or
+`getCheckoutSession(...)` raises `HostedCheckoutNotAvailableError`, do not show
+the raw 404/409 to the buyer; the platform switch or route is unavailable.
 
-Use these escalation paths during beta:
+Use these escalation paths:
 
-- [Request Hosted Checkout access](https://github.com/taihei-05/siglume-direct-request-payment/issues/new?title=Hosted%20Checkout%20access%20request) before live checkout testing.
 - Use public GitHub issues for documentation or SDK bugs that do not include
   transaction identifiers or customer data.
 - Use your private Siglume support channel or account contact for payment
   investigation, request / trace / support references, buyer identifiers, wallet
   addresses, or transaction-specific data.
 
-No public support SLA is promised during the beta. Keep a non-Siglume checkout
-fallback if your product needs guaranteed immediate payment-method availability.
+Public SLA/status terms must be taken from your Siglume account agreement or
+the published status/SLA document for your plan. Until those are published for
+your account, keep a non-Siglume checkout fallback if your product needs
+guaranteed immediate payment-method availability.
 
 ## API errors
 
 | Status / code | Likely cause | Retry? | Same idempotency key? | Buyer copy | Operator action |
 | --- | --- | --- | --- | --- | --- |
 | `401` / `403` | Missing token, expired token, wrong account, or insufficient scope. | No, not until credentials are fixed. | n/a | "Payment setup needs attention. Please try later." | Check whether you used a merchant Siglume bearer token for merchant setup and a buyer/provider Siglume bearer token for buyer/provider APIs. Do not use `cli_` keys. |
-| `404` / `409` Hosted Checkout rollout | Hosted Checkout is not enabled for this merchant account. | No. | n/a | "This payment method is not available for this store yet." | Contact Siglume for enablement; use agent/API only if that is actually your buyer flow. |
+| `409` / `HOSTED_CHECKOUT_READINESS_REQUIRED` | Merchant readiness is incomplete. | No. | n/a | "Payment setup needs attention. Please try later." | Read readiness details; complete billing, webhook, terms, sandbox, business verification, and live-mode checks. |
+| `404` / `409` Hosted Checkout unavailable | Hosted Checkout route or platform switch is unavailable. | No. | n/a | "This payment method is not available for this store yet." | Check status/SLA docs or private support; use agent/API only if that is actually your buyer flow. |
 | `409` idempotency conflict | The same idempotency key was reused with different Micro / Nano input. | No. | Do not reuse with different payload. | "This payment attempt could not be completed. Please retry from the order page." | Create a new payment attempt nonce/key for the changed order. |
 | `422` validation error | Invalid amount, currency, nonce, URL, origin, or metadata shape. | No, fix input. | n/a | "Payment information is invalid. Please refresh and retry." | Validate server-side amount/currency and registered URL origins. |
 | `429` | Rate limit. | Yes, after `Retry-After` when present. | Reuse only for the same logical attempt and same payload. | "Payment is busy. Please retry shortly." | Back off; do not create many new payment attempts. |
@@ -94,14 +101,22 @@ fallback if your product needs guaranteed immediate payment-method availability.
 
 ## Refunds and adjustments
 
-This SDK release does not expose a self-service refund API. For Standard
-Payment refunds or Micro / Nano adjustments, use the explicit Siglume support or
-platform process available to your account. Do not reverse settled revenue by
-editing local statements or CSV exports.
+Standard Payment refunds use the merchant refund API:
 
-If your product requires automated refunds before launch, treat that as a
-go-live blocker and agree the account-specific platform process with Siglume
-before enabling Hosted Checkout.
+- `POST /v1/sdrp/direct-payments/refunds` with `Idempotency-Key`
+- `GET /v1/sdrp/direct-payments/refunds/{refund_id}`
+- `GET /v1/sdrp/direct-payments/refunds`
+- `GET /v1/sdrp/direct-payments/refunds.csv`
+
+The API supports full/partial refund records, pending/succeeded/failed states,
+refund webhooks, audit logs, remaining refundable amount caps, and statement CSV
+export. It does not pretend the current DirectPaymentHub contract can claw funds
+back by itself; link a refund chain receipt when an on-chain refund transfer is
+available.
+
+Micro / Nano adjustments remain outside the Standard Hosted Checkout GA scope.
+Use the explicit Siglume support or platform process available to your account.
+Do not reverse settled revenue by editing local statements or CSV exports.
 
 ## Safe buyer messages
 

@@ -21,7 +21,7 @@ agent/API path plus Micro / Nano reconciliation notes.
 The merchant server must not create charges with a customer wallet. It signs the
 order challenge; the buyer-facing Siglume payment flow pays it.
 
-**Current public beta scope.** SDRP currently settles JPYC / USDC on **Polygon
+**Current public scope.** SDRP currently settles JPYC / USDC on **Polygon
 PoS only**. The public SDK does not expose chain selection, cross-chain payment,
 multiple merchant settlement wallets, per-payment settlement-wallet override, or
 split / multi-wallet charging. Route each payment through the buyer's Siglume
@@ -49,7 +49,7 @@ market thresholds `JPY: 10000` / `USD: 10000`.
 
 There are two ways a buyer reaches you, and you integrate each differently:
 
-- **Human web shopper → Hosted Checkout (Beta; server rollout in progress).** Create a checkout session and
+- **Human web shopper → Standard Hosted Checkout.** Create a checkout session and
   redirect the shopper to the Siglume-hosted page (the
   [section below](#hosted-checkout-human-web-shoppers)). This is the Siglume
   wallet hosted checkout path for human web shoppers.
@@ -65,14 +65,15 @@ For first-use buyers and agent account-required responses, read
 
 ## Hosted Checkout (Human Web Shoppers)
 
-**Beta / server rollout:** Hosted Checkout is rolling out account by account.
-Some merchant accounts may not have the server endpoint enabled yet. The SDK
-raises `HostedCheckoutNotAvailableError` for rollout 404/409 responses.
-Run `siglume-check preflight` before mounting routes, then run
+Standard Hosted Checkout requires merchant readiness: merchant registration,
+settlement wallet, active billing mandate, HTTPS webhook, terms acceptance,
+sandbox confirmation, business verification, and live mode. The SDK raises
+`HostedCheckoutNotAvailableError` only when the Hosted Checkout platform switch
+or route is unavailable. If readiness is incomplete, fix the
+`HOSTED_CHECKOUT_READINESS_REQUIRED` checks before showing Siglume checkout to
+buyers. Run `siglume-check preflight` before mounting routes, then run
 `siglume-check verify` after the webhook route is live; see
 [Hosted Checkout readiness](./troubleshooting.md#hosted-checkout-readiness).
-If the account is not enabled, do not continue with a human web checkout until
-Siglume enables it for that merchant account.
 
 When a person clicks "Pay with Siglume" on your site, create a session and
 redirect them to the returned `checkout_url`. They sign into Siglume on the

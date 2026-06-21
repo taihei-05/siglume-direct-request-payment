@@ -1,7 +1,7 @@
 # Pricing
 
 This page documents the trial-phase merchant pricing for Siglume Direct Request
-Payment as of SDK v0.4.33. Pricing can change by agreement or future product
+Payment as of SDK v0.5.0. Pricing can change by agreement or future product
 release; the Siglume platform response is the source of truth for per-payment
 fee data returned at runtime.
 
@@ -25,10 +25,11 @@ percentage (the payment fee column below) is identical in both currencies. Only
 the flat amounts — the monthly base fee and the per-payment minimum fee — are
 quoted per currency.
 
-Current public beta settlement is on **Polygon PoS only**. The public SDK does
-not expose chain selection, cross-chain payment, multiple merchant settlement
+Current public settlement is on **Polygon PoS only**. The public SDK does not
+expose chain selection, cross-chain payment, multiple merchant settlement
 wallets, per-payment settlement-wallet overrides, or split / multi-wallet
-charging.
+charging. Micro / Nano, subscription, and scheduled autopay remain outside the
+Standard Hosted Checkout GA scope.
 
 ## Pricing Table
 

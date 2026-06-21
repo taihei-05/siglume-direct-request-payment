@@ -7,14 +7,16 @@ This guide has two paths:
   proves the checkout route, webhook route, DB update, and duplicate-delivery
   handling without live Siglume credentials.
 - **Prepared merchant live go-live.** Use the same mounted routes after live
-  merchant credentials, Hosted Checkout access, billing mandate, public HTTPS
-  webhook, and monitoring are ready.
+  merchant credentials, billing mandate, public HTTPS webhook, Standard Hosted
+  Checkout readiness, and monitoring are ready.
 
 The live path requires these prerequisites:
 
 - merchant credentials are available,
 - the merchant billing mandate is active,
-- Hosted Checkout access is enabled for the merchant account,
+- Standard Hosted Checkout readiness passes for the merchant account,
+- Standard Hosted Checkout terms and sandbox confirmation are recorded,
+- business verification and live mode are approved,
 - your product already has login/session middleware,
 - your product already has a real order database,
 - the live path has a public HTTPS webhook URL.
@@ -68,9 +70,10 @@ SIGLUME_WEBHOOK_SECRET=<webhook signing secret from setupCheckout/setup_checkout
 ```
 
 Before mounting routes, you may run a preflight. It checks local config,
-merchant, billing, webhook subscription metadata, and Hosted Checkout access,
-by creating an unpaid expiring checkout session. It intentionally does not send
-a webhook delivery because your webhook route does not exist yet.
+merchant, billing, webhook subscription metadata, readiness, and Hosted
+Checkout availability by creating an unpaid expiring checkout session. It
+intentionally does not send a webhook delivery because your webhook route does
+not exist yet.
 
 ```bash
 # Node / Express
@@ -577,7 +580,7 @@ these live checks pass:
 
 - `siglume-check preflight` passes with live credentials,
 - `siglume-check verify` passes against the public HTTPS webhook URL,
-- Hosted Checkout access is enabled for the merchant account,
+- Standard Hosted Checkout readiness passes for the merchant account,
 - the merchant billing mandate is active,
 - your support / refund / adjustment process is documented for your account,
 - production monitoring captures webhook failures, checkout-session creation

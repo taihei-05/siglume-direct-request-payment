@@ -11,25 +11,50 @@ correct pricing and settlement path from the payment amount.
 
 ## Start Here
 
+- **10-minute account-free sandbox:** use the local sandbox first. It needs no
+  Siglume merchant account, no live mandate, and no public HTTPS webhook while
+  you are wiring your product route:
+
+  ```bash
+  npx siglume-sdrp init express --target src/siglume
+  npx siglume-sdrp sandbox --origin http://localhost:3000 --webhook-url http://localhost:3000/payments/webhooks/siglume
+  npx siglume-check verify --sandbox
+  ```
+
+- **Prepared merchant live verification:** after merchant setup, mandate,
+  Hosted Checkout enablement, and the live webhook URL are ready, switch to live
+  credentials and run:
+
+  ```bash
+  npx siglume-check preflight
+  npx siglume-check verify
+  ```
+
 - [Run the sandbox](./docs/sandbox.md) before using live credentials.
-- [Request Hosted Checkout access](https://github.com/taihei-05/siglume-direct-request-payment/issues/new?title=Hosted%20Checkout%20access%20request) for a beta merchant account. Include your merchant key and desired live origin; do not include tokens, webhook secrets, or wallet private material.
-- Use public GitHub issues for access requests and documentation / SDK bugs only.
+- Use `setupCheckout(...)` / `setup_checkout(...)`, `siglume-check preflight`,
+  and the merchant readiness API before opening live Standard Hosted Checkout.
+- Use public GitHub issues for documentation / SDK bugs only.
   Do not post request IDs, trace IDs, support references, buyer identifiers,
   wallet addresses, tokens, or transaction-specific data in a public issue. For
   payment investigation, use your private Siglume support channel or account
   contact.
-- Read the [current beta limitations](#current-public-beta-scope) before promising refunds, recurring lifecycle, or Micro / Nano settlement behavior to your own users.
+- Read the [current public scope](#current-public-scope) before promising
+  refunds, recurring lifecycle, or Micro / Nano settlement behavior to your own
+  users.
 
-## Current Public Beta Scope
+## Current Public Scope
 
 SDRP currently settles JPYC / USDC on **Polygon
 PoS only**. The public SDK does not expose chain selection, cross-chain payment,
 multiple merchant settlement wallets, per-payment settlement-wallet override, or
 split / multi-wallet charging. Route each payment through the buyer's Siglume
-wallet and the merchant account's configured Siglume settlement wallet. Hosted
-Checkout is enabled account by account during beta. The SDK does not expose a
-self-service refund API; Standard refunds and Micro / Nano adjustments use the
-explicit Siglume support or platform process available to your account.
+wallet and the merchant account's configured Siglume settlement wallet.
+
+Standard Hosted Checkout for one-time JPY/JPYC or USD/USDC payments is the
+general integration path when merchant readiness passes. Micro Payment, Nano
+Payment, subscription, and scheduled autopay remain Beta/out of this GA scope.
+Standard refunds use the self-service refund API; Micro / Nano adjustments still
+use the explicit Siglume support or platform process available to your account.
 
 Payment requirement creation must run in the authenticated buyer's Siglume
 context. Your merchant server must not use a merchant secret or API key to
@@ -50,7 +75,9 @@ Developer Portal `cli_` API key with this package.
 - [Merchant Quickstart](./docs/merchant-quickstart.md): manual API overview and recurring challenge notes.
 - [Pricing and settlement](./docs/pricing.md): amount bands, seller-borne fees, and Micro / Nano threshold close rules.
 - [API Reference](./docs/api-reference.md): TypeScript/Python methods, CLI checks, webhook helpers, and statement APIs.
-- [Troubleshooting](./docs/troubleshooting.md): Hosted Checkout access, refunds, support escalation, and safe buyer messages.
+- [Troubleshooting](./docs/troubleshooting.md): Hosted Checkout readiness, refunds, support escalation, and safe buyer messages.
+- [API and SDK Stability](./docs/api-stability.md): SemVer, API versioning, webhook compatibility, error-code compatibility, and deprecation.
+- [Status and SLA](./docs/status-and-sla.md): public operating draft, severity levels, response targets, and GA blockers.
 - [SDRP vs x402](./docs/concepts/sdrp-vs-x402.md): how SDRP relates to HTTP 402 and why it is not x402 wire-compatible.
 
 ## Protocol Overview
@@ -71,7 +98,7 @@ cases the buyer pays from a **Siglume wallet** (JPYC for JPY, USDC for USD) — 
 is **not** a card payment — and your **merchant SDK never authenticates the
 buyer**.
 
-1. **Human web shopper → Hosted Checkout (Beta; server rollout in progress).** When a person clicks "Pay with
+1. **Human web shopper → Standard Hosted Checkout.** When a person clicks "Pay with
    Siglume" on your site, call
    [`createCheckoutSession(...)`](#hosted-checkout-human-web-shoppers) and
    redirect them to the returned `checkout_url`. They sign into Siglume (passkey
@@ -103,27 +130,19 @@ recommended first-use copy and the agent/MCP account-required response shape.
 
 ## Fast Path
 
-There are two entry paths:
-
-1. **10-minute account-free sandbox.** Use
-   [10-Minute Standard Checkout Integration](./docs/quickstart-10-minutes.md)
-   to mount the generated routes, create SDRP storage, seed an authenticated
-   Standard-band test order, run the local sandbox, confirm checkout, and
-   redeliver the signed webhook. This path does not require live merchant
-   credentials.
-2. **Prepared merchant live verification.** After you have merchant
-   credentials, an active billing mandate, Hosted Checkout access, an HTTPS
-   webhook URL, login/session middleware, and a real order database, switch the
-   same integration to live values and run `siglume-check verify`.
-
-The path is CLI-first:
+Use [10-Minute Standard Checkout Integration](./docs/quickstart-10-minutes.md) to add
+Standard Hosted Checkout plumbing to an existing Express or FastAPI product
+when merchant credentials, active billing mandate, HTTPS webhook URL,
+login/session middleware, a real order database, sandbox verification, accepted
+terms, and live readiness already exist. The path is CLI-first:
 
 ```bash
 npm install @siglume/direct-request-payment
 npx siglume-sdrp init express --target src/siglume
-# mount the routes, seed an authenticated Standard-band test order, start your app, then:
+# mount the routes, start your app, then:
 npx siglume-sdrp sandbox --webhook-url http://localhost:3000/payments/webhooks/siglume
 npx siglume-check verify --sandbox
+npx siglume-check verify
 ```
 
 or:
@@ -131,18 +150,10 @@ or:
 ```bash
 pip install siglume-direct-request-payment
 siglume-sdrp init fastapi --target app/siglume
-# mount the routes, seed an authenticated Standard-band test order, start your app,
-# then use the npm sandbox for local checkout.
+# mount the routes, start your app, then use the npm sandbox for local checkout.
 # FastAPI sandbox verification currently requires Node.js/npm:
 npx siglume-sdrp sandbox --webhook-url http://localhost:3000/payments/webhooks/siglume
 siglume-check verify --sandbox
-```
-
-For live verification after merchant prerequisites are ready, switch the
-environment variables to live Siglume values and run:
-
-```bash
-siglume-check verify
 ```
 
 The sandbox command starts a local Siglume-compatible API that creates fake
@@ -179,7 +190,7 @@ fulfilling orders.
 
 | Use case | Recommended path | 10-minute integration path? | Production work still required |
 | --- | --- | --- | --- |
-| EC one-time Standard payment | Hosted Checkout | Yes, with `siglume-sdrp init`, sandbox, and `siglume-check verify` when prerequisites are ready | Product DB adapter, order-owner authorization, no self-service refund API, support process, monitoring |
+| EC one-time Standard payment | Hosted Checkout | Yes, with `siglume-sdrp init`, sandbox, and `siglume-check verify` when prerequisites are ready | Product DB adapter, order-owner authorization, refund handling, support process, monitoring |
 | Game consumables | Hosted Checkout or agent/API | Conditional | Idempotent entitlement grants, disconnect recovery, Micro / Nano settlement reconciliation and past-due handling |
 | Paid API / AtoA | Direct API or Siglume marketplace tool | Conditional | Request idempotency, buyer auth context, reconciliation |
 | SaaS subscription | Recurring challenge plus raw API | No | Renewal, cancellation, failed renewal, plan-change lifecycle |
@@ -187,13 +198,15 @@ fulfilling orders.
 
 ## Hosted Checkout (Human Web Shoppers)
 
-**Beta / server rollout:** Hosted Checkout is rolling out account by account.
-Some merchant accounts may not have the server endpoint enabled yet. In that
-case `createCheckoutSession(...)` / `getCheckoutSession(...)` raises
-`HostedCheckoutNotAvailableError` instead of exposing the raw rollout 404/409.
-Keep the signed `direct_payment.confirmed` webhook as the durable signal, and
-inspect its settlement machine fields before marking any order paid.
-Run preflight before route mounting and verify after your webhook is live; see
+Standard Hosted Checkout is available when the merchant readiness checks pass:
+merchant registration, settlement wallet, active billing mandate, HTTPS webhook,
+terms acceptance, sandbox confirmation, business verification, and live mode.
+`HostedCheckoutNotAvailableError` means the platform Hosted Checkout switch or
+route is unavailable. If readiness is incomplete, the API returns
+`HOSTED_CHECKOUT_READINESS_REQUIRED` with the missing checks. Keep the signed
+`direct_payment.confirmed` webhook as the durable signal, and inspect its
+settlement machine fields before marking any order paid. Run preflight before
+route mounting and verify after your webhook is live; see
 [Hosted Checkout readiness](./docs/troubleshooting.md#hosted-checkout-readiness).
 
 Hosted Checkout is a Siglume-hosted page that turns a "Pay with Siglume" button
