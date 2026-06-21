@@ -105,3 +105,4 @@ registry, refund webhook, or refund state machine. Siglume records and exposes
 the original payment evidence for Standard Hosted Checkout. If a merchant offers
 refunds to its buyers, that policy, support flow, transfer, and accounting are
 handled by the merchant outside SDRP under the merchant's own terms and systems.
+Refund policy, buyer support, refund transfer, and accounting are merchant responsibilities.

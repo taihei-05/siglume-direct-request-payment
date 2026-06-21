@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.5 - 2026-06-21
+
+- Added a migration notice for the withdrawn `0.5.0` through `0.5.2` refund
+  preview surface and linked it from the README.
+- Clarified the stability policy for emergency withdrawal of incorrectly
+  published preview surfaces while preserving the normal rule that removing a
+  valid public method is a breaking change.
+- Added docs CI invariants that fail if refund SDK/API/webhook surface names
+  are reintroduced outside allowed migration or changelog history.
+- Tightened Japanese announcement and troubleshooting language so Micro/Nano
+  protocol settlement correction is not confused with merchant refund handling.
+
 ## 0.5.4 - 2026-06-21
 
 - Promoted the public SDRP GA scope wording from Standard-only to the complete

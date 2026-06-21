@@ -20,6 +20,7 @@ function walkMarkdown(dir) {
 
 const markdownFiles = [
   "README.md",
+  "MIGRATING_FROM_0.5.0_REFUND_PREVIEW.md",
   ...walkMarkdown(path.join(root, "docs")),
   ...walkMarkdown(path.join(root, "templates")),
   ...walkMarkdown(path.join(root, "src", "siglume_direct_request_payment", "templates")),
@@ -34,6 +35,25 @@ function fail(message) {
 
 function read(file) {
   return fs.readFileSync(path.join(root, file), "utf8");
+}
+
+function walkTextFiles(dir) {
+  const files = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (["node_modules", "dist", ".venv", "__pycache__", ".git"].includes(entry.name)) {
+      continue;
+    }
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...walkTextFiles(fullPath));
+    } else if (
+      entry.isFile()
+      && /\.(cjs|cts|js|json|md|mjs|py|toml|ts|tsx|txt|yml|yaml)$/i.test(entry.name)
+    ) {
+      files.push(path.relative(root, fullPath).replaceAll("\\", "/"));
+    }
+  }
+  return files;
 }
 
 function slugForHeading(heading) {
@@ -199,6 +219,8 @@ function checkInvariants() {
     fail("docs/pricing.md must define accrued_provider_gross_minor as a calculation name.");
   }
 
+  checkRefundBoundaryInvariants();
+
   const fastapiTemplateFiles = [
     "README.md",
     "siglume_order_store_example.py",
@@ -211,6 +233,43 @@ function checkInvariants() {
     const packagedTemplate = `src/siglume_direct_request_payment/templates/fastapi/${file}`;
     if (read(rootTemplate) !== read(packagedTemplate)) {
       fail(`${packagedTemplate} must match ${rootTemplate} byte-for-byte.`);
+    }
+  }
+}
+
+function checkRefundBoundaryInvariants() {
+  const allowedHistoryFiles = new Set([
+    "CHANGELOG.md",
+    "MIGRATING_FROM_0.5.0_REFUND_PREVIEW.md",
+    "scripts/check-docs.mjs",
+  ]);
+  const textFiles = walkTextFiles(root).filter((file) => !allowedHistoryFiles.has(file));
+  const bannedRefundSurface = [
+    "createRefund",
+    "create_refund",
+    "DirectRequestPaymentRefund",
+    "/sdrp/direct-payments/refunds",
+    "direct_payment.refund.",
+    "sdrp_refunds",
+    "status-and-sla.md",
+  ];
+  for (const file of textFiles) {
+    const text = read(file);
+    for (const banned of bannedRefundSurface) {
+      if (text.includes(banned)) {
+        fail(`${file}: banned refund/SLA surface remains: ${banned}`);
+      }
+    }
+  }
+
+  const docsText = markdownFiles.map((file) => read(file)).join("\n").toLowerCase();
+  for (const expected of [
+    "the sdk does not provide a merchant refund api",
+    "refund policy, buyer support, refund transfer, and accounting are merchant responsibilities",
+    "operational objectives, not a contractual sla",
+  ]) {
+    if (!docsText.includes(expected)) {
+      fail(`refund/SLA boundary wording is missing: ${expected}`);
     }
   }
 }

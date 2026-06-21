@@ -110,8 +110,10 @@ payment identifiers and signed payment evidence only as reconciliation inputs.
 
 For Micro / Nano, use statement APIs to separate unsettled, settled, past-due,
 and terminal/write-off amounts. Do not reverse settled revenue by editing local
-statements or CSV exports; merchant refund or adjustment policy remains outside
-SDRP and should be reconciled in the merchant system.
+statements or CSV exports. Micro/Nano protocol settlement correction is handled
+through the account's Siglume platform process; it is not a buyer-facing
+merchant refund. Merchant refund or adjustment policy remains outside SDRP and
+should be reconciled in the merchant system for every price band.
 
 ## Safe buyer messages
 

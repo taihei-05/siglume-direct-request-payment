@@ -58,6 +58,14 @@ change meaning during the same major API version.
 Public methods and endpoints should receive at least 90 days of deprecation
 notice before removal unless a security issue requires faster action.
 
+If an incorrectly published preview surface implies that SDRP provides a service
+outside its responsibility boundary, Siglume may withdraw that preview surface
+with a corrective migration notice instead of a 90-day deprecation period. The
+notice must identify the affected versions, explain why the surface was outside
+SDRP, and describe the current supported integration path. This exception is
+for erroneous preview exposure only. Removing a valid public method remains a
+breaking change and should use the deprecation period above.
+
 Migration guides should include:
 
 - old behavior

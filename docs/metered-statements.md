@@ -446,6 +446,7 @@ same key before repeating side effects.
 | Client disconnects after provider success | Yes | Yes if the provider completed work and Siglume observed/records that success | The client may see failure while the provider completed work; use idempotency to avoid duplicate fulfillment. |
 | Duplicate idempotency key | Maybe | One usage event | Return/reconcile the first outcome; do not create another chargeable event. |
 | Merchant refund or buyer adjustment | Outside SDRP metered settlement | Not provided by this SDK | Handle the buyer policy, transfer, and accounting in the merchant system; keep SDRP statement totals immutable and reconcile against original payment identifiers. |
+| Protocol settlement correction | SDRP metered statement investigation | Private support / platform process | Use this only for SDRP ledger or settlement correction. It is not a buyer-facing merchant refund. |
 | Settlement dispute or ledger investigation | Depends on the recorded SDRP status | Private support / account channel | Use the SDRP statement ids, payment ids, and chain receipts for investigation; do not mutate CSV/statement totals locally. |
 
 `failed_chargeable` means the provider-side work is treated as completed or

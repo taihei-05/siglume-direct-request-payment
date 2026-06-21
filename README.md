@@ -74,6 +74,10 @@ refund receipt registry, or refund webhook. Refund policy, buyer support, and
 any refund transfer are handled by the merchant outside SDRP using the
 merchant's own lawful process. SDRP exposes the original payment identifiers and
 signed payment evidence so the merchant can reconcile its own order system.
+Refund policy, buyer support, refund transfer, and accounting are merchant responsibilities.
+
+If you evaluated `0.5.0`, `0.5.1`, or `0.5.2`, read
+[Migrating from the withdrawn refund preview](https://github.com/taihei-05/siglume-direct-request-payment/blob/main/MIGRATING_FROM_0.5.0_REFUND_PREVIEW.md).
 
 Payment requirement creation must run in the authenticated buyer's Siglume
 context. Your merchant server must not use a merchant secret or API key to
