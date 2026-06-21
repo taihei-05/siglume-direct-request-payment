@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.6 - 2026-06-21
+
+- Expanded docs CI invariants to block all withdrawn refund preview method and
+  type names, including list/get/fail variants in both TypeScript and Python.
+- Made the old `docs/status-and-sla.md` path fail by filename if it is
+  reintroduced, and blocked the old "Status and SLA" heading.
+
 ## 0.5.5 - 2026-06-21
 
 - Added a migration notice for the withdrawn `0.5.0` through `0.5.2` refund

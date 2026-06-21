@@ -243,11 +243,24 @@ function checkRefundBoundaryInvariants() {
     "MIGRATING_FROM_0.5.0_REFUND_PREVIEW.md",
     "scripts/check-docs.mjs",
   ]);
-  const textFiles = walkTextFiles(root).filter((file) => !allowedHistoryFiles.has(file));
+  const allTextFiles = walkTextFiles(root);
+  if (allTextFiles.includes("docs/status-and-sla.md")) {
+    fail("docs/status-and-sla.md must not be reintroduced; use docs/status-and-service-objectives.md.");
+  }
+
+  const textFiles = allTextFiles.filter((file) => !allowedHistoryFiles.has(file));
   const bannedRefundSurface = [
     "createRefund",
+    "listRefunds",
+    "getRefund",
+    "failRefund",
     "create_refund",
+    "list_refunds",
+    "get_refund",
+    "fail_refund",
     "DirectRequestPaymentRefund",
+    "DirectRequestPaymentRefundCreateInput",
+    "DirectRequestPaymentRefundFailInput",
     "/sdrp/direct-payments/refunds",
     "direct_payment.refund.",
     "sdrp_refunds",
@@ -259,6 +272,9 @@ function checkRefundBoundaryInvariants() {
       if (text.includes(banned)) {
         fail(`${file}: banned refund/SLA surface remains: ${banned}`);
       }
+    }
+    if (/^#{1,6}\s+Status\s+and\s+SLA\b/im.test(text)) {
+      fail(`${file}: heading "Status and SLA" must not be reintroduced; use Status and Service Objectives.`);
     }
   }
 
