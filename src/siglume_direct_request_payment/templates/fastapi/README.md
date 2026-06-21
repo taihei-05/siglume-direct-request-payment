@@ -59,16 +59,22 @@ For sync SQLAlchemy projects that cannot use `AsyncSession`, use
 ```py
 from sqlalchemy.orm import sessionmaker
 
+from .auth import current_user_id
+from .database import user_can_pay_order
 from .siglume.siglume_order_store_sqlalchemy import (
     SQLAlchemySiglumeOrderStore,
     create_sqlalchemy_engine,
     create_sqlalchemy_siglume_schema,
 )
 
+def authorize_order_sync(order: dict, request) -> bool:
+    user_id = current_user_id(request)
+    return bool(user_id and user_can_pay_order(str(order["id"]), user_id))
+
 engine = create_sqlalchemy_engine(os.environ["DATABASE_URL"])
 create_sqlalchemy_siglume_schema(engine)
 SessionLocal = sessionmaker(engine, future=True)
-siglume_order_store = SQLAlchemySiglumeOrderStore(SessionLocal, authorize_order=authorize_order)
+siglume_order_store = SQLAlchemySiglumeOrderStore(SessionLocal, authorize_order=authorize_order_sync)
 ```
 
 The sync adapter performs synchronous DB work; the async adapter above is the

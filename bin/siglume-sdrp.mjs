@@ -312,6 +312,8 @@ async function sandbox(options) {
     console.log(`SHOP_WEBHOOK_URL=${webhookUrl}`);
     console.log("");
     console.log(`Then run after your app is running: siglume-check verify --sandbox`);
+    console.log(`After confirming a sandbox checkout, redeliver the same webhook event with:`);
+    console.log(`curl -X POST ${apiBase.replace(/\/v1$/, "")}/v1/sandbox/checkout-sessions/<session_id>/redeliver`);
   }
 }
 
@@ -496,6 +498,26 @@ async function handleSandboxRequest(req, res, state, port) {
     }
     await deliverSandboxWebhook(state, event);
     sendEnvelope(res, 200, sandboxConfirmResponse(session, event));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname.startsWith("/v1/sandbox/checkout-sessions/") && url.pathname.endsWith("/redeliver")) {
+    const parts = url.pathname.split("/");
+    const sessionId = decodeURIComponent(parts[4] || "");
+    const session = state.sessions.get(sessionId);
+    if (!session) {
+      sendJson(res, 404, { error: { code: "CHECKOUT_SESSION_NOT_FOUND", message: "sandbox session not found" } });
+      return;
+    }
+    if (!session.confirmation_event) {
+      sendJson(res, 409, { error: { code: "CHECKOUT_SESSION_NOT_CONFIRMED", message: "confirm the sandbox checkout before redelivery" } });
+      return;
+    }
+    await deliverSandboxWebhook(state, session.confirmation_event);
+    sendEnvelope(res, 200, {
+      redelivered: true,
+      event: { id: session.confirmation_event.id, type: session.confirmation_event.type },
+    });
     return;
   }
 

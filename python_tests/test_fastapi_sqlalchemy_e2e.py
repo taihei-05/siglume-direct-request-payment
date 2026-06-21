@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime, timezone
 
@@ -74,7 +75,11 @@ async def test_fastapi_sqlalchemy_template_e2e(tmp_path, monkeypatch) -> None:
         seed_sqlalchemy_order(session, order_id="order_micro", amount_minor=100, currency="JPY")
         seed_sqlalchemy_order(session, order_id="order_expiring", amount_minor=1400, currency="JPY")
 
-    store = SQLAlchemySiglumeOrderStore(SessionLocal)
+    async def authorize_order(order: dict[str, object], request) -> bool:
+        await asyncio.sleep(0)
+        return request.headers.get("authorization") == "Bearer user_sync" and str(order["id"]).startswith("order_")
+
+    store = SQLAlchemySiglumeOrderStore(SessionLocal, authorize_order=authorize_order)
     app = FastAPI()
     app.include_router(create_siglume_sdrp_router(store, allow_metered_payments=False), prefix="/payments")
 
@@ -104,11 +109,22 @@ async def test_fastapi_sqlalchemy_template_e2e(tmp_path, monkeypatch) -> None:
 
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        first_start = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_123"})
+        unauthenticated = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_123"})
+        assert unauthenticated.status_code == 404
+
+        first_start = await client.post(
+            "/payments/checkout/siglume/start",
+            json={"order_id": "order_123"},
+            headers={"authorization": "Bearer user_sync"},
+        )
         assert first_start.status_code == 200
         assert first_start.json()["checkout_url"] == "https://siglume.test/pay/chk_py_1"
 
-        replay_start = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_123"})
+        replay_start = await client.post(
+            "/payments/checkout/siglume/start",
+            json={"order_id": "order_123"},
+            headers={"authorization": "Bearer user_sync"},
+        )
         assert replay_start.status_code == 200
         assert replay_start.json() == first_start.json()
         assert len(checkout_calls) == 1
@@ -123,7 +139,11 @@ async def test_fastapi_sqlalchemy_template_e2e(tmp_path, monkeypatch) -> None:
         with SessionLocal() as session:
             assert len(session.execute(select(webhook_events).where(webhook_events.c.event_id == "evt_paid_py")).all()) == 1
 
-        retry_start = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_retry"})
+        retry_start = await client.post(
+            "/payments/checkout/siglume/start",
+            json={"order_id": "order_retry"},
+            headers={"authorization": "Bearer user_sync"},
+        )
         assert retry_start.status_code == 200
         fail_once = True
         real_mark_paid = store.mark_order_paid_once
@@ -152,12 +172,20 @@ async def test_fastapi_sqlalchemy_template_e2e(tmp_path, monkeypatch) -> None:
             assert session.execute(select(orders.c.status).where(orders.c.id == "order_retry")).scalar_one() == "paid"
             assert len(session.execute(select(webhook_events).where(webhook_events.c.event_id == "evt_retry_py")).all()) == 1
 
-        micro_start = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_micro"})
+        micro_start = await client.post(
+            "/payments/checkout/siglume/start",
+            json={"order_id": "order_micro"},
+            headers={"authorization": "Bearer user_sync"},
+        )
         assert micro_start.status_code == 409
         assert micro_start.json() == {"error": "METERED_INTEGRATION_REQUIRED"}
         assert len(checkout_calls) == 2
 
-        expiring_start = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_expiring"})
+        expiring_start = await client.post(
+            "/payments/checkout/siglume/start",
+            json={"order_id": "order_expiring"},
+            headers={"authorization": "Bearer user_sync"},
+        )
         assert expiring_start.status_code == 200
         assert expiring_start.json()["session_id"] == "chk_py_3"
         with SessionLocal.begin() as session:
@@ -167,7 +195,11 @@ async def test_fastapi_sqlalchemy_template_e2e(tmp_path, monkeypatch) -> None:
                 .where(checkout_attempts.c.status == "pending")
                 .values(expires_at=datetime(2000, 1, 1, tzinfo=timezone.utc))
             )
-        retry_expired = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_expiring"})
+        retry_expired = await client.post(
+            "/payments/checkout/siglume/start",
+            json={"order_id": "order_expiring"},
+            headers={"authorization": "Bearer user_sync"},
+        )
         assert retry_expired.status_code == 200
         assert retry_expired.json()["session_id"] == "chk_py_4"
         with SessionLocal() as session:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
+import inspect
 import json
 import asyncio
 import time
@@ -140,7 +141,7 @@ class SQLAlchemySiglumeOrderStore:
         currency_column: str = "currency",
         order_status_column: str | None = "status",
         order_updated_at_column: str | None = "updated_at",
-        authorize_order: Callable[[dict[str, Any], Request], bool] | None = None,
+        authorize_order: Callable[[dict[str, Any], Request], bool | Awaitable[bool]] | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._orders_table = orders_table
@@ -163,7 +164,7 @@ class SQLAlchemySiglumeOrderStore:
                 if order is None:
                     return None
                 order_dict = self._canonical_order_dict(order)
-                if self._authorize_order and not self._authorize_order(order_dict, request):
+                if self._authorize_order and not await _resolve_authorize_order(self._authorize_order(order_dict, request)):
                     return None
 
                 active = session.execute(
@@ -496,3 +497,9 @@ def _require_text(value: str, name: str) -> str:
     if not text:
         raise ValueError(f"{name} is required")
     return text
+
+
+async def _resolve_authorize_order(result: bool | Awaitable[bool]) -> bool:
+    if inspect.isawaitable(result):
+        return bool(await result)
+    return bool(result)

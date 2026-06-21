@@ -26,7 +26,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.30"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.31"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
 DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain"
@@ -608,9 +608,11 @@ class DirectRequestPaymentMerchantClient:
         """Create a Hosted Checkout session for human web shoppers. Siglume
         authors the challenge server-side, persists a
         single-use expiring session, and returns ``checkout_url``. Redirect the
-        shopper there; they log into Siglume, approve, and pay from their own
-        wallet, then return to ``success_url``. Fulfill on the
-        ``direct_payment.confirmed`` webhook (the source of truth).
+        shopper there; they sign into Siglume or create a Siglume account on
+        the hosted page, approve, and pay from their own wallet, then return to
+        ``success_url``. Fulfill on the ``direct_payment.confirmed`` webhook
+        (the source of truth). The merchant SDK does not create buyer accounts
+        or log buyers into Siglume.
 
         ``success_url``/``cancel_url`` must be on an origin you registered via
         ``checkout_allowed_origins`` (or your ``webhook_callback_url`` origin).

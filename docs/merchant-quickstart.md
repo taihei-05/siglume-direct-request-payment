@@ -60,6 +60,8 @@ There are two ways a buyer reaches you, and you integrate each differently:
 In both cases the buyer pays from a Siglume wallet (JPYC / USDC, not a card),
 the merchant SDK never authenticates the buyer, and you fulfill on the same
 `direct_payment.confirmed` webhook.
+For first-use buyers and agent account-required responses, read
+[Buyer Account and Wallet Onboarding](./buyer-onboarding.md).
 
 ## Hosted Checkout (Human Web Shoppers)
 

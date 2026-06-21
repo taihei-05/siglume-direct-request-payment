@@ -98,6 +98,16 @@ describe("sandbox CLI E2E", () => {
       expect(deliveries).toHaveLength(1);
       expect(deliveries[0]?.signature).toContain("v1=");
 
+      const redeliver = await fetch(
+        `${baseUrl}/v1/sandbox/checkout-sessions/${createdBody.data.session_id}/redeliver`,
+        { method: "POST" },
+      );
+      expect(redeliver.status).toBe(200);
+      const redeliverBody = await redeliver.json() as { data: { event: { id: string } } };
+      expect(redeliverBody.data.event.id).toBe(firstConfirmBody.data.event.id);
+      expect(deliveries).toHaveLength(2);
+      expect(JSON.parse(deliveries[1]?.body || "{}").id).toBe(firstConfirmBody.data.event.id);
+
       const microCreated = await postJson(`${baseUrl}/v1/sdrp/direct-payments/checkout-sessions`, {
         merchant: "sandbox_merchant",
         amount_minor: 100,
@@ -111,8 +121,8 @@ describe("sandbox CLI E2E", () => {
       const microCreatedBody = await microCreated.json() as { data: { session_id: string } };
       const microConfirm = await fetch(`${baseUrl}/v1/sandbox/checkout-sessions/${microCreatedBody.data.session_id}/confirm`, { method: "POST" });
       expect(microConfirm.status).toBe(200);
-      expect(deliveries).toHaveLength(2);
-      const microEvent = JSON.parse(deliveries[1]?.body || "{}") as {
+      expect(deliveries).toHaveLength(3);
+      const microEvent = JSON.parse(deliveries[2]?.body || "{}") as {
         data: {
           pricing_band: string;
           buyer_debit_minor: string;

@@ -52,6 +52,12 @@ webhook. Hosted Checkout adds no new money movement and no new webhook. Inspect
 Standard can be marked paid only after settled per-payment finality, while Micro
 / Nano usage is accepted before the later aggregated settlement.
 
+For first-use buyers, see [Buyer Account and Wallet Onboarding](./buyer-onboarding.md).
+Human checkout should redirect to the hosted `checkout_url`, where Siglume
+handles sign-in or account creation. Agent checkout must fail closed with an
+account-required response until the agent has connected through Siglume MCP
+OAuth consent or your product has a buyer Siglume bearer token.
+
 ## Environment Variables
 
 ### SDK and API clients

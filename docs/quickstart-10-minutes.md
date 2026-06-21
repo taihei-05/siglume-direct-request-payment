@@ -121,7 +121,7 @@ Express SQL / ORM adapters:
 
 ```ts
 import { writeFileSync } from "node:fs";
-import { createSiglumeSdrpSqlSchema } from "./src/siglume/siglume-order-store.sql.js";
+import { createSiglumeSdrpSqlSchema } from "../src/siglume/siglume-order-store.sql.js";
 
 writeFileSync(
   "migrations/20260621_add_siglume_sdrp.sql",
@@ -132,20 +132,42 @@ writeFileSync(
 );
 ```
 
+Save that as `scripts/create-siglume-migration.ts`, then run:
+
+```bash
+npx tsx scripts/create-siglume-migration.ts
+```
+
 Use `include_orders_table: false` for an existing product. Your own order table
 must already provide the mapped order id, amount, currency, and owner fields
 used by `authorize_order`.
 
 FastAPI / SQLAlchemy:
 
+<!-- siglume-example: py quickstart-fastapi-migration -->
 ```py
+import asyncio
+import os
+
 from app.siglume.siglume_order_store_sqlalchemy_async import (
     create_async_sqlalchemy_engine,
     create_async_sqlalchemy_siglume_schema,
 )
 
-engine = create_async_sqlalchemy_engine(os.environ["DATABASE_URL"])
-await create_async_sqlalchemy_siglume_schema(engine)
+async def main() -> None:
+    engine = create_async_sqlalchemy_engine(os.environ["DATABASE_URL"])
+    try:
+        await create_async_sqlalchemy_siglume_schema(engine)
+    finally:
+        await engine.dispose()
+
+asyncio.run(main())
+```
+
+Save that as `scripts/create_siglume_schema.py`, then run:
+
+```bash
+python scripts/create_siglume_schema.py
 ```
 
 Run the schema creation in your migration/startup path once. It creates only
@@ -402,18 +424,24 @@ Sync SQLAlchemy compatibility:
 
 ```py
 from sqlalchemy.orm import sessionmaker
+from .auth import current_user_id
+from .database import user_can_pay_order
 from .siglume.siglume_order_store_sqlalchemy import (
     SQLAlchemySiglumeOrderStore,
     create_sqlalchemy_engine,
     create_sqlalchemy_siglume_schema,
 )
 
+def authorize_order_sync(order: dict, request) -> bool:
+    user_id = current_user_id(request)
+    return bool(user_id and user_can_pay_order(str(order["id"]), user_id))
+
 engine = create_sqlalchemy_engine(os.environ["DATABASE_URL"])
 create_sqlalchemy_siglume_schema(engine)
 SessionLocal = sessionmaker(engine, future=True)
 order_store = SQLAlchemySiglumeOrderStore(
     SessionLocal,
-    authorize_order=authorize_order,
+    authorize_order=authorize_order_sync,
     # Optional for existing products with different order table/column names:
     # orders_table=product_orders,
     # order_id_column="order_id",
@@ -506,7 +534,17 @@ SELECT event_id, status FROM siglume_webhook_events ORDER BY created_at DESC LIM
 
 Expected result: the order is `paid`, one webhook event is `processed`, and
 clicking sandbox confirm again for the same checkout session does not create a
-second processed webhook event or a second fulfillment.
+second confirmation event.
+
+Then redeliver the exact same signed webhook event to prove your merchant
+webhook endpoint is idempotent on duplicate event IDs:
+
+```bash
+curl -X POST http://127.0.0.1:8787/v1/sandbox/checkout-sessions/<session_id>/redeliver
+```
+
+Expected result: the same `event.id` is delivered again, the order remains
+`paid`, and `siglume_webhook_events` still has one processed row for that event.
 
 For the reference Express app path, this is also machine-tested in
 `test/express-template.e2e.test.ts`: it creates the SDRP tables, seeds an
@@ -522,8 +560,10 @@ Your local Standard checkout plumbing is integrated when:
 - your product has mounted checkout and webhook routes,
 - your order database uses the SQL/ORM, DynamoDB, MongoDB, Firestore, or
   SQLAlchemy adapter, or an equivalent durable store,
-- your SDRP migration has created `siglume_checkout_attempts`,
-  `siglume_webhook_events`, and `siglume_payment_reviews`,
+- required SDRP storage resources exist: the SQL tables
+  `siglume_checkout_attempts`, `siglume_webhook_events`, and
+  `siglume_payment_reviews`, or the equivalent DynamoDB tables, MongoDB
+  collections, or Firestore collections configured by the selected adapter,
 - your authenticated product test user can start checkout for their own
   Standard-band test order and cannot start checkout without that authentication,
 - the signed webhook verifies against the raw body,

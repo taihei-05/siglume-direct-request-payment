@@ -58,6 +58,7 @@ const markdownFiles = [
   "README.md",
   ...walkMarkdown(path.join(root, "docs")),
   ...walkMarkdown(path.join(root, "templates")),
+  ...walkMarkdown(path.join(root, "src", "siglume_direct_request_payment", "templates")),
   ...walkMarkdown(path.join(root, "examples")),
 ];
 const examples = markdownFiles.flatMap(examplesFrom);

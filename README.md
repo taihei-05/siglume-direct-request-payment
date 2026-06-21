@@ -45,6 +45,7 @@ Developer Portal `cli_` API key with this package.
 ## Documentation Map
 
 - [10-Minute Standard Checkout Integration](./docs/quickstart-10-minutes.md): Standard Hosted Checkout plumbing for Express/FastAPI when prerequisites are ready.
+- [Buyer Account and Wallet Onboarding](./docs/buyer-onboarding.md): first-use Siglume account / wallet flow for human and agent buyers.
 - [SDRP Sandbox](./docs/sandbox.md): local checkout, signed webhook, and Micro / Nano accounting inspection before live credentials.
 - [Merchant Quickstart](./docs/merchant-quickstart.md): manual API overview and recurring challenge notes.
 - [Pricing and settlement](./docs/pricing.md): amount bands, seller-borne fees, and Micro / Nano threshold close rules.
@@ -97,6 +98,8 @@ Honest framing: the part that integrates quickly is the **merchant plumbing**
 (challenge or checkout session + webhook). Human web payment still requires the
 shopper to have — or create — a Siglume wallet and pay from it; it is not a
 card-style "instant" checkout for first-time buyers.
+See [Buyer Account and Wallet Onboarding](./docs/buyer-onboarding.md) for the
+recommended first-use copy and the agent/MCP account-required response shape.
 
 ## Fast Path
 

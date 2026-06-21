@@ -22,6 +22,7 @@ const markdownFiles = [
   "README.md",
   ...walkMarkdown(path.join(root, "docs")),
   ...walkMarkdown(path.join(root, "templates")),
+  ...walkMarkdown(path.join(root, "src", "siglume_direct_request_payment", "templates")),
   ...walkMarkdown(path.join(root, "examples")),
 ];
 
@@ -103,8 +104,22 @@ function checkInvariants() {
   if (!/^## Current Public Beta Scope$/m.test(readme)) {
     fail("README.md must expose ## Current Public Beta Scope for its Start Here anchor.");
   }
+  if (!readme.includes("[Buyer Account and Wallet Onboarding](./docs/buyer-onboarding.md)")) {
+    fail("README.md must link buyer account onboarding guidance.");
+  }
   if (/Contact integration support.*request_id.*trace_id/s.test(readme)) {
     fail("README.md must not ask users to post request_id / trace_id in public issues.");
+  }
+
+  const buyerOnboarding = read("docs/buyer-onboarding.md");
+  for (const expected of [
+    "SIGLUME_ACCOUNT_REQUIRED",
+    "The public SDK intentionally does not expose an unattended buyer account",
+    "MCP OAuth consent flow",
+  ]) {
+    if (!buyerOnboarding.includes(expected)) {
+      fail(`docs/buyer-onboarding.md is missing: ${expected}`);
+    }
   }
 
   const apiReference = read("docs/api-reference.md");
@@ -127,8 +142,12 @@ function checkInvariants() {
     "## 10. 10-Minute Sandbox Complete",
     "## 11. Live Go-Live Complete",
     "createSiglumeSdrpSqlSchema({",
+    "npx tsx scripts/create-siglume-migration.ts",
+    "asyncio.run(main())",
     "order_sdrp_sandbox_001",
     "authorization: Bearer <product-test-user-token>",
+    "/v1/sandbox/checkout-sessions/<session_id>/redeliver",
+    "equivalent DynamoDB tables, MongoDB",
     "durable claim,",
   ]) {
     if (!quickstart.includes(expected)) {
@@ -148,6 +167,21 @@ function checkInvariants() {
   const pricing = read("docs/pricing.md");
   if (!/`accrued_provider_gross_minor`\s+is the\s+active-batch sum/s.test(pricing)) {
     fail("docs/pricing.md must define accrued_provider_gross_minor as a calculation name.");
+  }
+
+  const fastapiTemplateFiles = [
+    "README.md",
+    "siglume_order_store_example.py",
+    "siglume_order_store_sqlalchemy.py",
+    "siglume_order_store_sqlalchemy_async.py",
+    "siglume_sdrp_routes.py",
+  ];
+  for (const file of fastapiTemplateFiles) {
+    const rootTemplate = `templates/fastapi/${file}`;
+    const packagedTemplate = `src/siglume_direct_request_payment/templates/fastapi/${file}`;
+    if (read(rootTemplate) !== read(packagedTemplate)) {
+      fail(`${packagedTemplate} must match ${rootTemplate} byte-for-byte.`);
+    }
   }
 }
 

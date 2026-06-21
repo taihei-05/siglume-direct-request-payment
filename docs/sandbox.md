@@ -47,6 +47,17 @@ session, the sandbox returns the original confirmation result and does not send
 another webhook. The sandbox checkout page follows the returned `redirect_url`
 after a successful confirmation so your return page is exercised too.
 
+To test merchant webhook idempotency, redeliver the exact same signed event ID
+after the first confirmation:
+
+```bash
+curl -X POST http://127.0.0.1:8787/v1/sandbox/checkout-sessions/<session_id>/redeliver
+```
+
+The sandbox sends the original `direct_payment.confirmed` payload again with a
+fresh HMAC header. Your product should keep the order paid once and keep one
+processed row for that webhook event ID.
+
 The sandbox rejects invalid checkout input early: `amount_minor` must be a
 positive integer, `currency` must be `JPY` or `USD`, and return URLs must be
 HTTPS or local HTTP URLs.
@@ -56,7 +67,7 @@ HTTPS or local HTTP URLs.
 | Area | Simulated locally | Not simulated locally |
 | --- | --- | --- |
 | Standard Checkout | Checkout session creation, hosted confirmation page, signed `direct_payment.confirmed` webhook, duplicate confirm idempotency | Real Siglume login, real wallet debit, Polygon transaction finality |
-| Webhooks | HMAC signatures, delivery recording, `verify --sandbox` delivery probe | Public network reachability, live subscription routing, live retry schedules |
+| Webhooks | HMAC signatures, delivery recording, `verify --sandbox` delivery probe, same-event redelivery through `/redeliver` | Public network reachability, live subscription routing, live retry schedules |
 | Micro / Nano accounting | Pricing-band classification and seller-borne accounting fields in webhook and summary responses | BudgetVault enforcement, notice period workers, retrying / past_due / write-off transitions, actual payout |
 | Statements | Local summary shape for provider and buyer metered views | Live settlement batches, on-chain receipts, refund or adjustment execution |
 | Access control | Local merchant/origin checks | Live Hosted Checkout account enablement and Siglume support workflows |
@@ -89,7 +100,8 @@ The generated route defaults to Standard-only, so Micro / Nano checkout returns
 Before live launch:
 
 - run `npx siglume-check verify --sandbox` against the local product,
-- run the same checkout path and confirm a sandbox webhook,
+- run the same checkout path, confirm a sandbox webhook, and redeliver the same
+  event ID once,
 - switch to live `SIGLUME_MERCHANT_AUTH_TOKEN`, `SIGLUME_DIRECT_PAYMENT_MERCHANT`, `SHOP_PUBLIC_ORIGIN`, `SHOP_WEBHOOK_URL`, and `SIGLUME_WEBHOOK_SECRET`,
 - run `npx siglume-check verify` without `--sandbox`,
 - confirm the live webhook subscription and signing secret are for the live product URL.

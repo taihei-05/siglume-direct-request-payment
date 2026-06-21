@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.31 - 2026-06-21
+
+- Fixed the FastAPI sync SQLAlchemy adapter to await async `authorize_order`
+  callbacks, keeping checkout fail-closed when authorization returns false.
+- Added executable migration examples, sandbox webhook redelivery, stronger
+  template/doc CI, and buyer account / MCP onboarding guidance.
+
 ## 0.4.30 - 2026-06-21
 
 - Completed the 10-minute sandbox walkthrough with explicit SDRP table
