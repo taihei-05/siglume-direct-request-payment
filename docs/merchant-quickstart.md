@@ -67,7 +67,10 @@ For first-use buyers and agent account-required responses, read
 
 Standard Hosted Checkout requires merchant readiness: merchant registration,
 settlement wallet, active billing mandate, HTTPS webhook, terms acceptance,
-sandbox confirmation, business verification, and live mode. The SDK raises
+sandbox confirmation, merchant responsibility attestation, and live mode. The
+responsibility boundary is the published Siglume Terms
+(`https://siglume.com/legal/terms`) and Direct Request Payment developer page
+(`https://siglume.com/developers/direct-request-payment`). The SDK raises
 `HostedCheckoutNotAvailableError` only when the Hosted Checkout platform switch
 or route is unavailable. If readiness is incomplete, fix the
 `HOSTED_CHECKOUT_READINESS_REQUIRED` checks before showing Siglume checkout to
@@ -112,6 +115,9 @@ await merchant.setupCheckout({
   billing_currency: "JPY",
   webhook_callback_url: "https://merchant.example/siglume/webhook",
   checkout_allowed_origins: ["https://www.example.com"],
+  standard_terms_accepted: true,
+  merchant_responsibility_attested: true,
+  responsibility_attestation_version: "sdrp_standard_hosted_checkout_responsibility_v1",
 });
 
 // Per order: create a session and redirect the shopper to checkout_url.
@@ -152,6 +158,9 @@ merchant.setup_checkout(
     billing_currency="JPY",
     webhook_callback_url="https://merchant.example/siglume/webhook",
     checkout_allowed_origins=["https://www.example.com"],
+    standard_terms_accepted=True,
+    merchant_responsibility_attested=True,
+    responsibility_attestation_version="sdrp_standard_hosted_checkout_responsibility_v1",
 )
 
 # Per order: create a session and redirect the shopper to checkout_url.
@@ -207,6 +216,9 @@ const setup = await merchantClient.setupCheckout({
   billing_currency: "JPY",
   webhook_callback_url: "https://merchant.example/siglume/webhook",
   max_amount_minor: 100000,
+  standard_terms_accepted: true,
+  merchant_responsibility_attested: true,
+  responsibility_attestation_version: "sdrp_standard_hosted_checkout_responsibility_v1",
 });
 
 // setup.env holds the merchant key plus the challenge and webhook secrets.
@@ -232,6 +244,9 @@ setup = merchant_client.setup_checkout(
     billing_currency="JPY",
     webhook_callback_url="https://merchant.example/siglume/webhook",
     max_amount_minor=100000,
+    standard_terms_accepted=True,
+    merchant_responsibility_attested=True,
+    responsibility_attestation_version="sdrp_standard_hosted_checkout_responsibility_v1",
 )
 
 # setup["env"] holds the merchant key plus the challenge and webhook secrets.

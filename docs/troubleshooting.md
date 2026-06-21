@@ -37,8 +37,10 @@ readiness.
   `checkout_allowed_origins`.
 - Standard Hosted Checkout terms are accepted.
 - A sandbox checkout/webhook confirmation is recorded.
-- Business verification and live mode are approved. If a real KYC provider is
-  not integrated for your account, this remains an operator-review blocker.
+- Merchant responsibility attestation and live mode are recorded. The
+  responsibility boundary is the published Siglume Terms
+  (`https://siglume.com/legal/terms`) and Direct Request Payment developer page
+  (`https://siglume.com/developers/direct-request-payment`).
 - The signed webhook test delivery reaches the endpoint and returns success.
 
 `--no-api` is only for local config smoke tests. `--no-probe` is a partial API
@@ -74,7 +76,7 @@ guaranteed immediate payment-method availability.
 | Status / code | Likely cause | Retry? | Same idempotency key? | Buyer copy | Operator action |
 | --- | --- | --- | --- | --- | --- |
 | `401` / `403` | Missing token, expired token, wrong account, or insufficient scope. | No, not until credentials are fixed. | n/a | "Payment setup needs attention. Please try later." | Check whether you used a merchant Siglume bearer token for merchant setup and a buyer/provider Siglume bearer token for buyer/provider APIs. Do not use `cli_` keys. |
-| `409` / `HOSTED_CHECKOUT_READINESS_REQUIRED` | Merchant readiness is incomplete. | No. | n/a | "Payment setup needs attention. Please try later." | Read readiness details; complete billing, webhook, terms, sandbox, business verification, and live-mode checks. |
+| `409` / `HOSTED_CHECKOUT_READINESS_REQUIRED` | Merchant readiness is incomplete. | No. | n/a | "Payment setup needs attention. Please try later." | Read readiness details; complete billing, webhook, terms, sandbox, merchant responsibility attestation, and live-mode checks. |
 | `404` / `409` Hosted Checkout unavailable | Hosted Checkout route or platform switch is unavailable. | No. | n/a | "This payment method is not available for this store yet." | Check status/SLA docs or private support; use agent/API only if that is actually your buyer flow. |
 | `409` idempotency conflict | The same idempotency key was reused with different Micro / Nano input. | No. | Do not reuse with different payload. | "This payment attempt could not be completed. Please retry from the order page." | Create a new payment attempt nonce/key for the changed order. |
 | `422` validation error | Invalid amount, currency, nonce, URL, origin, or metadata shape. | No, fix input. | n/a | "Payment information is invalid. Please refresh and retry." | Validate server-side amount/currency and registered URL origins. |
@@ -101,7 +103,7 @@ guaranteed immediate payment-method availability.
 
 ## Refunds and adjustments
 
-Standard Payment refunds use the merchant refund API:
+Standard Payment refunds use the merchant refund workflow API:
 
 - `POST /v1/sdrp/direct-payments/refunds` with `Idempotency-Key`
 - `GET /v1/sdrp/direct-payments/refunds/{refund_id}`
@@ -110,9 +112,10 @@ Standard Payment refunds use the merchant refund API:
 
 The API supports full/partial refund records, pending/succeeded/failed states,
 refund webhooks, audit logs, remaining refundable amount caps, and statement CSV
-export. It does not pretend the current DirectPaymentHub contract can claw funds
-back by itself; link a refund chain receipt when an on-chain refund transfer is
-available.
+export. It does not move buyer or merchant funds through the endpoint. The
+merchant executes the refund transfer from its settlement wallet or another
+lawful merchant rail, then links a refund chain receipt. A refund is
+`succeeded` only after the receipt is validated.
 
 Micro / Nano adjustments remain outside the Standard Hosted Checkout GA scope.
 Use the explicit Siglume support or platform process available to your account.

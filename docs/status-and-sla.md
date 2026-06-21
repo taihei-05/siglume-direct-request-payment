@@ -1,8 +1,9 @@
 # Standard Hosted Checkout Status And SLA
 
-Status: public operating draft for Standard Hosted Checkout. This is not a
-signed customer SLA until referenced by a merchant agreement or published status
-page.
+This SDK page summarizes the public status and support surfaces for Standard
+Hosted Checkout. The service boundary is governed by the published Siglume Terms
+(`https://siglume.com/legal/terms`) and Direct Request Payment developer page
+(`https://siglume.com/developers/direct-request-payment`).
 
 ## Scope
 
@@ -14,18 +15,17 @@ custom settlement wallets, cross-chain payment, and card payments.
 
 ## Status Surfaces
 
-- Public status document: this file until a dedicated public status page exists.
+- Public status endpoint:
+  `GET https://siglume.com/v1/sdrp/direct-payments/status`
 - Private support: use the support channel or account contact in your merchant
-  agreement for payment investigation.
+  account for payment investigation.
 - Public GitHub issues: documentation and SDK bugs only. Do not post request
   IDs, trace IDs, support references, buyer identifiers, wallet addresses,
   tokens, or transaction-specific data.
 
-GA blocker: a dedicated public status page is not wired in this SDK release.
-
 ## SLO Targets
 
-Draft targets for paid Standard Hosted Checkout merchants:
+Operational targets for Standard Hosted Checkout:
 
 | Area | Target |
 | --- | --- |
@@ -34,8 +34,7 @@ Draft targets for paid Standard Hosted Checkout merchants:
 | Status/readiness API | 99.9% monthly |
 | Incident acknowledgement | Severity 1: 1 hour; Severity 2: 4 business hours; Severity 3: 2 business days |
 
-Free, sandbox, and Beta surfaces do not receive the same commitments unless a
-merchant agreement says otherwise.
+Free, sandbox, and Beta surfaces do not receive the same operational targets.
 
 ## Incident Severity
 
@@ -48,8 +47,8 @@ merchant agreement says otherwise.
 ## Maintenance
 
 Scheduled maintenance should be announced at least 3 business days in advance
-when it may affect live checkout, webhook delivery, refund processing, or
-reconciliation. Emergency maintenance may be shorter.
+when it may affect live checkout, webhook delivery, merchant refund workflow
+records, or reconciliation. Emergency maintenance may be shorter.
 
 ## Incident Reports
 
@@ -60,11 +59,11 @@ an incident report covering:
 - affected endpoints or merchants
 - customer impact
 - mitigation
-- reconciliation/refund actions
+- reconciliation / merchant refund workflow actions
 - prevention follow-up
 
 ## Refund And Reconciliation Holds
 
-If reconciliation detects a ledger/on-chain/provider payout mismatch, payouts
-for the affected merchant or settlement group should be held, an incident record
+If reconciliation detects a ledger/on-chain/settlement mismatch, affected
+settlement or protocol workflow actions should be held, an incident record
 opened, and operator review required before release.

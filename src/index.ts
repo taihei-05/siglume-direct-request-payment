@@ -10,7 +10,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.5.0";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.5.1";
 export const SIGLUME_ACCOUNT_REQUIRED = "SIGLUME_ACCOUNT_REQUIRED";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
@@ -406,6 +406,8 @@ export interface DirectRequestPaymentMerchantSetupInput {
   terms_version?: string;
   sandbox_confirmed?: boolean;
   sandbox_session_id?: string;
+  merchant_responsibility_attested?: boolean;
+  responsibility_attestation_version?: string;
   live_mode_requested?: boolean;
 }
 
@@ -462,7 +464,14 @@ export interface DirectRequestPaymentHostedCheckoutReadiness {
   blockers: string[];
   live_mode_requested?: boolean;
   live_mode_enabled?: boolean;
+  merchant_responsibility_attested?: boolean;
+  responsibility_attestation_version?: string | null;
+  responsibility_attestation_source?: string | null;
+  /** Legacy compatibility only; not a Standard Hosted Checkout protocol gate. */
   business_verification_status?: string;
+  business_verification_required?: boolean;
+  provider_role?: Record<string, unknown>;
+  responsibility_boundary?: Record<string, unknown>;
   ga_blockers?: string[];
   [key: string]: unknown;
 }
@@ -997,6 +1006,15 @@ export class DirectRequestPaymentMerchantClient {
     }
     if (input.sandbox_session_id !== undefined) {
       payload.sandbox_session_id = requireNonEmpty(input.sandbox_session_id, "sandbox_session_id");
+    }
+    if (input.merchant_responsibility_attested !== undefined) {
+      payload.merchant_responsibility_attested = Boolean(input.merchant_responsibility_attested);
+    }
+    if (input.responsibility_attestation_version !== undefined) {
+      payload.responsibility_attestation_version = requireNonEmpty(
+        input.responsibility_attestation_version,
+        "responsibility_attestation_version",
+      );
     }
     if (input.live_mode_requested !== undefined) {
       payload.live_mode_requested = Boolean(input.live_mode_requested);

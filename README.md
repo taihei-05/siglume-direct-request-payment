@@ -33,6 +33,12 @@ correct pricing and settlement path from the payment amount.
 - [Run the sandbox](./docs/sandbox.md) before using live credentials.
 - Use `setupCheckout(...)` / `setup_checkout(...)`, `siglume-check preflight`,
   and the merchant readiness API before opening live Standard Hosted Checkout.
+- Read the [responsibility boundary](./docs/responsibility-boundary.md) before
+  reviewing GA readiness. SDRP Standard Hosted Checkout is a non-custodial
+  protocol and hosted wallet checkout interface under the published
+  [Terms](https://siglume.com/legal/terms) and
+  [Direct Request Payment developer page](https://siglume.com/developers/direct-request-payment);
+  the merchant remains merchant of record.
 - Use public GitHub issues for documentation / SDK bugs only.
   Do not post request IDs, trace IDs, support references, buyer identifiers,
   wallet addresses, tokens, or transaction-specific data in a public issue. For
@@ -53,8 +59,11 @@ wallet and the merchant account's configured Siglume settlement wallet.
 Standard Hosted Checkout for one-time JPY/JPYC or USD/USDC payments is the
 general integration path when merchant readiness passes. Micro Payment, Nano
 Payment, subscription, and scheduled autopay remain Beta/out of this GA scope.
-Standard refunds use the self-service refund API; Micro / Nano adjustments still
-use the explicit Siglume support or platform process available to your account.
+Standard refunds use the merchant refund workflow API for idempotency, amount
+caps, audit, webhooks, CSV, and receipt tracking. The merchant executes the
+actual refund transfer from its settlement wallet or another lawful merchant
+rail. Micro / Nano adjustments still use the explicit Siglume support or
+platform process available to your account.
 
 Payment requirement creation must run in the authenticated buyer's Siglume
 context. Your merchant server must not use a merchant secret or API key to
@@ -74,10 +83,11 @@ Developer Portal `cli_` API key with this package.
 - [SDRP Sandbox](./docs/sandbox.md): local checkout, signed webhook, and Micro / Nano accounting inspection before live credentials.
 - [Merchant Quickstart](./docs/merchant-quickstart.md): manual API overview and recurring challenge notes.
 - [Pricing and settlement](./docs/pricing.md): amount bands, seller-borne fees, and Micro / Nano threshold close rules.
+- [Responsibility Boundary](./docs/responsibility-boundary.md): non-custodial protocol role, merchant-of-record duties, refund transfer boundary, and GA review scope.
 - [API Reference](./docs/api-reference.md): TypeScript/Python methods, CLI checks, webhook helpers, and statement APIs.
 - [Troubleshooting](./docs/troubleshooting.md): Hosted Checkout readiness, refunds, support escalation, and safe buyer messages.
 - [API and SDK Stability](./docs/api-stability.md): SemVer, API versioning, webhook compatibility, error-code compatibility, and deprecation.
-- [Status and SLA](./docs/status-and-sla.md): public operating draft, severity levels, response targets, and GA blockers.
+- [Status and SLA](./docs/status-and-sla.md): public status endpoint, severity levels, response targets, and support scope.
 - [SDRP vs x402](./docs/concepts/sdrp-vs-x402.md): how SDRP relates to HTTP 402 and why it is not x402 wire-compatible.
 
 ## Protocol Overview
@@ -86,6 +96,11 @@ Use this package when an external EC site, booking service, membership service,
 or paid API wants to accept Siglume wallet payments without taking custody of
 customer funds. The SDK creates and verifies one-time and recurring wallet
 payment authorizations; it does not hold customer funds or wallets.
+For Standard Hosted Checkout, Siglume is the non-custodial protocol provider and
+hosted checkout operator under the published Terms and Direct Request Payment
+developer page. The integrating business remains merchant of record, handles
+fulfillment, buyer support, taxes, prohibited-business screening, and refund
+transfer execution.
 
 SDRP is built around the HTTP **402 Payment Required** lineage, but it is not
 wire-compatible with Coinbase's x402. See [SDRP vs x402](./docs/concepts/sdrp-vs-x402.md)
@@ -200,7 +215,10 @@ fulfilling orders.
 
 Standard Hosted Checkout is available when the merchant readiness checks pass:
 merchant registration, settlement wallet, active billing mandate, HTTPS webhook,
-terms acceptance, sandbox confirmation, business verification, and live mode.
+terms acceptance, sandbox confirmation, merchant responsibility attestation, and
+live mode. Separate merchant underwriting is not a Standard Hosted Checkout
+protocol precondition and must not be reported as a Hosted Checkout SDK
+readiness blocker.
 `HostedCheckoutNotAvailableError` means the platform Hosted Checkout switch or
 route is unavailable. If readiness is incomplete, the API returns
 `HOSTED_CHECKOUT_READINESS_REQUIRED` with the missing checks. Keep the signed
@@ -237,6 +255,9 @@ await merchant.setupMerchant({
   merchant: "your_merchant_key",
   webhook_callback_url: "https://api.your-shop.com/webhooks/siglume",
   checkout_allowed_origins: ["https://www.your-shop.com"],
+  standard_terms_accepted: true,
+  merchant_responsibility_attested: true,
+  responsibility_attestation_version: "sdrp_standard_hosted_checkout_responsibility_v1",
 });
 
 // 2. Per order: create a session and redirect the shopper to checkout_url.
@@ -273,6 +294,9 @@ merchant.setup_merchant(
     merchant="your_merchant_key",
     webhook_callback_url="https://api.your-shop.com/webhooks/siglume",
     checkout_allowed_origins=["https://www.your-shop.com"],
+    standard_terms_accepted=True,
+    merchant_responsibility_attested=True,
+    responsibility_attestation_version="sdrp_standard_hosted_checkout_responsibility_v1",
 )
 
 # 2. Per order: create a session and redirect the shopper to checkout_url.
@@ -396,9 +420,10 @@ and CSV exports, see
   Nano statement APIs
 - signed webhook verification
 
-It does not custody funds or manage customer wallets. Merchant setup runs through
-Siglume APIs with the merchant's Siglume JWT; buyer payment creation runs with
-the buyer's Siglume JWT.
+It does not custody funds, manage customer wallets, become merchant of record,
+or underwrite the merchant business. Merchant setup runs through Siglume APIs
+with the merchant's Siglume JWT; buyer payment creation runs with the buyer's
+Siglume JWT.
 
 ## Install
 
@@ -481,6 +506,9 @@ const setup = await merchant.setupCheckout({
   billing_currency: "JPY",
   webhook_callback_url: "https://merchant.example/siglume/webhook",
   max_amount_minor: 100000,
+  standard_terms_accepted: true,
+  merchant_responsibility_attested: true,
+  responsibility_attestation_version: "sdrp_standard_hosted_checkout_responsibility_v1",
 });
 
 // setup.env holds the merchant key plus the challenge and webhook secrets:
@@ -507,6 +535,9 @@ setup = merchant.setup_checkout(
     billing_currency="JPY",
     webhook_callback_url="https://merchant.example/siglume/webhook",
     max_amount_minor=100000,
+    standard_terms_accepted=True,
+    merchant_responsibility_attested=True,
+    responsibility_attestation_version="sdrp_standard_hosted_checkout_responsibility_v1",
 )
 
 # setup["env"] holds the merchant key plus the challenge and webhook secrets.

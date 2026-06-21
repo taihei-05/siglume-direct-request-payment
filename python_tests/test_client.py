@@ -341,6 +341,11 @@ def test_merchant_client_sets_up_checkout() -> None:
         billing_currency="jpy",
         webhook_callback_url="https://merchant.example/webhooks/siglume",
         max_amount_minor=100000,
+        standard_terms_accepted=True,
+        sandbox_confirmed=True,
+        merchant_responsibility_attested=True,
+        responsibility_attestation_version="sdrp_standard_hosted_checkout_responsibility_v1",
+        live_mode_requested=True,
     )
 
     assert setup_route.calls.last.request.headers["authorization"] == "Bearer merchant_jwt"
@@ -351,6 +356,11 @@ def test_merchant_client_sets_up_checkout() -> None:
         "display_name": "Example Merchant",
         "webhook_callback_url": "https://merchant.example/webhooks/siglume",
         "max_amount_minor": 100000,
+        "standard_terms_accepted": True,
+        "sandbox_confirmed": True,
+        "merchant_responsibility_attested": True,
+        "responsibility_attestation_version": "sdrp_standard_hosted_checkout_responsibility_v1",
+        "live_mode_requested": True,
     }
     assert json.loads(billing_route.calls.last.request.content) == {
         "billing_currency": "JPY",

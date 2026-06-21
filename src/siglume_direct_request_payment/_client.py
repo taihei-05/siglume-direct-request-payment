@@ -26,7 +26,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.5.0"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.5.1"
 SIGLUME_ACCOUNT_REQUIRED = "SIGLUME_ACCOUNT_REQUIRED"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
@@ -607,6 +607,8 @@ class DirectRequestPaymentMerchantClient:
         terms_version: str | None = None,
         sandbox_confirmed: bool | None = None,
         sandbox_session_id: str | None = None,
+        merchant_responsibility_attested: bool | None = None,
+        responsibility_attestation_version: str | None = None,
         live_mode_requested: bool | None = None,
     ) -> DirectRequestPaymentMerchantResponse:
         payload: dict[str, Any] = {
@@ -636,6 +638,13 @@ class DirectRequestPaymentMerchantClient:
             payload["sandbox_confirmed"] = bool(sandbox_confirmed)
         if sandbox_session_id is not None:
             payload["sandbox_session_id"] = _require_non_empty(sandbox_session_id, "sandbox_session_id")
+        if merchant_responsibility_attested is not None:
+            payload["merchant_responsibility_attested"] = bool(merchant_responsibility_attested)
+        if responsibility_attestation_version is not None:
+            payload["responsibility_attestation_version"] = _require_non_empty(
+                responsibility_attestation_version,
+                "responsibility_attestation_version",
+            )
         if live_mode_requested is not None:
             payload["live_mode_requested"] = bool(live_mode_requested)
         return self._request("POST", "/sdrp/direct-payments/merchants", json_body=payload)
@@ -859,6 +868,8 @@ class DirectRequestPaymentMerchantClient:
         terms_version: str | None = None,
         sandbox_confirmed: bool | None = None,
         sandbox_session_id: str | None = None,
+        merchant_responsibility_attested: bool | None = None,
+        responsibility_attestation_version: str | None = None,
         live_mode_requested: bool | None = None,
         create_webhook_subscription: bool | None = None,
         prepare_billing_mandate: bool = True,
@@ -880,6 +891,8 @@ class DirectRequestPaymentMerchantClient:
             terms_version=terms_version,
             sandbox_confirmed=sandbox_confirmed,
             sandbox_session_id=sandbox_session_id,
+            merchant_responsibility_attested=merchant_responsibility_attested,
+            responsibility_attestation_version=responsibility_attestation_version,
             live_mode_requested=live_mode_requested,
         )
         merchant_key = str((merchant_setup.get("merchant_account") or {}).get("merchant") or merchant)

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1 - 2026-06-21
+
+- Mapped Standard Hosted Checkout readiness to the published Siglume Terms and
+  Direct Request Payment developer page, including
+  `merchant_responsibility_attested`, `provider_role`, and
+  `responsibility_boundary` fields.
+- Reworded Standard refunds as a merchant refund workflow with idempotency,
+  amount caps, audit/CSV/webhook surfaces, and receipt-tracked `succeeded`
+  semantics rather than a custody or PSP refund rail.
+- Added a responsibility-boundary guide and updated setup examples so external
+  reviews do not treat merchant underwriting, card acquiring, custody, or
+  merchant-of-record obligations as SDK readiness blockers.
+
 ## 0.5.0 - 2026-06-21
 
 - Added self-service Standard Hosted Checkout readiness fields and SDK helpers

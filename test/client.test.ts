@@ -428,6 +428,11 @@ describe("DirectRequestPaymentMerchantClient", () => {
       billing_currency: "jpy",
       webhook_callback_url: "https://merchant.example/webhooks/siglume",
       max_amount_minor: 100000,
+      standard_terms_accepted: true,
+      sandbox_confirmed: true,
+      merchant_responsibility_attested: true,
+      responsibility_attestation_version: "sdrp_standard_hosted_checkout_responsibility_v1",
+      live_mode_requested: true,
     });
 
     expect(calls.map((call) => call.url)).toEqual([
@@ -442,6 +447,11 @@ describe("DirectRequestPaymentMerchantClient", () => {
       billing_plan: "launch",
       billing_currency: "JPY",
       max_amount_minor: 100000,
+      standard_terms_accepted: true,
+      sandbox_confirmed: true,
+      merchant_responsibility_attested: true,
+      responsibility_attestation_version: "sdrp_standard_hosted_checkout_responsibility_v1",
+      live_mode_requested: true,
     });
     expect(calls[1]?.body).toMatchObject({ billing_currency: "JPY", max_amount_minor: 100000 });
     expect(calls[2]?.body).toMatchObject({

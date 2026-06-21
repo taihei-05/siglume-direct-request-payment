@@ -16,7 +16,7 @@ The live path requires these prerequisites:
 - the merchant billing mandate is active,
 - Standard Hosted Checkout readiness passes for the merchant account,
 - Standard Hosted Checkout terms and sandbox confirmation are recorded,
-- business verification and live mode are approved,
+- merchant responsibility attestation and live mode are recorded,
 - your product already has login/session middleware,
 - your product already has a real order database,
 - the live path has a public HTTPS webhook URL.

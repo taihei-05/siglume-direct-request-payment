@@ -371,8 +371,18 @@ Input:
 - `sandbox_confirmed`: records that the merchant completed sandbox checkout and
   webhook confirmation.
 - `sandbox_session_id`: optional sandbox evidence reference.
+- `merchant_responsibility_attested`: records that the merchant accepts the
+  Standard Hosted Checkout responsibility boundary already published in the
+  Siglume Terms and Direct Request Payment developer page. The merchant remains
+  merchant of record and is responsible for fulfillment, customer support,
+  refund transfer execution, taxes, prohibited-business screening, and lawful
+  use in its jurisdiction.
+- `responsibility_attestation_version`: optional responsibility-boundary version
+  override. The default is
+  `sdrp_standard_hosted_checkout_responsibility_v1`.
 - `live_mode_requested`: requests live mode. Live mode remains blocked until
-  billing, webhook, terms, sandbox, and business verification checks pass.
+  billing, webhook, terms, sandbox, merchant responsibility attestation, and
+  live checks pass.
 
 In addition to the `setupMerchant` inputs above, `setupCheckout` accepts these
 orchestration toggles:
@@ -424,9 +434,17 @@ webhook-origin auto-allow apply. Python annotates this direct response as
 
 Standard Hosted Checkout requires merchant readiness: merchant registration,
 settlement wallet, active billing mandate, HTTPS webhook, terms acceptance,
-sandbox confirmation, business verification, and live mode. If readiness is
-incomplete, the API returns `HOSTED_CHECKOUT_READINESS_REQUIRED` with the missing
-checks. If the platform switch or route is unavailable, the SDK raises
+sandbox confirmation, merchant responsibility attestation, and live mode. The
+readiness payload also returns `provider_role` and `responsibility_boundary` so
+reviewers can distinguish SDRP's non-custodial protocol role from merchant of
+record duties. The source documents are the published Siglume Terms
+(`https://siglume.com/legal/terms`) and Direct Request Payment developer page
+(`https://siglume.com/developers/direct-request-payment`). Separate merchant
+underwriting is not a Standard Hosted Checkout protocol precondition and must
+not be reported as a Hosted Checkout SDK readiness blocker. If readiness is
+incomplete, the API returns
+`HOSTED_CHECKOUT_READINESS_REQUIRED` with the missing checks. If the platform
+switch or route is unavailable, the SDK raises
 `HostedCheckoutNotAvailableError` (TS + Py) rather than leaking a raw rollout
 404/409. Payment handling must still key off the signed `direct_payment.confirmed`
 webhook and its settlement machine fields, not the event name alone.
@@ -561,8 +579,11 @@ GET /v1/sdrp/direct-payments/merchants/{merchant}/readiness
 ```
 
 Returns the Standard Hosted Checkout readiness object with `ready`, `status`,
-`checks`, `missing_requirements`, `blockers`, `live_mode_enabled`, and
-`business_verification_status`.
+`checks`, `missing_requirements`, `blockers`, `live_mode_enabled`,
+`merchant_responsibility_attested`, `business_verification_required`,
+`provider_role`, and `responsibility_boundary`. The legacy
+`business_verification_status` field may appear for older accounts, but it is
+not a Standard Hosted Checkout protocol readiness gate.
 
 ### `rotateChallengeSecret(merchant)` / `rotate_challenge_secret(merchant)`
 
@@ -576,8 +597,11 @@ Returns the new challenge secret once.
 
 ### Refunds
 
-Standard Payment refunds are merchant-authenticated and idempotent. The
-`Idempotency-Key` header is required for create.
+Standard Payment refunds are merchant-authenticated and idempotent workflow
+records. The `Idempotency-Key` header is required for create. Siglume records
+the workflow, caps the refundable amount, emits webhooks, writes audit/CSV rows,
+and verifies refund receipts; it does not move buyer or merchant funds through
+this endpoint.
 
 ```ts
 const refund = await merchant.createRefund({
@@ -617,12 +641,15 @@ Create input:
 
 Response fields include `refund_id`, `status` (`pending`, `succeeded`, or
 `failed`), `amount_minor`, `reason`, payment/refund receipt ids, and
-`metadata_jsonb.accounting` with remaining refundable amount and provider payout
-cap metadata.
+`metadata_jsonb.accounting` with remaining refundable amount, protocol accounting
+caps, `refund_transfer_boundary`, and `refund_succeeded_requires`.
 
 The refund API records and caps the merchant refund workflow. It does not claim
-that the current DirectPaymentHub contract can claw back the original transfer
-without a separate refund transfer/receipt.
+that the protocol endpoint itself returns funds without a separate merchant
+refund transfer and validated refund receipt.
+`POST /refunds` without `refund_chain_receipt_id` creates a `pending` workflow
+record. A refund is `succeeded` only when a confirmed refund chain receipt is
+attached and validated.
 
 ### `prepareBillingMandate(merchant, input)` / `prepare_billing_mandate(...)`
 
