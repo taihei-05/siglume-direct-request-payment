@@ -45,6 +45,11 @@ If the agent is not connected to Siglume, fail closed and return an actionable
 account-required response to the agent instead of attempting payment with a
 merchant token:
 
+The SDK exports the `SIGLUME_ACCOUNT_REQUIRED` constant in TypeScript and
+Python so your product can return a stable application-level code without
+hand-typing the string. This is a response your product returns before payment;
+it is not a Siglume charge attempt.
+
 ```json
 {
   "error": "SIGLUME_ACCOUNT_REQUIRED",

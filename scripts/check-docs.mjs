@@ -107,6 +107,11 @@ function checkInvariants() {
   if (!readme.includes("[Buyer Account and Wallet Onboarding](./docs/buyer-onboarding.md)")) {
     fail("README.md must link buyer account onboarding guidance.");
   }
+  for (const expected of ["10-minute account-free sandbox", "Prepared merchant live verification"]) {
+    if (!readme.includes(expected)) {
+      fail(`README.md Fast Path is missing: ${expected}`);
+    }
+  }
   if (/Contact integration support.*request_id.*trace_id/s.test(readme)) {
     fail("README.md must not ask users to post request_id / trace_id in public issues.");
   }
@@ -114,6 +119,7 @@ function checkInvariants() {
   const buyerOnboarding = read("docs/buyer-onboarding.md");
   for (const expected of [
     "SIGLUME_ACCOUNT_REQUIRED",
+    "SDK exports the `SIGLUME_ACCOUNT_REQUIRED` constant",
     "The public SDK intentionally does not expose an unattended buyer account",
     "MCP OAuth consent flow",
   ]) {
@@ -123,6 +129,9 @@ function checkInvariants() {
   }
 
   const apiReference = read("docs/api-reference.md");
+  if (!apiReference.includes("| `SIGLUME_ACCOUNT_REQUIRED` | `SIGLUME_ACCOUNT_REQUIRED` |")) {
+    fail("docs/api-reference.md must document the SIGLUME_ACCOUNT_REQUIRED constant.");
+  }
   for (const envName of [
     "SIGLUME_DIRECT_PAYMENT_MERCHANT",
     "SHOP_PUBLIC_ORIGIN",
@@ -132,6 +141,19 @@ function checkInvariants() {
   ]) {
     if (!apiReference.includes(`\`${envName}\``)) {
       fail(`docs/api-reference.md is missing environment variable ${envName}`);
+    }
+  }
+
+  const sandbox = read("docs/sandbox.md");
+  for (const expected of [
+    "Step 7 first",
+    "order_sdrp_sandbox_001",
+    "authorization: Bearer <product-test-user-token>",
+    "delivery_status: \"delivered\"",
+    "HTTP 502",
+  ]) {
+    if (!sandbox.includes(expected)) {
+      fail(`docs/sandbox.md is missing: ${expected}`);
     }
   }
 
@@ -157,7 +179,12 @@ function checkInvariants() {
 
   for (const templateReadme of ["templates/express/README.md", "templates/fastapi/README.md"]) {
     const templateText = read(templateReadme);
-    for (const expected of ["authorize_order", "Do not run a production checkout route without `authorize_order`"]) {
+    for (const expected of [
+      "authorize_order",
+      "Do not run a production checkout route without `authorize_order`",
+      "ORDER_AUTHORIZATION_REQUIRED",
+      "allow_unverified_order_lookup",
+    ]) {
       if (!templateText.includes(expected)) {
         fail(`${templateReadme} is missing production order authorization guidance: ${expected}`);
       }

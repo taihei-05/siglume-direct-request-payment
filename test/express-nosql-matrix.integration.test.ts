@@ -105,7 +105,7 @@ async function createDynamoContext(): Promise<StoreContext> {
   };
   await createDynamoDbSiglumeTables({ client: rawClient, ...options });
   return {
-    store: createDynamoDbSiglumeOrderStore({ client, ...options }),
+    store: createDynamoDbSiglumeOrderStore({ client, ...options, allow_unverified_order_lookup: true }),
     async seedOrder(orderId) {
       await client.send(new PutCommand({
         TableName: options.orders_table,
@@ -171,7 +171,7 @@ async function createMongoContext(): Promise<StoreContext> {
   };
   await createMongoSiglumeIndexes(options);
   return {
-    store: createMongoSiglumeOrderStore(options),
+    store: createMongoSiglumeOrderStore({ ...options, allow_unverified_order_lookup: true }),
     async seedOrder(orderId) {
       await db.collection("orders").insertOne({ id: orderId, amount_minor: 1200, currency: "JPY", status: "created" });
     },
@@ -234,7 +234,7 @@ async function createFirestoreContext(): Promise<StoreContext> {
   };
   await createFirestoreSiglumeCollections(options);
   return {
-    store: createFirestoreSiglumeOrderStore(options),
+    store: createFirestoreSiglumeOrderStore({ ...options, allow_unverified_order_lookup: true }),
     async seedOrder(orderId) {
       await db.collection(options.orders_collection).doc(orderId).set({ id: orderId, amount_minor: 1200, currency: "JPY", status: "created" });
     },

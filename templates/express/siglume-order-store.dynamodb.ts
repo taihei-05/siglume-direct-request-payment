@@ -16,7 +16,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import type { Request } from "express";
 
-import type { SiglumeCheckoutAttempt, SiglumeSdrpOrderStore } from "./siglume-sdrp-routes.js";
+import { OrderAuthorizationRequiredError, type SiglumeCheckoutAttempt, type SiglumeSdrpOrderStore } from "./siglume-sdrp-routes.js";
 
 export interface DynamoDbSiglumeOrderStoreOptions {
   client: DynamoDBDocumentClient;
@@ -32,9 +32,10 @@ export interface DynamoDbSiglumeOrderStoreOptions {
   challenge_hash_index?: string;
   order_id_index?: string;
   authorize_order?: (order: Record<string, unknown>, req: Request) => boolean | Promise<boolean>;
+  allow_unverified_order_lookup?: boolean;
 }
 
-export interface DynamoDbSiglumeTableOptions extends Omit<DynamoDbSiglumeOrderStoreOptions, "client" | "authorize_order"> {
+export interface DynamoDbSiglumeTableOptions extends Omit<DynamoDbSiglumeOrderStoreOptions, "client" | "authorize_order" | "allow_unverified_order_lookup"> {
   client: DynamoDBClient;
   include_orders_table?: boolean;
 }
@@ -53,6 +54,7 @@ interface NormalizedOptions {
   challenge_hash_index: string;
   order_id_index: string;
   authorize_order?: (order: Record<string, unknown>, req: Request) => boolean | Promise<boolean>;
+  allow_unverified_order_lookup: boolean;
 }
 
 const CHECKOUT_CREATION_LEASE_MS = 30_000;
@@ -88,7 +90,7 @@ class DynamoDbSiglumeOrderStore implements SiglumeSdrpOrderStore {
     for (;;) {
       const order = await this.findProductOrder(cleanOrderId);
       if (!order) return null;
-      if (this.options.authorize_order && !(await this.options.authorize_order(order, req))) return null;
+      if (!(await authorizeOrderOrFailClosed(this.options, order, req))) return null;
 
       const active = await this.getActiveAttempt(cleanOrderId);
       if (active && isReusableCheckoutAttempt(active)) return this.toCheckoutAttempt(order, active);
@@ -526,10 +528,21 @@ function normalizeOptions(options: DynamoDbSiglumeOrderStoreOptions): Normalized
     challenge_hash_index: options.challenge_hash_index ?? "challenge_hash_index",
     order_id_index: options.order_id_index ?? "order_id_index",
     authorize_order: options.authorize_order,
+    allow_unverified_order_lookup: options.allow_unverified_order_lookup === true,
   };
 }
 
-function normalizeTableOptions(options: DynamoDbSiglumeTableOptions): Omit<NormalizedOptions, "client" | "authorize_order"> & { client: DynamoDBClient } {
+async function authorizeOrderOrFailClosed(
+  options: Pick<NormalizedOptions, "authorize_order" | "allow_unverified_order_lookup">,
+  order: Record<string, unknown>,
+  req: Request,
+): Promise<boolean> {
+  if (options.authorize_order) return Boolean(await options.authorize_order(order, req));
+  if (options.allow_unverified_order_lookup) return true;
+  throw new OrderAuthorizationRequiredError();
+}
+
+function normalizeTableOptions(options: DynamoDbSiglumeTableOptions): Omit<NormalizedOptions, "client" | "authorize_order" | "allow_unverified_order_lookup"> & { client: DynamoDBClient } {
   return {
     client: options.client,
     orders_table: options.orders_table ?? "orders",

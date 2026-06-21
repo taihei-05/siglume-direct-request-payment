@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.33 - 2026-06-21
+
+- Made generated checkout adapters fail closed by default when `authorize_order`
+  is missing, with explicit `allow_unverified_order_lookup` required for guest
+  checkout and `ORDER_AUTHORIZATION_REQUIRED` responses for misconfiguration.
+- Updated sandbox documentation and `/redeliver` responses so webhook delivery
+  failures surface as failed delivery status and HTTP 502.
+- Exported `SIGLUME_ACCOUNT_REQUIRED` as a TypeScript/Python constant for
+  agent and custom buyer onboarding flows.
+
 ## 0.4.32 - 2026-06-21
 
 - Made Markdown example validation robust to CRLF and LF line endings so the

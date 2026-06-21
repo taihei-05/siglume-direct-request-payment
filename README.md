@@ -103,19 +103,27 @@ recommended first-use copy and the agent/MCP account-required response shape.
 
 ## Fast Path
 
-Use [10-Minute Standard Checkout Integration](./docs/quickstart-10-minutes.md) to add
-Standard Hosted Checkout plumbing to an existing Express or FastAPI product
-when merchant credentials, active billing mandate, Hosted Checkout access, an
-HTTPS webhook URL, login/session middleware, and a real order database already
-exist. The path is CLI-first:
+There are two entry paths:
+
+1. **10-minute account-free sandbox.** Use
+   [10-Minute Standard Checkout Integration](./docs/quickstart-10-minutes.md)
+   to mount the generated routes, create SDRP storage, seed an authenticated
+   Standard-band test order, run the local sandbox, confirm checkout, and
+   redeliver the signed webhook. This path does not require live merchant
+   credentials.
+2. **Prepared merchant live verification.** After you have merchant
+   credentials, an active billing mandate, Hosted Checkout access, an HTTPS
+   webhook URL, login/session middleware, and a real order database, switch the
+   same integration to live values and run `siglume-check verify`.
+
+The path is CLI-first:
 
 ```bash
 npm install @siglume/direct-request-payment
 npx siglume-sdrp init express --target src/siglume
-# mount the routes, start your app, then:
+# mount the routes, seed an authenticated Standard-band test order, start your app, then:
 npx siglume-sdrp sandbox --webhook-url http://localhost:3000/payments/webhooks/siglume
 npx siglume-check verify --sandbox
-npx siglume-check verify
 ```
 
 or:
@@ -123,10 +131,18 @@ or:
 ```bash
 pip install siglume-direct-request-payment
 siglume-sdrp init fastapi --target app/siglume
-# mount the routes, start your app, then use the npm sandbox for local checkout.
+# mount the routes, seed an authenticated Standard-band test order, start your app,
+# then use the npm sandbox for local checkout.
 # FastAPI sandbox verification currently requires Node.js/npm:
 npx siglume-sdrp sandbox --webhook-url http://localhost:3000/payments/webhooks/siglume
 siglume-check verify --sandbox
+```
+
+For live verification after merchant prerequisites are ready, switch the
+environment variables to live Siglume values and run:
+
+```bash
+siglume-check verify
 ```
 
 The sandbox command starts a local Siglume-compatible API that creates fake

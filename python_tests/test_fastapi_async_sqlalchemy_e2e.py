@@ -172,3 +172,37 @@ async def test_fastapi_async_sqlalchemy_adapter_concurrency_and_webhooks(tmp_pat
             assert rows == [(1, "expired"), (2, "pending")]
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_fastapi_async_sqlalchemy_fails_closed_without_authorize_order(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SIGLUME_DIRECT_PAYMENT_MERCHANT", "sandbox_merchant")
+    monkeypatch.setenv("SIGLUME_MERCHANT_AUTH_TOKEN", "merchant_jwt")
+    monkeypatch.setenv("SIGLUME_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("SHOP_PUBLIC_ORIGIN", "https://shop.example.com")
+
+    engine = create_async_sqlalchemy_engine(f"sqlite+aiosqlite:///{tmp_path / 'sdrp_async_auth_required.sqlite3'}")
+    await create_async_sqlalchemy_siglume_schema(engine, include_orders_table=True)
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+    async with SessionLocal.begin() as session:
+        await seed_async_sqlalchemy_order(session, order_id="order_async_auth_required", amount_minor=1200, currency="JPY")
+
+    store = AsyncSQLAlchemySiglumeOrderStore(SessionLocal)
+    app = FastAPI()
+    app.include_router(create_siglume_sdrp_router(store), prefix="/payments")
+
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_async_auth_required"})
+        assert response.status_code == 500
+        assert response.json()["error"] == "ORDER_AUTHORIZATION_REQUIRED"
+
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(
+                select(checkout_attempts.c.attempt_id).where(checkout_attempts.c.order_id == "order_async_auth_required")
+            )
+        ).all()
+        assert rows == []
+
+    await engine.dispose()

@@ -68,6 +68,17 @@ export interface SiglumeSdrpRouterOptions {
   allow_metered_payments?: boolean;
 }
 
+export const ORDER_AUTHORIZATION_REQUIRED = "ORDER_AUTHORIZATION_REQUIRED";
+
+export class OrderAuthorizationRequiredError extends Error {
+  readonly code = ORDER_AUTHORIZATION_REQUIRED;
+
+  constructor(message = "authorize_order is required unless allow_unverified_order_lookup is explicitly true.") {
+    super(message);
+    this.name = "OrderAuthorizationRequiredError";
+  }
+}
+
 export function createSiglumeSdrpCheckoutRouter(options: SiglumeSdrpRouterOptions): express.Router {
   const router = express.Router();
   const merchant = new DirectRequestPaymentMerchantClient({
@@ -137,6 +148,10 @@ export function createSiglumeSdrpCheckoutRouter(options: SiglumeSdrpRouterOption
   router.use((error: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
     if (error instanceof HostedCheckoutNotAvailableError) {
       res.status(409).json({ error: "hosted_checkout_not_enabled" });
+      return;
+    }
+    if (error instanceof OrderAuthorizationRequiredError) {
+      res.status(500).json({ error: ORDER_AUTHORIZATION_REQUIRED, message: error.message });
       return;
     }
     next(error);

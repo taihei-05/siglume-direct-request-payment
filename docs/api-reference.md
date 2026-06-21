@@ -1273,12 +1273,16 @@ Both packages export these importable constants:
 | `DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS` | `pending_settlement` |
 | `DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY` | `per_payment_onchain` |
 | `DIRECT_REQUEST_PAYMENT_METERED_FINALITY` | `aggregated_onchain_settlement` |
+| `SIGLUME_ACCOUNT_REQUIRED` | `SIGLUME_ACCOUNT_REQUIRED` |
 
 The `external_402` / `siglume-external-402-*` values are internal identifiers
 that reflect SDRP's HTTP 402 Payment Required lineage; they are not public
 product names, and they do **not** imply x402 wire compatibility (SDRP uses a
 different challenge/payment-payload design — see the README "Relationship to
 HTTP 402"). The SDK sets and reads them for you.
+`SIGLUME_ACCOUNT_REQUIRED` is the stable application-level code your product can
+return when an agent or custom buyer flow has not connected a Siglume account
+yet; it is not a Siglume charge-attempt error.
 
 ## Aliases
 

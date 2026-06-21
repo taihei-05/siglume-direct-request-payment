@@ -13,6 +13,8 @@ from siglume_direct_request_payment import (
     verify_direct_request_payment_webhook,
 )
 
+ORDER_AUTHORIZATION_REQUIRED = "ORDER_AUTHORIZATION_REQUIRED"
+
 
 class SiglumeSdrpOrderStore(Protocol):
     async def begin_checkout_attempt(self, order_id: str, request: Request) -> dict[str, Any] | None: ...
@@ -61,7 +63,15 @@ def create_siglume_sdrp_router(
     async def start_checkout(request: Request) -> JSONResponse:
         body = await request.json()
         order_id = str(body.get("order_id") or "")
-        attempt = await order_store.begin_checkout_attempt(order_id, request)
+        try:
+            attempt = await order_store.begin_checkout_attempt(order_id, request)
+        except Exception as exc:
+            if _is_order_authorization_required(exc):
+                return JSONResponse(
+                    {"error": ORDER_AUTHORIZATION_REQUIRED, "message": str(exc)},
+                    status_code=500,
+                )
+            raise
         if not attempt:
             return JSONResponse({"error": "order_not_found"}, status_code=404)
 
@@ -199,3 +209,7 @@ def _is_standard_checkout_amount(currency: str, amount_minor: int) -> bool:
 def _is_readiness_probe_event(event: dict[str, Any]) -> bool:
     data = event.get("data") if isinstance(event.get("data"), dict) else {}
     return data.get("readiness_probe") is True or data.get("mode") == "readiness_probe"
+
+
+def _is_order_authorization_required(exc: Exception) -> bool:
+    return getattr(exc, "code", None) == ORDER_AUTHORIZATION_REQUIRED

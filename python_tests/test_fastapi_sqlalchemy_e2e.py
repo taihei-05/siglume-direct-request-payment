@@ -214,3 +214,32 @@ async def test_fastapi_sqlalchemy_template_e2e(tmp_path, monkeypatch) -> None:
         assert session.execute(
             select(checkout_attempts.c.checkout_session_id).where(checkout_attempts.c.order_id == "order_123")
         ).scalar_one() == "chk_py_1"
+
+
+@pytest.mark.asyncio
+async def test_fastapi_sqlalchemy_fails_closed_without_authorize_order(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SIGLUME_DIRECT_PAYMENT_MERCHANT", "sandbox_merchant")
+    monkeypatch.setenv("SIGLUME_MERCHANT_AUTH_TOKEN", "merchant_jwt")
+    monkeypatch.setenv("SIGLUME_WEBHOOK_SECRET", "whsec_test")
+    monkeypatch.setenv("SHOP_PUBLIC_ORIGIN", "https://shop.example.com")
+
+    engine = create_sqlalchemy_engine(f"sqlite:///{tmp_path / 'sdrp_auth_required.sqlite3'}")
+    create_sqlalchemy_siglume_schema(engine, include_orders_table=True)
+    SessionLocal = sessionmaker(engine, future=True)
+    with SessionLocal.begin() as session:
+        seed_sqlalchemy_order(session, order_id="order_auth_required", amount_minor=1200, currency="JPY")
+
+    store = SQLAlchemySiglumeOrderStore(SessionLocal)
+    app = FastAPI()
+    app.include_router(create_siglume_sdrp_router(store), prefix="/payments")
+
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post("/payments/checkout/siglume/start", json={"order_id": "order_auth_required"})
+        assert response.status_code == 500
+        assert response.json()["error"] == "ORDER_AUTHORIZATION_REQUIRED"
+
+    with SessionLocal() as session:
+        assert session.execute(
+            select(checkout_attempts.c.attempt_id).where(checkout_attempts.c.order_id == "order_auth_required")
+        ).all() == []

@@ -422,8 +422,13 @@ async function handleSandboxRequest(req, res, state, port) {
       event_type: String(body.event_type || "direct_payment.confirmed"),
       data: body.data && typeof body.data === "object" ? body.data : {},
     });
-    await deliverSandboxWebhook(state, event);
-    sendEnvelope(res, 201, { queued: true, event: { id: event.id, type: event.type } });
+    const delivery = await deliverSandboxWebhook(state, event);
+    sendEnvelope(res, 201, {
+      queued: true,
+      event: { id: event.id, type: event.type },
+      delivery_status: delivery.delivery_status,
+      response_status: delivery.response_status,
+    });
     return;
   }
 
@@ -513,10 +518,12 @@ async function handleSandboxRequest(req, res, state, port) {
       sendJson(res, 409, { error: { code: "CHECKOUT_SESSION_NOT_CONFIRMED", message: "confirm the sandbox checkout before redelivery" } });
       return;
     }
-    await deliverSandboxWebhook(state, session.confirmation_event);
-    sendEnvelope(res, 200, {
+    const delivery = await deliverSandboxWebhook(state, session.confirmation_event);
+    sendEnvelope(res, delivery.delivery_status === "delivered" ? 200 : 502, {
       redelivered: true,
       event: { id: session.confirmation_event.id, type: session.confirmation_event.type },
+      delivery_status: delivery.delivery_status,
+      response_status: delivery.response_status,
     });
     return;
   }
@@ -786,7 +793,7 @@ async function deliverSandboxWebhook(state, event) {
   } catch {
     status = "failed";
   }
-  state.deliveries.unshift({
+  const delivery = {
     id: `whdel_sandbox_${state.deliveries.length + 1}`,
     subscription_id: state.subscriptionId,
     event_id: event.id,
@@ -794,7 +801,9 @@ async function deliverSandboxWebhook(state, event) {
     delivery_status: status,
     response_status: responseStatus,
     delivered_at: status === "delivered" ? new Date().toISOString() : null,
-  });
+  };
+  state.deliveries.unshift(delivery);
+  return delivery;
 }
 
 function sandboxCheckoutHtml(session) {

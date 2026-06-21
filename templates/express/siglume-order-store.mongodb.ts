@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Collection, Db, Document, MongoServerError, WithId } from "mongodb";
 import type { Request } from "express";
 
-import type { SiglumeCheckoutAttempt, SiglumeSdrpOrderStore } from "./siglume-sdrp-routes.js";
+import { OrderAuthorizationRequiredError, type SiglumeCheckoutAttempt, type SiglumeSdrpOrderStore } from "./siglume-sdrp-routes.js";
 
 export interface MongoSiglumeOrderStoreOptions {
   db: Db;
@@ -16,6 +16,7 @@ export interface MongoSiglumeOrderStoreOptions {
   webhook_events_collection?: string;
   payment_reviews_collection?: string;
   authorize_order?: (order: Record<string, unknown>, req: Request) => boolean | Promise<boolean>;
+  allow_unverified_order_lookup?: boolean;
 }
 
 interface NormalizedOptions {
@@ -30,6 +31,7 @@ interface NormalizedOptions {
   webhook_events_collection: string;
   payment_reviews_collection: string;
   authorize_order?: (order: Record<string, unknown>, req: Request) => boolean | Promise<boolean>;
+  allow_unverified_order_lookup: boolean;
 }
 
 const CHECKOUT_CREATION_LEASE_MS = 30_000;
@@ -62,7 +64,7 @@ class MongoSiglumeOrderStore implements SiglumeSdrpOrderStore {
     for (;;) {
       const order = await this.findProductOrder(cleanOrderId);
       if (!order) return null;
-      if (this.options.authorize_order && !(await this.options.authorize_order(order, req))) return null;
+      if (!(await authorizeOrderOrFailClosed(this.options, order, req))) return null;
 
       const active = await this.attempts().findOne({ active_key: cleanOrderId });
       if (active && isReusableCheckoutAttempt(active)) return this.toCheckoutAttempt(order, active);
@@ -355,7 +357,18 @@ function normalizeOptions(options: MongoSiglumeOrderStoreOptions): NormalizedOpt
     webhook_events_collection: options.webhook_events_collection ?? "siglume_webhook_events",
     payment_reviews_collection: options.payment_reviews_collection ?? "siglume_payment_reviews",
     authorize_order: options.authorize_order,
+    allow_unverified_order_lookup: options.allow_unverified_order_lookup === true,
   };
+}
+
+async function authorizeOrderOrFailClosed(
+  options: Pick<NormalizedOptions, "authorize_order" | "allow_unverified_order_lookup">,
+  order: Record<string, unknown>,
+  req: Request,
+): Promise<boolean> {
+  if (options.authorize_order) return Boolean(await options.authorize_order(order, req));
+  if (options.allow_unverified_order_lookup) return true;
+  throw new OrderAuthorizationRequiredError();
 }
 
 function stableAttempt(orderId: string, attemptNumber: number): { attempt_id: string; stable_nonce: string } {

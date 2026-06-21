@@ -94,6 +94,16 @@ payment_reviews = Table(
     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )
 
+ORDER_AUTHORIZATION_REQUIRED = "ORDER_AUTHORIZATION_REQUIRED"
+
+
+class OrderAuthorizationRequiredError(RuntimeError):
+    code = ORDER_AUTHORIZATION_REQUIRED
+
+    def __init__(self) -> None:
+        super().__init__("authorize_order is required unless allow_unverified_order_lookup is explicitly true.")
+
+
 _current_session: contextvars.ContextVar[Session | None] = contextvars.ContextVar(
     "siglume_sdrp_sqlalchemy_session",
     default=None,
@@ -142,6 +152,7 @@ class SQLAlchemySiglumeOrderStore:
         order_status_column: str | None = "status",
         order_updated_at_column: str | None = "updated_at",
         authorize_order: Callable[[dict[str, Any], Request], bool | Awaitable[bool]] | None = None,
+        allow_unverified_order_lookup: bool = False,
     ) -> None:
         self._session_factory = session_factory
         self._orders_table = orders_table
@@ -151,6 +162,7 @@ class SQLAlchemySiglumeOrderStore:
         self._order_status_column = orders_table.c[order_status_column] if order_status_column else None
         self._order_updated_at_column = orders_table.c[order_updated_at_column] if order_updated_at_column else None
         self._authorize_order = authorize_order
+        self._allow_unverified_order_lookup = allow_unverified_order_lookup
 
     async def begin_checkout_attempt(self, order_id: str, request: Request) -> dict[str, Any] | None:
         clean_order_id = _require_text(order_id, "order_id")
@@ -164,7 +176,12 @@ class SQLAlchemySiglumeOrderStore:
                 if order is None:
                     return None
                 order_dict = self._canonical_order_dict(order)
-                if self._authorize_order and not await _resolve_authorize_order(self._authorize_order(order_dict, request)):
+                if not await _authorize_order_or_fail_closed(
+                    self._authorize_order,
+                    self._allow_unverified_order_lookup,
+                    order_dict,
+                    request,
+                ):
                     return None
 
                 active = session.execute(
@@ -503,3 +520,16 @@ async def _resolve_authorize_order(result: bool | Awaitable[bool]) -> bool:
     if inspect.isawaitable(result):
         return bool(await result)
     return bool(result)
+
+
+async def _authorize_order_or_fail_closed(
+    authorize_order: Callable[[dict[str, Any], Request], bool | Awaitable[bool]] | None,
+    allow_unverified_order_lookup: bool,
+    order: dict[str, Any],
+    request: Request,
+) -> bool:
+    if authorize_order is not None:
+        return await _resolve_authorize_order(authorize_order(order, request))
+    if allow_unverified_order_lookup:
+        return True
+    raise OrderAuthorizationRequiredError()

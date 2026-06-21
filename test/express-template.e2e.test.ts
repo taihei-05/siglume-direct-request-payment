@@ -286,7 +286,11 @@ describe("Express 10-minute template E2E", () => {
       db.run(statement);
     }
 
-    const store = createSqlSiglumeOrderStore({ executor, dialect: "sqlite" });
+    const store = createSqlSiglumeOrderStore({
+      executor,
+      dialect: "sqlite",
+      allow_unverified_order_lookup: true,
+    });
     let attempts = 0;
     await expect(store.processWebhookEventOnce("evt_no_tx_retry", async () => {
       attempts += 1;
@@ -329,6 +333,34 @@ describe("Express 10-minute template E2E", () => {
     db.close();
   });
 
+  it("fails closed when a checkout adapter has no authorize_order callback", async () => {
+    const SQL = await initSqlJs();
+    const db = new SQL.Database();
+    const executor = sqliteExecutor(db);
+    for (const statement of createSiglumeSdrpSqlSchema({ dialect: "sqlite" })) {
+      db.run(statement);
+    }
+    db.run(`INSERT INTO "orders" ("id", "amount_minor", "currency", "status") VALUES ('order_auth_required', 1200, 'JPY', 'created')`);
+
+    const store = createSqlSiglumeOrderStore({ executor, dialect: "sqlite" });
+    const app = await createApp({
+      merchant: "sandbox_merchant",
+      merchant_auth_token: "merchant_jwt",
+      webhook_secret: "whsec_test",
+      shop_public_origin: "https://shop.example.com",
+      order_store: store,
+    });
+    try {
+      const response = await postJson(`${app.baseUrl}/payments/checkout/siglume/start`, { order_id: "order_auth_required" });
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toMatchObject({ error: "ORDER_AUTHORIZATION_REQUIRED" });
+      expect(await executor.query(`SELECT attempt_id FROM "siglume_checkout_attempts" WHERE order_id = ?`, ["order_auth_required"])).toHaveLength(0);
+    } finally {
+      await app.close();
+      db.close();
+    }
+  });
+
   it("creates one Hosted Checkout session for concurrent starts and creates a new attempt after expiry", async () => {
     const SQL = await initSqlJs();
     const db = new SQL.Database();
@@ -338,7 +370,11 @@ describe("Express 10-minute template E2E", () => {
     }
     db.run(`INSERT INTO "orders" ("id", "amount_minor", "currency", "status") VALUES ('order_concurrent', 1200, 'JPY', 'created')`);
 
-    const store = createSqlSiglumeOrderStore({ executor, dialect: "sqlite" });
+    const store = createSqlSiglumeOrderStore({
+      executor,
+      dialect: "sqlite",
+      allow_unverified_order_lookup: true,
+    });
     const options: SiglumeSdrpRouterOptions = {
       merchant: "sandbox_merchant",
       merchant_auth_token: "merchant_jwt",

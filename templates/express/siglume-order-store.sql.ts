@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import type { Request } from "express";
 
-import type { SiglumeCheckoutAttempt, SiglumeSdrpOrderStore } from "./siglume-sdrp-routes.js";
+import { OrderAuthorizationRequiredError, type SiglumeCheckoutAttempt, type SiglumeSdrpOrderStore } from "./siglume-sdrp-routes.js";
 
 export type SiglumeSqlDialect = "postgres" | "mysql" | "sqlite";
 export type SiglumeSqlParamStyle = "numbered" | "question";
@@ -30,6 +30,7 @@ export interface SiglumeSqlOrderStoreOptions {
   webhook_events_table?: string;
   payment_reviews_table?: string;
   authorize_order?: (order: Record<string, unknown>, req: Request) => boolean | Promise<boolean>;
+  allow_unverified_order_lookup?: boolean;
 }
 
 interface NormalizedOptions {
@@ -46,6 +47,7 @@ interface NormalizedOptions {
   webhook_events_table: string;
   payment_reviews_table: string;
   authorize_order?: (order: Record<string, unknown>, req: Request) => boolean | Promise<boolean>;
+  allow_unverified_order_lookup: boolean;
 }
 
 interface SqlParts {
@@ -315,7 +317,7 @@ class SqlSiglumeOrderStore implements SiglumeSdrpOrderStore {
       const result = await this.withTransaction(async (executor) => {
         const order = await this.findProductOrder(cleanOrderId);
         if (!order) return { done: true, attempt: null as SiglumeCheckoutAttempt | null };
-        if (this.options.authorize_order && !(await this.options.authorize_order(order, req))) {
+        if (!(await authorizeOrderOrFailClosed(this.options, order, req))) {
           return { done: true, attempt: null as SiglumeCheckoutAttempt | null };
         }
 
@@ -653,7 +655,18 @@ function normalizeOptions(options: SiglumeSqlOrderStoreOptions): NormalizedOptio
     webhook_events_table: options.webhook_events_table ?? "siglume_webhook_events",
     payment_reviews_table: options.payment_reviews_table ?? "siglume_payment_reviews",
     authorize_order: options.authorize_order,
+    allow_unverified_order_lookup: options.allow_unverified_order_lookup === true,
   };
+}
+
+async function authorizeOrderOrFailClosed(
+  options: Pick<NormalizedOptions, "authorize_order" | "allow_unverified_order_lookup">,
+  order: Record<string, unknown>,
+  req: Request,
+): Promise<boolean> {
+  if (options.authorize_order) return Boolean(await options.authorize_order(order, req));
+  if (options.allow_unverified_order_lookup) return true;
+  throw new OrderAuthorizationRequiredError();
 }
 
 function sqlParts(options: NormalizedOptions): SqlParts {

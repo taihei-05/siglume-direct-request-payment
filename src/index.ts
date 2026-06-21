@@ -10,11 +10,12 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.32";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.4.33";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_FINALITY = "per_payment_onchain";
 export const DIRECT_REQUEST_PAYMENT_METERED_FINALITY = "aggregated_onchain_settlement";
+export const SIGLUME_ACCOUNT_REQUIRED = "SIGLUME_ACCOUNT_REQUIRED";
 const DIRECT_REQUEST_PAYMENT_CONFIRMED_WEBHOOK_MODES = new Set([DIRECT_REQUEST_PAYMENT_MODE, "metered_settlement_batch"]);
 
 export type DirectRequestPaymentCurrency = "JPY" | "USD";

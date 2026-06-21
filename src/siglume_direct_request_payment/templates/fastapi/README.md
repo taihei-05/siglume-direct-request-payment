@@ -85,10 +85,14 @@ processed only after the order update or review write succeeds. The generated
 route defaults to Standard-only. Enable `allow_metered_payments` only after you
 implement Micro / Nano settlement reconciliation and past-due handling.
 
-Do not run a production checkout route without `authorize_order`. It must
-fail-closed unless the authenticated product user owns the order and the order is
-still payable. Without this check, anyone who can guess an order id could start
-checkout for someone else's order.
+Do not run a production checkout route without `authorize_order`. The official
+adapters fail closed by default and return `ORDER_AUTHORIZATION_REQUIRED` unless
+`authorize_order` is configured. This callback must confirm the authenticated
+product user owns the order and the order is still payable. Guest checkout is
+allowed only when you intentionally pass `allow_unverified_order_lookup=True`
+and have another non-guessable order lookup control. Without one of these
+checks, anyone who can guess an order id could start checkout for someone
+else's order.
 The route paths become:
 
 - `POST /payments/checkout/siglume/start`

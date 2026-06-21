@@ -6,6 +6,13 @@ Siglume-compatible API server for product integration testing. It creates fake
 checkout sessions, signs `direct_payment.confirmed` webhooks, records delivery
 status, and never charges a wallet.
 
+If you are starting from a new integration, complete the 10-minute guide through
+Step 7 first. In particular, create the SDRP storage resources, seed a
+Standard-band test order owned by your product test user, and configure
+`authorize_order`. The checkout examples below assume an order such as
+`order_sdrp_sandbox_001` exists and that your product accepts
+`authorization: Bearer <product-test-user-token>` for that order owner.
+
 Start your product locally first, then run:
 
 ```bash
@@ -37,7 +44,8 @@ Create a checkout through your own product route:
 ```bash
 curl -X POST http://localhost:3000/payments/checkout/siglume/start \
   -H "content-type: application/json" \
-  -d "{\"order_id\":\"order_123\"}"
+  -H "authorization: Bearer <product-test-user-token>" \
+  -d "{\"order_id\":\"order_sdrp_sandbox_001\"}"
 ```
 
 Open the returned `checkout_url` and click the sandbox confirm button. Your
@@ -56,7 +64,10 @@ curl -X POST http://127.0.0.1:8787/v1/sandbox/checkout-sessions/<session_id>/red
 
 The sandbox sends the original `direct_payment.confirmed` payload again with a
 fresh HMAC header. Your product should keep the order paid once and keep one
-processed row for that webhook event ID.
+processed row for that webhook event ID. A successful redelivery returns
+`delivery_status: "delivered"` and the product's HTTP `response_status`.
+If the product webhook is unreachable or returns non-2xx, `/redeliver` returns
+HTTP 502 with `delivery_status: "failed"` so the failure is visible in scripts.
 
 The sandbox rejects invalid checkout input early: `amount_minor` must be a
 positive integer, `currency` must be `JPY` or `USD`, and return URLs must be

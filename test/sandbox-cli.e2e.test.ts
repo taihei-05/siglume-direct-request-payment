@@ -103,8 +103,16 @@ describe("sandbox CLI E2E", () => {
         { method: "POST" },
       );
       expect(redeliver.status).toBe(200);
-      const redeliverBody = await redeliver.json() as { data: { event: { id: string } } };
+      const redeliverBody = await redeliver.json() as {
+        data: {
+          event: { id: string };
+          delivery_status: string;
+          response_status: number;
+        };
+      };
       expect(redeliverBody.data.event.id).toBe(firstConfirmBody.data.event.id);
+      expect(redeliverBody.data.delivery_status).toBe("delivered");
+      expect(redeliverBody.data.response_status).toBe(204);
       expect(deliveries).toHaveLength(2);
       expect(JSON.parse(deliveries[1]?.body || "{}").id).toBe(firstConfirmBody.data.event.id);
 
@@ -159,6 +167,18 @@ describe("sandbox CLI E2E", () => {
       expect(providerSummaryBody.data.open_periods[0]?.provider_receivable_minor).toBe("98");
       expect(providerSummaryBody.data.open_periods[0]?.total_unsettled_exposure_minor).toBe("100");
       expect(providerSummaryBody.data.totals.unsettled_provider_receivable_minor).toBe("98");
+
+      await closeServer(webhookServer);
+      const failedRedeliver = await fetch(
+        `${baseUrl}/v1/sandbox/checkout-sessions/${microCreatedBody.data.session_id}/redeliver`,
+        { method: "POST" },
+      );
+      expect(failedRedeliver.status).toBe(502);
+      const failedRedeliverBody = await failedRedeliver.json() as {
+        data: { delivery_status: string; response_status: number | null };
+      };
+      expect(failedRedeliverBody.data.delivery_status).toBe("failed");
+      expect(failedRedeliverBody.data.response_status).toBeNull();
     } finally {
       await closeServer(webhookServer);
     }

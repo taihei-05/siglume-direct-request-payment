@@ -174,7 +174,7 @@ async function createPrismaPostgresStore(tables: TableNames): Promise<StoreConte
   });
   const executor = createPrismaSiglumeSqlExecutor(prisma);
   return {
-    store: createPrismaSiglumeOrderStore(prisma, { dialect: "postgres", ...tables }),
+    store: createPrismaSiglumeOrderStore(prisma, { dialect: "postgres", ...tables, allow_unverified_order_lookup: true }),
     executor,
     dialect: "postgres",
     paramStyle: "numbered",
@@ -195,7 +195,7 @@ async function createTypeOrmPostgresStore(tables: TableNames): Promise<StoreCont
   await source.initialize();
   const executor = createTypeOrmSiglumeSqlExecutor(source);
   return {
-    store: createTypeOrmSiglumeOrderStore(source, { dialect: "postgres", ...tables }),
+    store: createTypeOrmSiglumeOrderStore(source, { dialect: "postgres", ...tables, allow_unverified_order_lookup: true }),
     executor,
     dialect: "postgres",
     paramStyle: "numbered",
@@ -209,7 +209,7 @@ async function createSequelizeMysqlStore(tables: TableNames): Promise<StoreConte
   await sequelize.authenticate();
   const executor = createSequelizeSiglumeSqlExecutor(sequelize);
   return {
-    store: createSequelizeSiglumeOrderStore(sequelize, { dialect: "mysql", ...tables }),
+    store: createSequelizeSiglumeOrderStore(sequelize, { dialect: "mysql", ...tables, allow_unverified_order_lookup: true }),
     executor,
     dialect: "mysql",
     paramStyle: "question",
@@ -225,7 +225,7 @@ async function createDrizzlePostgresStore(tables: TableNames): Promise<StoreCont
   const db = drizzle(pool);
   const executor = createDrizzleSiglumeSqlExecutor(db, sql);
   return {
-    store: createDrizzleSiglumeOrderStore(db, sql, { dialect: "postgres", ...tables }),
+    store: createDrizzleSiglumeOrderStore(db, sql, { dialect: "postgres", ...tables, allow_unverified_order_lookup: true }),
     executor,
     dialect: "postgres",
     paramStyle: "question",
@@ -241,7 +241,7 @@ async function createDrizzleMysqlStore(tables: TableNames): Promise<StoreContext
   const db = drizzle(connection);
   const executor = createDrizzleSiglumeSqlExecutor(db, sql);
   return {
-    store: createDrizzleSiglumeOrderStore(db, sql, { dialect: "mysql", ...tables }),
+    store: createDrizzleSiglumeOrderStore(db, sql, { dialect: "mysql", ...tables, allow_unverified_order_lookup: true }),
     executor,
     dialect: "mysql",
     paramStyle: "question",
