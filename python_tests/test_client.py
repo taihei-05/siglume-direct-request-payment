@@ -89,6 +89,147 @@ def test_creates_external_402_payment_requirement() -> None:
     assert request_body["merchant"] == "example_merchant"
 
 
+@respx.mock
+def test_creates_buyer_side_subscription_with_recurring_challenge() -> None:
+    route = respx.post("https://siglume.test/v1/sdrp/direct-payments/subscriptions").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "data": {
+                    "subscription_status": "created",
+                    "mode": "external_402",
+                    "merchant": "example_merchant",
+                    "mandate": {"mandate_id": "mandate_subscription", "status": "active"},
+                    "amount_minor": 980,
+                    "currency": "JPY",
+                    "token_symbol": "JPYC",
+                    "cadence": "monthly",
+                }
+            },
+        )
+    )
+    client = DirectRequestPaymentClient(auth_token="buyer_jwt", base_url="https://siglume.test/v1")
+
+    result = client.create_subscription(
+        merchant="Example_Merchant",
+        amount_minor=980,
+        currency="jpy",
+        cadence="monthly",
+        challenge="siglume-external-402-recurring-v1:nonce:sig",
+    )
+
+    assert result["subscription_status"] == "created"
+    assert route.calls.last.request.headers["authorization"] == "Bearer buyer_jwt"
+    assert json.loads(route.calls.last.request.content) == {
+        "merchant": "example_merchant",
+        "amount_minor": 980,
+        "currency": "JPY",
+        "challenge": "siglume-external-402-recurring-v1:nonce:sig",
+        "cadence": "monthly",
+    }
+
+
+@respx.mock
+def test_scheduled_auto_pay_methods_use_schedule_token_for_execute() -> None:
+    create_route = respx.post("https://siglume.test/v1/account/auto-pay/scheduled-authorizations").mock(
+        return_value=httpx.Response(
+            201,
+            json={
+                "data": {
+                    "authorization_id": "sched_auth_1",
+                    "id": "sched_auth_1",
+                    "buyer_user_id": "buyer_1",
+                    "product_listing_id": "listing_1",
+                    "listing_id": "listing_1",
+                    "capability_key": "external_402.example_merchant",
+                    "expected_amount_minor": 700,
+                    "max_amount_minor": 700,
+                    "currency": "JPY",
+                    "token_symbol": "JPYC",
+                    "status": "active",
+                    "schedule_token": "sched_token_secret",
+                }
+            },
+        )
+    )
+    execute_route = respx.post("https://siglume.test/v1/market/api-store/scheduled-auto-pay/execute").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "status": "executed",
+                    "charge_status": "settled",
+                    "authorization": {"authorization_id": "sched_auth_1", "status": "active"},
+                    "direct_payment_requirement_id": "dpr_sched_1",
+                }
+            },
+        )
+    )
+    revoke_route = respx.delete("https://siglume.test/v1/account/auto-pay/scheduled-authorizations/sched_auth_1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "authorization_id": "sched_auth_1",
+                    "id": "sched_auth_1",
+                    "buyer_user_id": "buyer_1",
+                    "product_listing_id": "listing_1",
+                    "listing_id": "listing_1",
+                    "capability_key": "external_402.example_merchant",
+                    "expected_amount_minor": 700,
+                    "max_amount_minor": 700,
+                    "currency": "JPY",
+                    "token_symbol": "JPYC",
+                    "status": "revoked",
+                }
+            },
+        )
+    )
+    client = DirectRequestPaymentClient(auth_token="buyer_jwt", base_url="https://siglume.test/v1")
+
+    auth = client.create_scheduled_auto_pay_authorization(
+        mode="external_402",
+        merchant="example_merchant",
+        challenge="siglume-external-402-recurring-v1:nonce:sig",
+        amount_minor=700,
+        currency="jpy",
+        token_symbol="jpyc",
+        max_runs=3,
+        cadence={"unit": "daily"},
+        metadata={"order_id": "sched_1"},
+    )
+    executed = client.execute_scheduled_auto_pay(
+        schedule_token="sched_token_secret",
+        slot_id="2026-06-21",
+        input={"task": "run"},
+        await_finality=True,
+    )
+    revoked = client.revoke_scheduled_auto_pay_authorization("sched_auth_1")
+
+    assert auth["status"] == "active"
+    assert executed["status"] == "executed"
+    assert revoked["status"] == "revoked"
+    assert create_route.calls.last.request.headers["authorization"] == "Bearer buyer_jwt"
+    assert execute_route.calls.last.request.headers["authorization"] == "Bearer sched_token_secret"
+    assert json.loads(create_route.calls.last.request.content) == {
+        "mode": "external_402",
+        "merchant": "example_merchant",
+        "challenge": "siglume-external-402-recurring-v1:nonce:sig",
+        "amount_minor": 700,
+        "currency": "JPY",
+        "token_symbol": "JPYC",
+        "max_runs": 3,
+        "cadence": {"unit": "daily"},
+        "metadata": {"order_id": "sched_1"},
+    }
+    assert json.loads(execute_route.calls.last.request.content) == {
+        "slot_id": "2026-06-21",
+        "input": {"task": "run"},
+        "await_finality": True,
+    }
+    assert revoke_route.called
+
+
 def test_normalizes_api_base_urls_allows_localhost_http_and_redacts_repr() -> None:
     client = DirectRequestPaymentClient(auth_token="buyer_jwt", base_url="http://localhost:8787/v1/")
 

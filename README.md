@@ -9,10 +9,12 @@ official database adapters. The merchant fixes the order, amount, and currency
 on its server; the buyer pays with a Siglume wallet; Siglume applies the
 correct pricing and settlement path from the payment amount.
 
-**GA scope:** Standard Hosted Checkout for one-time JPY/JPYC or USD/USDC
-payments on Polygon PoS is generally available when merchant readiness passes.
-Micro Payment, Nano Payment, subscription, and scheduled autopay remain
-Beta/out of this GA scope.
+**Public SDRP GA scope:** Standard Hosted Checkout, Micro Payment, Nano Payment,
+subscription approval, and scheduled autopay authorization/execution are public
+SDRP protocol/API/SDK surfaces for JPY/JPYC or USD/USDC on Polygon PoS when the
+relevant merchant and buyer readiness checks pass. Refund workflow, card
+payments, cross-chain payment, custom settlement wallets, and merchant internal
+support/accounting systems are outside SDRP.
 
 ## Start Here
 
@@ -62,13 +64,16 @@ split / multi-wallet charging. Route each payment through the buyer's Siglume
 wallet and the merchant account's configured Siglume settlement wallet.
 
 Standard Hosted Checkout for one-time JPY/JPYC or USD/USDC payments is the
-general integration path when merchant readiness passes. Micro Payment, Nano
-Payment, subscription, and scheduled autopay remain Beta/out of this GA scope.
-The SDK does not provide a merchant refund API, refund state machine, refund
-receipt registry, or refund webhook. Refund policy, buyer support, and any
-refund transfer are handled by the merchant outside SDRP using the merchant's
-own lawful process. SDRP exposes the original payment identifiers and signed
-payment evidence so the merchant can reconcile its own order system.
+general human-shopper integration path when merchant readiness passes. Micro
+Payment and Nano Payment are automatic amount bands on the same SDRP payment
+surface and must be reconciled through the statement APIs because final
+settlement is aggregated. Subscription approval and scheduled autopay use the
+recurring challenge scheme and the named SDK methods documented in the API
+reference. The SDK does not provide a merchant refund API, refund state machine,
+refund receipt registry, or refund webhook. Refund policy, buyer support, and
+any refund transfer are handled by the merchant outside SDRP using the
+merchant's own lawful process. SDRP exposes the original payment identifiers and
+signed payment evidence so the merchant can reconcile its own order system.
 
 Payment requirement creation must run in the authenticated buyer's Siglume
 context. Your merchant server must not use a merchant secret or API key to
@@ -93,6 +98,7 @@ Developer Portal `cli_` API key with this package.
 - [Troubleshooting](./docs/troubleshooting.md): Hosted Checkout readiness, support escalation, and safe buyer messages.
 - [API and SDK Stability](./docs/api-stability.md): SemVer, API versioning, webhook compatibility, error-code compatibility, and deprecation.
 - [Status and Service Objectives](./docs/status-and-service-objectives.md): public status endpoint, severity levels, response targets, and support scope.
+- [Public SDRP GA Evidence Map](./docs/ga-evidence.md): GA review scope, non-SDRP boundaries, and test-name mapping.
 - [SDRP vs x402](./docs/concepts/sdrp-vs-x402.md): how SDRP relates to HTTP 402 and why it is not x402 wire-compatible.
 
 ## Protocol Overview

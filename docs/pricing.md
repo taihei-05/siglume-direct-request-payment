@@ -27,9 +27,10 @@ quoted per currency.
 
 Current public settlement is on **Polygon PoS only**. The public SDK does not
 expose chain selection, cross-chain payment, multiple merchant settlement
-wallets, per-payment settlement-wallet overrides, or split / multi-wallet
-charging. Micro / Nano, subscription, and scheduled autopay remain outside the
-Standard Hosted Checkout GA scope.
+wallets, per-payment settlement-wallet overrides, split / multi-wallet charging,
+or merchant refund workflow. Micro / Nano are public amount bands on the SDRP
+surface; subscription and scheduled autopay use the recurring challenge and SDK
+methods documented in the API reference.
 
 ## Pricing Table
 

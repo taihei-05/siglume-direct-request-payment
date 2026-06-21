@@ -423,25 +423,28 @@ siglume.verify_payment_requirement(
 )
 ```
 
-### Subscriptions and scheduled autopay (no SDK method)
+### Subscriptions and scheduled autopay
 
 The SDK signs the merchant-side recurring approval challenge
 (`createDirectRequestPaymentRecurringChallenge` /
-`create_direct_request_payment_recurring_challenge`), but there is **no SDK
-method for subscription creation**. After you hand the buyer the recurring
-challenge, the subscription itself is created over **raw HTTP** with the buyer's
-Siglume bearer token:
+`create_direct_request_payment_recurring_challenge`). After you hand the buyer
+the recurring challenge, the buyer-side Siglume client creates the subscription
+with the buyer's Siglume bearer token:
 
 ```text
 POST /v1/sdrp/direct-payments/subscriptions
 { merchant, amount_minor, currency, cadence: "monthly", challenge }
 ```
 
+TypeScript uses `createSubscription(...)`; Python uses `create_subscription(...)`.
+
 For scheduled autopay (`cadence: "daily"`), the buyer instead creates a scheduled
 auto-pay authorization and hands you a `schedule_token`; your scheduler triggers
-each occurrence with that token. Neither of these calls is wrapped by
-`DirectRequestPaymentClient` today — the SDK's recurring surface is the challenge
-signer and verifier only.
+each occurrence with that token. TypeScript uses
+`createScheduledAutoPayAuthorization(...)`, `executeScheduledAutoPay(...)`, and
+`revokeScheduledAutoPayAuthorization(...)`; Python uses
+`create_scheduled_auto_pay_authorization(...)`, `execute_scheduled_auto_pay(...)`,
+and `revoke_scheduled_auto_pay_authorization(...)`.
 
 ## 4. Fulfill from Webhook
 

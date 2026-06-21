@@ -1,20 +1,24 @@
-# Standard Hosted Checkout Status And Service Objectives
+# SDRP Status And Service Objectives
 
-This SDK page summarizes the public status and support surfaces for Standard
-Hosted Checkout. The service boundary is governed by the published Siglume Terms
-(`https://siglume.com/legal/terms`) and Direct Request Payment developer page
-(`https://siglume.com/developers/direct-request-payment`).
+This SDK page summarizes the public status and support surfaces for the public
+SDRP protocol/API/SDK surface. The service boundary is governed by the published
+Siglume Terms (`https://siglume.com/legal/terms`) and Direct Request Payment
+developer page (`https://siglume.com/developers/direct-request-payment`).
 
 These are operational objectives, not a contractual SLA, service-credit policy,
 or plan-specific support agreement.
 
 ## Scope
 
-Applies to Standard Hosted Checkout one-time payments on Polygon PoS for
-JPY/JPYC and USD/USDC.
+Applies to these public SDRP surfaces on Polygon PoS for JPY/JPYC and USD/USDC:
 
-Out of scope: Micro Payment, Nano Payment, subscription, scheduled autopay,
-custom settlement wallets, cross-chain payment, and card payments.
+- Standard Hosted Checkout one-time payments
+- Micro Payment and Nano Payment amount-banded metered settlement
+- subscription approval/creation
+- scheduled autopay authorization/execution
+
+Out of scope: merchant refund workflow, card payments, cross-chain payment,
+custom settlement wallets, and merchant internal support/accounting systems.
 
 ## Status Surfaces
 
@@ -28,22 +32,23 @@ custom settlement wallets, cross-chain payment, and card payments.
 
 ## SLO Targets
 
-Operational targets for Standard Hosted Checkout:
+Operational targets for public SDRP:
 
 | Area | Target |
 | --- | --- |
-| Checkout API availability | 99.9% monthly, excluding scheduled maintenance and upstream chain/provider outages |
+| Checkout/API availability | 99.9% monthly, excluding scheduled maintenance and upstream chain/provider outages |
 | Webhook enqueue latency | 95% under 60 seconds after platform confirmation |
 | Status/readiness API | 99.9% monthly |
 | Incident acknowledgement | Severity 1: 1 hour; Severity 2: 4 business hours; Severity 3: 2 business days |
 
-Free, sandbox, and Beta surfaces do not receive the same operational targets.
+Free sandbox and non-public/private preview surfaces do not receive the same
+operational targets.
 
 ## Incident Severity
 
 | Severity | Definition | Target response |
 | --- | --- | --- |
-| Sev 1 | Broad inability to create or settle Standard Hosted Checkout payments, or confirmed double-charge risk | Acknowledge within 1 hour, publish/update incident report |
+| Sev 1 | Broad inability to create or settle public SDRP payments, or confirmed double-charge risk | Acknowledge within 1 hour, publish/update incident report |
 | Sev 2 | Material degradation, delayed webhooks, partial region/account impact, or reconciliation hold | Acknowledge within 4 business hours |
 | Sev 3 | Isolated integration issue, documentation defect, or non-urgent support question | Acknowledge within 2 business days |
 

@@ -10,7 +10,7 @@ export const DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment";
 export const DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance";
 export const DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement";
 export const DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300;
-export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.5.3";
+export const DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.5.4";
 export const SIGLUME_ACCOUNT_REQUIRED = "SIGLUME_ACCOUNT_REQUIRED";
 export const DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled";
 export const DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement";
@@ -341,6 +341,125 @@ export interface DirectPaymentVerifyInput {
   await_required_status?: string | null;
   await_timeout_seconds?: number;
   await_poll_seconds?: number;
+}
+
+export interface DirectPaymentSubscriptionCreateInput {
+  merchant: string;
+  amount_minor: number;
+  currency: DirectRequestPaymentCurrency | string;
+  challenge: string;
+  cadence?: "monthly" | string;
+  user_signing?: boolean;
+  user_signing_flow?: boolean;
+  external_signature?: string;
+  external_safe_tx_hash?: string;
+}
+
+export interface DirectPaymentSubscriptionResponse {
+  subscription_status: string;
+  mode?: string;
+  merchant: string;
+  merchant_display_name?: string | null;
+  mandate: Record<string, unknown>;
+  receipt?: Record<string, unknown> | null;
+  initial_charge?: Record<string, unknown> | null;
+  idempotent_replay?: boolean | null;
+  amount_minor?: number | null;
+  currency?: string | null;
+  token_symbol?: string | null;
+  cadence?: string | null;
+  fee_bps?: number | null;
+  [key: string]: unknown;
+}
+
+export interface ScheduledAutoPayAuthorizationCreateInput {
+  listing_id?: string;
+  product_listing_id?: string;
+  capability_key?: string;
+  mode?: string;
+  merchant?: string;
+  challenge?: string;
+  amount_minor?: number;
+  agent_id?: string;
+  operation_key?: string;
+  allowed_operation_key?: string;
+  expected_operation_key?: string;
+  expected_amount_minor?: number;
+  max_amount_minor?: number;
+  max_amount_minor_per_run?: number;
+  currency?: DirectRequestPaymentCurrency | string;
+  token_symbol?: DirectRequestPaymentToken | string;
+  buyer_token?: DirectRequestPaymentToken | string;
+  max_runs?: number;
+  cadence?: string | Record<string, unknown>;
+  cadence_limit?: Record<string, unknown>;
+  expires_at?: string;
+  valid_until?: string;
+  metadata?: Record<string, unknown>;
+  user_signing?: boolean;
+  user_signing_flow?: boolean;
+  authorization_id?: string;
+  external_signature?: string;
+  external_safe_tx_hash?: string;
+}
+
+export interface ScheduledAutoPayAuthorizationResponse {
+  authorization_id: string;
+  id: string;
+  buyer_user_id: string;
+  agent_id?: string | null;
+  product_listing_id: string;
+  listing_id: string;
+  access_grant_id?: string | null;
+  capability_key: string;
+  operation_key?: string | null;
+  expected_amount_minor: number;
+  max_amount_minor: number;
+  currency: string;
+  token_symbol: string;
+  max_runs?: number | null;
+  status: string;
+  token_hint?: string | null;
+  schedule_token?: string | null;
+  cadence?: Record<string, unknown>;
+  metadata_jsonb?: Record<string, unknown>;
+  expires_at?: string | null;
+  revoked_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  requires_user_signature?: boolean | null;
+  mandate?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+export interface ScheduledAutoPayExecuteInput {
+  schedule_token: string;
+  slot_id: string;
+  input?: Record<string, unknown>;
+  arguments?: Record<string, unknown>;
+  scheduled_for?: string;
+  draft_token?: string;
+  await_finality?: boolean;
+  await_required_status?: string;
+  await_timeout_seconds?: number;
+  await_poll_seconds?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ScheduledAutoPayExecutionResponse {
+  status: string;
+  charge_status: string;
+  authorization: ScheduledAutoPayAuthorizationResponse | Record<string, unknown>;
+  slot?: Record<string, unknown> | null;
+  reason_code?: string | null;
+  reason?: string | null;
+  retryable?: boolean | null;
+  manual_reconciliation_required?: boolean | null;
+  direct_payment_requirement_id?: string | null;
+  direct_payment_requirement?: Record<string, unknown> | null;
+  direct_payment_execution?: Record<string, unknown> | null;
+  capability_result?: Record<string, unknown> | null;
+  [key: string]: unknown;
 }
 
 export interface Web3PreparedTransactionExecutePayload {
@@ -793,6 +912,151 @@ export class DirectRequestPaymentClient {
     return this.executePreparedTransaction(buildAllowanceExecutionPayload(requirement, options));
   }
 
+  async createSubscription(input: DirectPaymentSubscriptionCreateInput): Promise<DirectPaymentSubscriptionResponse> {
+    const payload: Record<string, unknown> = {
+      merchant: normalizeMerchant(input.merchant),
+      amount_minor: positiveInteger(input.amount_minor, "amount_minor"),
+      currency: normalizeCurrency(input.currency),
+      challenge: requireNonEmpty(input.challenge, "challenge"),
+    };
+    if (input.cadence !== undefined) {
+      payload.cadence = requireNonEmpty(input.cadence, "cadence");
+    }
+    if (input.user_signing !== undefined) {
+      payload.user_signing = Boolean(input.user_signing);
+    }
+    if (input.user_signing_flow !== undefined) {
+      payload.user_signing_flow = Boolean(input.user_signing_flow);
+    }
+    if (input.external_signature !== undefined) {
+      payload.external_signature = requireNonEmpty(input.external_signature, "external_signature");
+    }
+    if (input.external_safe_tx_hash !== undefined) {
+      payload.external_safe_tx_hash = requireNonEmpty(input.external_safe_tx_hash, "external_safe_tx_hash");
+    }
+    return this.request<DirectPaymentSubscriptionResponse>("POST", "/sdrp/direct-payments/subscriptions", payload);
+  }
+
+  async createScheduledAutoPayAuthorization(
+    input: ScheduledAutoPayAuthorizationCreateInput,
+  ): Promise<ScheduledAutoPayAuthorizationResponse> {
+    const payload: Record<string, unknown> = {};
+    for (const key of [
+      "listing_id",
+      "product_listing_id",
+      "capability_key",
+      "mode",
+      "merchant",
+      "challenge",
+      "agent_id",
+      "operation_key",
+      "allowed_operation_key",
+      "expected_operation_key",
+      "expires_at",
+      "valid_until",
+      "authorization_id",
+      "external_signature",
+      "external_safe_tx_hash",
+    ] as const) {
+      const value = input[key];
+      if (value !== undefined) {
+        payload[key] = requireNonEmpty(value, key);
+      }
+    }
+    for (const key of [
+      "amount_minor",
+      "expected_amount_minor",
+      "max_amount_minor",
+      "max_amount_minor_per_run",
+      "max_runs",
+    ] as const) {
+      const value = input[key];
+      if (value !== undefined) {
+        payload[key] = positiveInteger(value, key);
+      }
+    }
+    if (input.currency !== undefined) {
+      payload.currency = normalizeCurrency(input.currency);
+    }
+    if (input.token_symbol !== undefined) {
+      payload.token_symbol = normalizeToken(input.token_symbol);
+    }
+    if (input.buyer_token !== undefined) {
+      payload.buyer_token = normalizeToken(input.buyer_token);
+    }
+    if (input.cadence !== undefined) {
+      payload.cadence = typeof input.cadence === "string"
+        ? requireNonEmpty(input.cadence, "cadence")
+        : cloneJsonObject(input.cadence, "cadence");
+    }
+    if (input.cadence_limit !== undefined) {
+      payload.cadence_limit = cloneJsonObject(input.cadence_limit, "cadence_limit");
+    }
+    if (input.metadata !== undefined) {
+      payload.metadata = cloneJsonObject(input.metadata, "metadata");
+    }
+    if (input.user_signing !== undefined) {
+      payload.user_signing = Boolean(input.user_signing);
+    }
+    if (input.user_signing_flow !== undefined) {
+      payload.user_signing_flow = Boolean(input.user_signing_flow);
+    }
+    return this.request<ScheduledAutoPayAuthorizationResponse>(
+      "POST",
+      "/account/auto-pay/scheduled-authorizations",
+      payload,
+    );
+  }
+
+  async revokeScheduledAutoPayAuthorization(authorization_id: string): Promise<ScheduledAutoPayAuthorizationResponse> {
+    return this.request<ScheduledAutoPayAuthorizationResponse>(
+      "DELETE",
+      `/account/auto-pay/scheduled-authorizations/${encodeURIComponent(
+        requireNonEmpty(authorization_id, "authorization_id"),
+      )}`,
+    );
+  }
+
+  async executeScheduledAutoPay(input: ScheduledAutoPayExecuteInput): Promise<ScheduledAutoPayExecutionResponse> {
+    const scheduleToken = requireNonEmpty(input.schedule_token, "schedule_token");
+    const payload: Record<string, unknown> = {
+      slot_id: requireNonEmpty(input.slot_id, "slot_id"),
+    };
+    if (input.input !== undefined) {
+      payload.input = cloneJsonObject(input.input, "input");
+    }
+    if (input.arguments !== undefined) {
+      payload.arguments = cloneJsonObject(input.arguments, "arguments");
+    }
+    if (input.scheduled_for !== undefined) {
+      payload.scheduled_for = requireNonEmpty(input.scheduled_for, "scheduled_for");
+    }
+    if (input.draft_token !== undefined) {
+      payload.draft_token = requireNonEmpty(input.draft_token, "draft_token");
+    }
+    if (input.await_finality !== undefined) {
+      payload.await_finality = Boolean(input.await_finality);
+    }
+    if (input.await_required_status !== undefined) {
+      payload.await_required_status = requireNonEmpty(input.await_required_status, "await_required_status");
+    }
+    if (input.await_timeout_seconds !== undefined) {
+      payload.await_timeout_seconds = positiveInteger(input.await_timeout_seconds, "await_timeout_seconds");
+    }
+    if (input.await_poll_seconds !== undefined) {
+      payload.await_poll_seconds = positiveInteger(input.await_poll_seconds, "await_poll_seconds");
+    }
+    if (input.metadata !== undefined) {
+      payload.metadata = cloneJsonObject(input.metadata, "metadata");
+    }
+    return this.request<ScheduledAutoPayExecutionResponse>(
+      "POST",
+      "/market/api-store/scheduled-auto-pay/execute",
+      payload,
+      { "Authorization": `Bearer ${scheduleToken}` },
+    );
+  }
+
   async getBuyerMeteredSummary(
     input: DirectRequestPaymentBuyerMeteredQuery = {},
   ): Promise<DirectRequestPaymentBuyerMeteredSummary> {
@@ -862,7 +1126,12 @@ export class DirectRequestPaymentClient {
     );
   }
 
-  async request<T>(method: string, path: string, json_body?: unknown): Promise<T> {
+  async request<T>(
+    method: string,
+    path: string,
+    json_body?: unknown,
+    extra_headers: Record<string, string> = {},
+  ): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeout_ms);
     try {
@@ -870,6 +1139,7 @@ export class DirectRequestPaymentClient {
         "Accept": "application/json",
         "Authorization": `Bearer ${this.#authToken}`,
         "User-Agent": this.user_agent,
+        ...extra_headers,
       };
       let body: string | undefined;
       if (json_body !== undefined) {

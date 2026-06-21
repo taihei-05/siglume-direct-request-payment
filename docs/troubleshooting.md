@@ -108,9 +108,10 @@ state machine. If your product offers refunds, handle the buyer policy, support
 workflow, transfer, and accounting inside your own merchant system. Use SDRP
 payment identifiers and signed payment evidence only as reconciliation inputs.
 
-Micro / Nano adjustments remain outside the Standard Hosted Checkout GA scope.
-Use the explicit Siglume support or platform process available to your account.
-Do not reverse settled revenue by editing local statements or CSV exports.
+For Micro / Nano, use statement APIs to separate unsettled, settled, past-due,
+and terminal/write-off amounts. Do not reverse settled revenue by editing local
+statements or CSV exports; merchant refund or adjustment policy remains outside
+SDRP and should be reconciled in the merchant system.
 
 ## Safe buyer messages
 

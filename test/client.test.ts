@@ -108,6 +108,148 @@ describe("DirectRequestPaymentClient", () => {
     });
   });
 
+  it("creates buyer-side subscriptions with recurring challenges", async () => {
+    const requests: Array<{ url: string; init: RequestInit; body: any }> = [];
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      const body = init.body ? JSON.parse(String(init.body)) : null;
+      requests.push({ url: String(input), init, body });
+      return new Response(JSON.stringify(envelope({
+        subscription_status: "created",
+        mode: "external_402",
+        merchant: "example_merchant",
+        mandate: { mandate_id: "mandate_subscription", status: "active" },
+        amount_minor: 980,
+        currency: "JPY",
+        token_symbol: "JPYC",
+        cadence: "monthly",
+      })), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const client = new DirectRequestPaymentClient({
+      auth_token: "buyer_token",
+      base_url: "https://siglume.example/v1",
+      fetch: fetchImpl,
+    });
+
+    const result = await client.createSubscription({
+      merchant: "Example_Merchant",
+      amount_minor: 980,
+      currency: "jpy",
+      cadence: "monthly",
+      challenge: "siglume-external-402-recurring-v1:nonce:sig",
+    });
+
+    expect(result.subscription_status).toBe("created");
+    expect(requests[0]?.url).toBe("https://siglume.example/v1/sdrp/direct-payments/subscriptions");
+    expect((requests[0]?.init.headers as Record<string, string>).Authorization).toBe("Bearer buyer_token");
+    expect(requests[0]?.body).toEqual({
+      merchant: "example_merchant",
+      amount_minor: 980,
+      currency: "JPY",
+      cadence: "monthly",
+      challenge: "siglume-external-402-recurring-v1:nonce:sig",
+    });
+  });
+
+  it("creates, executes, and revokes scheduled autopay without leaking buyer auth into the schedule-token call", async () => {
+    const requests: Array<{ url: string; init: RequestInit; body: any }> = [];
+    const responses = [
+      envelope({
+        authorization_id: "sched_auth_1",
+        id: "sched_auth_1",
+        buyer_user_id: "buyer_1",
+        product_listing_id: "listing_1",
+        listing_id: "listing_1",
+        capability_key: "external_402.example_merchant",
+        expected_amount_minor: 700,
+        max_amount_minor: 700,
+        currency: "JPY",
+        token_symbol: "JPYC",
+        status: "active",
+        schedule_token: "sched_token_secret",
+      }),
+      envelope({
+        status: "executed",
+        charge_status: "settled",
+        authorization: { authorization_id: "sched_auth_1", status: "active" },
+        direct_payment_requirement_id: "dpr_sched_1",
+      }),
+      envelope({
+        authorization_id: "sched_auth_1",
+        id: "sched_auth_1",
+        buyer_user_id: "buyer_1",
+        product_listing_id: "listing_1",
+        listing_id: "listing_1",
+        capability_key: "external_402.example_merchant",
+        expected_amount_minor: 700,
+        max_amount_minor: 700,
+        currency: "JPY",
+        token_symbol: "JPYC",
+        status: "revoked",
+      }),
+    ];
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      const body = init.body ? JSON.parse(String(init.body)) : null;
+      requests.push({ url: String(input), init, body });
+      return new Response(JSON.stringify(responses.shift()), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const client = new DirectRequestPaymentClient({
+      auth_token: "buyer_token",
+      base_url: "https://siglume.example/v1",
+      fetch: fetchImpl,
+    });
+
+    const auth = await client.createScheduledAutoPayAuthorization({
+      mode: "external_402",
+      merchant: "example_merchant",
+      challenge: "siglume-external-402-recurring-v1:nonce:sig",
+      amount_minor: 700,
+      currency: "jpy",
+      token_symbol: "jpyc",
+      max_runs: 3,
+      cadence: { unit: "daily" },
+      metadata: { order_id: "sched_1" },
+    });
+    const executed = await client.executeScheduledAutoPay({
+      schedule_token: "sched_token_secret",
+      slot_id: "2026-06-21",
+      input: { task: "run" },
+      await_finality: true,
+    });
+    const revoked = await client.revokeScheduledAutoPayAuthorization("sched_auth_1");
+
+    expect(auth.status).toBe("active");
+    expect(executed.status).toBe("executed");
+    expect(revoked.status).toBe("revoked");
+    expect(requests.map((request) => [request.init.method, request.url])).toEqual([
+      ["POST", "https://siglume.example/v1/account/auto-pay/scheduled-authorizations"],
+      ["POST", "https://siglume.example/v1/market/api-store/scheduled-auto-pay/execute"],
+      ["DELETE", "https://siglume.example/v1/account/auto-pay/scheduled-authorizations/sched_auth_1"],
+    ]);
+    expect((requests[0]?.init.headers as Record<string, string>).Authorization).toBe("Bearer buyer_token");
+    expect(requests[0]?.body).toMatchObject({
+      mode: "external_402",
+      merchant: "example_merchant",
+      amount_minor: 700,
+      currency: "JPY",
+      token_symbol: "JPYC",
+      max_runs: 3,
+      cadence: { unit: "daily" },
+      metadata: { order_id: "sched_1" },
+    });
+    expect((requests[1]?.init.headers as Record<string, string>).Authorization).toBe("Bearer sched_token_secret");
+    expect(requests[1]?.body).toEqual({
+      slot_id: "2026-06-21",
+      input: { task: "run" },
+      await_finality: true,
+    });
+  });
+
   it("normalizes API base URLs, allows localhost http, and does not expose auth_token", () => {
     const fetchImpl = (async () => new Response("{}")) as typeof fetch;
     const client = new DirectRequestPaymentClient({

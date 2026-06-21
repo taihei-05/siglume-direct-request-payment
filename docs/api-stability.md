@@ -1,16 +1,20 @@
 # SDRP API And SDK Stability
 
-Status: public stability policy draft for Standard Hosted Checkout. It is not a
-separate customer agreement.
+Status: public stability policy for the public SDRP protocol/API/SDK surface. It
+is not a separate customer agreement.
 
 ## Scope
 
 This policy applies to the public Express/FastAPI SDK helpers and HTTP endpoints
-for Standard Hosted Checkout one-time payments on Polygon PoS for JPY/JPYC and
-USD/USDC.
+for SDRP on Polygon PoS for JPY/JPYC and USD/USDC:
 
-Micro Payment, Nano Payment, subscription, scheduled autopay, and custom
-settlement flows remain Beta/out of this scope.
+- Standard Hosted Checkout one-time payments
+- Micro Payment and Nano Payment amount-banded metered settlement
+- subscription approval/creation
+- scheduled autopay authorization/execution
+
+Custom settlement wallets, cross-chain payment, card payment, and merchant
+refund workflow remain outside this public SDRP SDK/API surface.
 
 ## Versioning
 
@@ -37,8 +41,9 @@ Signed webhook event names and existing field meanings are compatibility
 surfaces. New nullable fields may be added. Existing fields should not be
 renamed or repurposed without a migration guide.
 
-Standard Hosted Checkout merchants should treat `direct_payment.confirmed` as
-the durable payment signal. The SDK does not define refund webhook events.
+Merchants should treat `direct_payment.confirmed` as the durable payment signal
+for Standard/Micro/Nano payment acceptance and use statement APIs for Micro/Nano
+settlement reconciliation. The SDK does not define refund webhook events.
 
 ## Error Code Compatibility
 

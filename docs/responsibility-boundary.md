@@ -1,4 +1,4 @@
-# SDRP Standard Hosted Checkout Responsibility Boundary
+# SDRP Responsibility Boundary
 
 This SDK page maps the already-published Siglume service boundary to SDK fields
 and GA review scope. It does not create a separate merchant agreement.
@@ -15,24 +15,28 @@ buyer pays with a Siglume wallet; card payment is not available for Direct
 Request Payment; and Direct Request Payment is not stored value, prepaid points,
 escrow, a platform balance, or a card fallback.
 
-Standard Hosted Checkout is therefore a non-custodial payment protocol and
-hosted wallet checkout interface. It is not a card acquiring service, merchant
-of record service, custody service, or merchant underwriting/KYC product.
+SDRP is therefore a non-custodial payment protocol and hosted wallet checkout /
+wallet authorization interface. It is not a card acquiring service, merchant of
+record service, custody service, merchant refund system, or merchant
+underwriting/KYC product.
 
 ## GA Review Scope
 
-The Standard Hosted Checkout GA surface is limited to:
+The public SDRP GA surface is limited to:
 
 - one-time Standard Hosted Checkout payments
+- Micro Payment and Nano Payment amount-banded metered settlement
+- subscription approval/creation
+- scheduled autopay authorization/execution
 - Polygon PoS
 - JPY/JPYC and USD/USDC
 - Express and FastAPI SDK integrations
 - merchant-authenticated setup, signed payment webhooks, and payment
   reconciliation/status surfaces
 
-Micro Payment, Nano Payment, subscription, scheduled autopay, custom settlement
-rails, card payment, cross-chain payment, and merchant underwriting/KYC are not
-part of this GA surface.
+Custom settlement rails, card payment, cross-chain payment, merchant refund
+workflow, merchant internal accounting/support systems, and merchant
+underwriting/KYC are not part of this public SDRP GA surface.
 
 ## Siglume Responsibilities
 

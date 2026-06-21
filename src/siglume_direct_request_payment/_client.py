@@ -26,7 +26,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.5.3"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.5.4"
 SIGLUME_ACCOUNT_REQUIRED = "SIGLUME_ACCOUNT_REQUIRED"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
@@ -229,6 +229,65 @@ class DirectRequestPaymentConfirmationClassification(TypedDict, total=False):
     pricing_band: Literal["standard", "micro", "nano"] | str
 
 
+class DirectPaymentSubscriptionResponse(TypedDict, total=False):
+    subscription_status: str
+    mode: str
+    merchant: str
+    merchant_display_name: str | None
+    mandate: dict[str, Any]
+    receipt: dict[str, Any] | None
+    initial_charge: dict[str, Any] | None
+    idempotent_replay: bool | None
+    amount_minor: int | None
+    currency: str | None
+    token_symbol: str | None
+    cadence: str | None
+    fee_bps: int | None
+
+
+class ScheduledAutoPayAuthorizationResponse(TypedDict, total=False):
+    authorization_id: str
+    id: str
+    buyer_user_id: str
+    agent_id: str | None
+    product_listing_id: str
+    listing_id: str
+    access_grant_id: str | None
+    capability_key: str
+    operation_key: str | None
+    expected_amount_minor: int
+    max_amount_minor: int
+    currency: str
+    token_symbol: str
+    max_runs: int | None
+    status: str
+    token_hint: str | None
+    schedule_token: str | None
+    cadence: dict[str, Any]
+    metadata_jsonb: dict[str, Any]
+    expires_at: str | None
+    revoked_at: str | None
+    created_at: str | None
+    updated_at: str | None
+    requires_user_signature: bool | None
+    mandate: dict[str, Any] | None
+
+
+class ScheduledAutoPayExecutionResponse(TypedDict, total=False):
+    status: str
+    charge_status: str
+    authorization: ScheduledAutoPayAuthorizationResponse | dict[str, Any]
+    slot: dict[str, Any] | None
+    reason_code: str | None
+    reason: str | None
+    retryable: bool | None
+    manual_reconciliation_required: bool | None
+    direct_payment_requirement_id: str | None
+    direct_payment_requirement: dict[str, Any] | None
+    direct_payment_execution: dict[str, Any] | None
+    capability_result: dict[str, Any] | None
+
+
 class DirectRequestPaymentError(Exception):
     """Base error for Siglume Direct Request Payment SDK failures."""
 
@@ -357,6 +416,162 @@ class DirectRequestPaymentClient:
     ) -> dict[str, Any]:
         payload = build_allowance_execution_payload(requirement, await_finality=await_finality, metadata=metadata)
         return self.execute_prepared_transaction(payload)
+
+    def create_subscription(
+        self,
+        *,
+        merchant: str,
+        amount_minor: int,
+        currency: str,
+        challenge: str,
+        cadence: str | None = None,
+        user_signing: bool | None = None,
+        user_signing_flow: bool | None = None,
+        external_signature: str | None = None,
+        external_safe_tx_hash: str | None = None,
+    ) -> DirectPaymentSubscriptionResponse:
+        payload: dict[str, Any] = {
+            "merchant": _normalize_merchant(merchant),
+            "amount_minor": _positive_int(amount_minor, "amount_minor"),
+            "currency": _normalize_currency(currency),
+            "challenge": _require_non_empty(challenge, "challenge"),
+        }
+        if cadence is not None:
+            payload["cadence"] = _require_non_empty(cadence, "cadence")
+        if user_signing is not None:
+            payload["user_signing"] = bool(user_signing)
+        if user_signing_flow is not None:
+            payload["user_signing_flow"] = bool(user_signing_flow)
+        if external_signature is not None:
+            payload["external_signature"] = _require_non_empty(external_signature, "external_signature")
+        if external_safe_tx_hash is not None:
+            payload["external_safe_tx_hash"] = _require_non_empty(external_safe_tx_hash, "external_safe_tx_hash")
+        return self._request("POST", "/sdrp/direct-payments/subscriptions", json_body=payload)
+
+    def create_scheduled_auto_pay_authorization(
+        self,
+        *,
+        listing_id: str | None = None,
+        product_listing_id: str | None = None,
+        capability_key: str | None = None,
+        mode: str | None = None,
+        merchant: str | None = None,
+        challenge: str | None = None,
+        amount_minor: int | None = None,
+        agent_id: str | None = None,
+        operation_key: str | None = None,
+        allowed_operation_key: str | None = None,
+        expected_operation_key: str | None = None,
+        expected_amount_minor: int | None = None,
+        max_amount_minor: int | None = None,
+        max_amount_minor_per_run: int | None = None,
+        currency: str | None = None,
+        token_symbol: str | None = None,
+        buyer_token: str | None = None,
+        max_runs: int | None = None,
+        cadence: str | Mapping[str, Any] | None = None,
+        cadence_limit: Mapping[str, Any] | None = None,
+        expires_at: str | None = None,
+        valid_until: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        user_signing: bool | None = None,
+        user_signing_flow: bool | None = None,
+        authorization_id: str | None = None,
+        external_signature: str | None = None,
+        external_safe_tx_hash: str | None = None,
+    ) -> ScheduledAutoPayAuthorizationResponse:
+        payload: dict[str, Any] = {}
+        for key, value in {
+            "listing_id": listing_id,
+            "product_listing_id": product_listing_id,
+            "capability_key": capability_key,
+            "mode": mode,
+            "merchant": merchant,
+            "challenge": challenge,
+            "agent_id": agent_id,
+            "operation_key": operation_key,
+            "allowed_operation_key": allowed_operation_key,
+            "expected_operation_key": expected_operation_key,
+            "expires_at": expires_at,
+            "valid_until": valid_until,
+            "authorization_id": authorization_id,
+            "external_signature": external_signature,
+            "external_safe_tx_hash": external_safe_tx_hash,
+        }.items():
+            if value is not None:
+                payload[key] = _require_non_empty(value, key)
+        for key, value in {
+            "amount_minor": amount_minor,
+            "expected_amount_minor": expected_amount_minor,
+            "max_amount_minor": max_amount_minor,
+            "max_amount_minor_per_run": max_amount_minor_per_run,
+            "max_runs": max_runs,
+        }.items():
+            if value is not None:
+                payload[key] = _positive_int(value, key)
+        if currency is not None:
+            payload["currency"] = _normalize_currency(currency)
+        if token_symbol is not None:
+            payload["token_symbol"] = _normalize_token(token_symbol)
+        if buyer_token is not None:
+            payload["buyer_token"] = _normalize_token(buyer_token)
+        if cadence is not None:
+            payload["cadence"] = _require_non_empty(cadence, "cadence") if isinstance(cadence, str) else _clone_json_object(cadence, "cadence")
+        if cadence_limit is not None:
+            payload["cadence_limit"] = _clone_json_object(cadence_limit, "cadence_limit")
+        if metadata is not None:
+            payload["metadata"] = _clone_json_object(metadata, "metadata")
+        if user_signing is not None:
+            payload["user_signing"] = bool(user_signing)
+        if user_signing_flow is not None:
+            payload["user_signing_flow"] = bool(user_signing_flow)
+        return self._request("POST", "/account/auto-pay/scheduled-authorizations", json_body=payload)
+
+    def revoke_scheduled_auto_pay_authorization(self, authorization_id: str) -> ScheduledAutoPayAuthorizationResponse:
+        auth_id = quote(_require_non_empty(authorization_id, "authorization_id"), safe="")
+        return self._request("DELETE", f"/account/auto-pay/scheduled-authorizations/{auth_id}")
+
+    def execute_scheduled_auto_pay(
+        self,
+        *,
+        schedule_token: str,
+        slot_id: str,
+        input: Mapping[str, Any] | None = None,
+        arguments: Mapping[str, Any] | None = None,
+        scheduled_for: str | None = None,
+        draft_token: str | None = None,
+        await_finality: bool | None = None,
+        await_required_status: str | None = None,
+        await_timeout_seconds: int | None = None,
+        await_poll_seconds: int | None = None,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> ScheduledAutoPayExecutionResponse:
+        token = _require_non_empty(schedule_token, "schedule_token")
+        payload: dict[str, Any] = {"slot_id": _require_non_empty(slot_id, "slot_id")}
+        if input is not None:
+            payload["input"] = _clone_json_object(input, "input")
+        if arguments is not None:
+            payload["arguments"] = _clone_json_object(arguments, "arguments")
+        if scheduled_for is not None:
+            payload["scheduled_for"] = _require_non_empty(scheduled_for, "scheduled_for")
+        if draft_token is not None:
+            payload["draft_token"] = _require_non_empty(draft_token, "draft_token")
+        if await_finality is not None:
+            payload["await_finality"] = bool(await_finality)
+        if await_required_status is not None:
+            payload["await_required_status"] = _require_non_empty(await_required_status, "await_required_status")
+        if await_timeout_seconds is not None:
+            payload["await_timeout_seconds"] = _positive_int(await_timeout_seconds, "await_timeout_seconds")
+        if await_poll_seconds is not None:
+            payload["await_poll_seconds"] = _positive_int(await_poll_seconds, "await_poll_seconds")
+        if metadata is not None:
+            payload["metadata"] = _clone_json_object(metadata, "metadata")
+        return self._request(
+            "POST",
+            "/market/api-store/scheduled-auto-pay/execute",
+            json_body=payload,
+            extra_headers={"Authorization": f"Bearer {token}"},
+        )
 
     def get_buyer_metered_summary(
         self,
@@ -497,12 +712,21 @@ class DirectRequestPaymentClient:
             ),
         )
 
-    def _request(self, method: str, path: str, *, json_body: Any | None = None) -> Any:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: Any | None = None,
+        extra_headers: Mapping[str, str] | None = None,
+    ) -> Any:
         headers = {
             "Accept": "application/json",
             "Authorization": f"Bearer {self._auth_token}",
             "User-Agent": self.user_agent,
         }
+        if extra_headers:
+            headers.update({str(key): str(value) for key, value in extra_headers.items()})
         close_client = self._client is None
         client = self._client or httpx.Client(timeout=self.timeout)
         try:

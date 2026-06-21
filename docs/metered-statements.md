@@ -445,8 +445,8 @@ same key before repeating side effects.
 | Provider timeout | Unknown | No by default unless the provider later confirms successful work under the same idempotency key | Reconcile by idempotency key before retrying side effects. |
 | Client disconnects after provider success | Yes | Yes if the provider completed work and Siglume observed/records that success | The client may see failure while the provider completed work; use idempotency to avoid duplicate fulfillment. |
 | Duplicate idempotency key | Maybe | One usage event | Return/reconcile the first outcome; do not create another chargeable event. |
-| Usage cancellation/refund before settlement | Depends on platform support and status | Not self-service in this SDK release | Contact support or use the platform path Siglume provides for the account; do not mutate CSV/statement totals locally. |
-| Refund/adjustment after settlement | Settled on-chain | Not self-service in this SDK release | Handle through an explicit adjustment/refund process; do not reverse settled revenue by editing statements. |
+| Merchant refund or buyer adjustment | Outside SDRP metered settlement | Not provided by this SDK | Handle the buyer policy, transfer, and accounting in the merchant system; keep SDRP statement totals immutable and reconcile against original payment identifiers. |
+| Settlement dispute or ledger investigation | Depends on the recorded SDRP status | Private support / account channel | Use the SDRP statement ids, payment ids, and chain receipts for investigation; do not mutate CSV/statement totals locally. |
 
 `failed_chargeable` means the provider-side work is treated as completed or
 economically accepted even though the caller may have observed a failure state.

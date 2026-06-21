@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.4 - 2026-06-21
+
+- Promoted the public SDRP GA scope wording from Standard-only to the complete
+  public protocol/API/SDK surface: Standard Hosted Checkout, Micro Payment, Nano
+  Payment, subscription approval/creation, and scheduled autopay
+  authorization/execution on Polygon PoS for JPY/JPYC or USD/USDC.
+- Added named TypeScript and Python SDK methods for buyer-side subscription
+  creation and scheduled autopay create/execute/revoke calls.
+- Ensured scheduled autopay execution uses the schedule token as the endpoint
+  Authorization value, so a normal buyer/provider bearer token is not
+  misinterpreted as the schedule token.
+- Added the Public SDRP GA Evidence Map to separate SDK/API review scope from
+  non-SDRP merchant refund, card, KYC, merchant-of-record, and internal
+  accounting duties.
+
 ## 0.5.3 - 2026-06-21
 
 - Removed the public refund SDK/API surface that was introduced during the

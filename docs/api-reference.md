@@ -13,6 +13,7 @@ is `siglume-direct-request-payment` and imports as
 - [Webhook subscription helpers](#createwebhooksubscriptioninput-create_webhook_subscription)
 - [Webhook verification](#webhook-helpers)
 - [Payment classification](#classifydirectpaymentconfirmationevent-classify_direct_payment_confirmationevent)
+- [Subscription and scheduled autopay APIs](#subscription-and-scheduled-autopay-apis)
 - [Statement APIs](#metered-statement-apis)
 - [Constants and compatibility aliases](#exported-constants)
 
@@ -852,8 +853,143 @@ base URL configured on `DirectRequestPaymentClient`.
 `fetch`, `curl`, or your HTTP client for CSV exports.
 
 Python does not expose a public generic request helper. Use the named Python
-methods documented below for Micro / Nano statements, and ordinary HTTPS
-requests for endpoints that do not yet have a named Python SDK method.
+methods documented below for subscription, scheduled autopay, and Micro / Nano
+statements, and ordinary HTTPS requests for CSV exports.
+
+## Subscription And Scheduled Autopay APIs
+
+Subscription and scheduled autopay use the recurring challenge scheme. The
+merchant signs the recurring approval challenge; the buyer-side Siglume client
+creates the subscription or scheduled autopay authorization with the buyer's
+Siglume bearer token.
+
+### `createSubscription(input)` / `create_subscription(...)`
+
+Calls:
+
+```text
+POST /v1/sdrp/direct-payments/subscriptions
+```
+
+Input:
+
+- `merchant`
+- `amount_minor`
+- `currency`
+- `challenge`: recurring challenge string
+- `cadence`: `monthly`
+- optional passkey/self-custody fields: `user_signing`, `user_signing_flow`,
+  `external_signature`, `external_safe_tx_hash`
+
+TypeScript:
+
+```ts
+const subscription = await siglume.createSubscription({
+  merchant: "example_merchant",
+  amount_minor: 980,
+  currency: "JPY",
+  cadence: "monthly",
+  challenge: recurring.challenge,
+});
+```
+
+Python:
+
+```py
+subscription = siglume.create_subscription(
+    merchant="example_merchant",
+    amount_minor=980,
+    currency="JPY",
+    cadence="monthly",
+    challenge=recurring["challenge"],
+)
+```
+
+### `createScheduledAutoPayAuthorization(input)` / `create_scheduled_auto_pay_authorization(...)`
+
+Calls:
+
+```text
+POST /v1/account/auto-pay/scheduled-authorizations
+```
+
+For SDRP scheduled autopay, pass `mode: "external_402"`, `merchant`,
+`amount_minor`, `currency`, `challenge`, and optional cadence / max-run limits.
+The response contains `authorization_id`, status fields, and a `schedule_token`
+when the token can be shown to the scheduler.
+
+TypeScript:
+
+```ts
+const authorization = await siglume.createScheduledAutoPayAuthorization({
+  mode: "external_402",
+  merchant: "example_merchant",
+  amount_minor: 700,
+  currency: "JPY",
+  token_symbol: "JPYC",
+  challenge: recurring.challenge,
+  cadence: { unit: "daily" },
+});
+```
+
+Python:
+
+```py
+authorization = siglume.create_scheduled_auto_pay_authorization(
+    mode="external_402",
+    merchant="example_merchant",
+    amount_minor=700,
+    currency="JPY",
+    token_symbol="JPYC",
+    challenge=recurring["challenge"],
+    cadence={"unit": "daily"},
+)
+```
+
+### `executeScheduledAutoPay(input)` / `execute_scheduled_auto_pay(...)`
+
+Calls:
+
+```text
+POST /v1/market/api-store/scheduled-auto-pay/execute
+```
+
+This call is authenticated by the `schedule_token`, not by the buyer bearer token.
+The SDK sends `Authorization: Bearer <schedule_token>` for this endpoint so the
+normal buyer/provider token is not accidentally interpreted as the schedule
+token.
+
+TypeScript:
+
+```ts
+const execution = await siglume.executeScheduledAutoPay({
+  schedule_token: authorization.schedule_token!,
+  slot_id: "2026-06-21",
+  input: { task: "run" },
+  await_finality: true,
+});
+```
+
+Python:
+
+```py
+execution = siglume.execute_scheduled_auto_pay(
+    schedule_token=str(authorization["schedule_token"]),
+    slot_id="2026-06-21",
+    input={"task": "run"},
+    await_finality=True,
+)
+```
+
+### `revokeScheduledAutoPayAuthorization(authorization_id)` / `revoke_scheduled_auto_pay_authorization(...)`
+
+Calls:
+
+```text
+DELETE /v1/account/auto-pay/scheduled-authorizations/{authorization_id}
+```
+
+Revokes an active scheduled autopay authorization for the authenticated buyer.
 
 ## Metered Statement APIs
 
@@ -1293,6 +1429,9 @@ package exports `TypedDict` names for the high-risk response shapes:
 - `DirectRequestPaymentMerchantResponse`
 - `DirectRequestPaymentCheckoutSetupResult`
 - `DirectRequestPaymentMerchantSetupResponse` (compatibility alias for checkout setup result)
+- `DirectPaymentSubscriptionResponse`
+- `ScheduledAutoPayAuthorizationResponse`
+- `ScheduledAutoPayExecutionResponse`
 - `DirectRequestPaymentWebhookSubscription`
 - `DirectRequestPaymentWebhookDelivery`
 - `DirectRequestPaymentWebhookVerification`
