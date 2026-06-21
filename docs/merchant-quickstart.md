@@ -1,10 +1,10 @@
 # Merchant Quickstart
 
-This guide shows the minimum safe Siglume Direct Request Payment flow for an
+This guide shows the manual Siglume Direct Request Payment API flow for an
 external merchant.
 
 For the shortest existing-product integration path, use
-[10-Minute Product Integration](./quickstart-10-minutes.md). That guide copies
+[10-Minute Standard Checkout Integration](./quickstart-10-minutes.md). That guide copies
 checkout and webhook routes into an Express or FastAPI product, runs preflight
 before route mounting, and verifies Hosted Checkout plus webhook delivery after
 the routes are live. This merchant quickstart is broader and includes the
@@ -80,6 +80,17 @@ server-side, so the browser cannot tamper with the price or the redirect target.
 
 Register your return-URL origins once (open-redirect defense). The origin of
 your `webhook_callback_url` is auto-allowed in addition to these.
+
+The code below demonstrates the Hosted Checkout API shape. It is not the
+minimum production-safe order-store flow by itself, because a process crash
+after session creation but before your database write can lose the
+session/challenge mapping. Production products should use the generated
+checkout route and official database adapter from
+[10-Minute Standard Checkout Integration](./quickstart-10-minutes.md), or
+implement the same durable checkout-attempt pattern: claim one active attempt,
+reuse a stable nonce for retries, create the Hosted Checkout session, then
+persist `challenge_hash`, `checkout_session_id`, and `checkout_url` before
+redirecting.
 
 TypeScript:
 

@@ -2,8 +2,10 @@
 
 Use this page when an integration fails before, during, or after checkout.
 Where a Siglume API response includes `request_id`, `trace_id`, or
-`support_reference`, include that value when contacting Siglume support or your
-Siglume account contact.
+`support_reference`, keep that value for private support or your Siglume
+account contact. Do not post request IDs, trace IDs, support references, buyer
+identifiers, wallet addresses, tokens, or transaction-specific data in public
+GitHub issues.
 
 ## Hosted Checkout readiness
 
@@ -49,10 +51,14 @@ If `createCheckoutSession(...)` or `getCheckoutSession(...)` raises
 Stop the human checkout flow and contact Siglume support or your Siglume account
 contact for Hosted Checkout enablement.
 
-Use these public escalation paths during beta:
+Use these escalation paths during beta:
 
 - [Request Hosted Checkout access](https://github.com/taihei-05/siglume-direct-request-payment/issues/new?title=Hosted%20Checkout%20access%20request) before live checkout testing.
-- [Contact integration support](https://github.com/taihei-05/siglume-direct-request-payment/issues/new?title=SDRP%20integration%20support) with `request_id`, `trace_id`, `support_reference`, package version, and environment.
+- Use public GitHub issues for documentation or SDK bugs that do not include
+  transaction identifiers or customer data.
+- Use your private Siglume support channel or account contact for payment
+  investigation, request / trace / support references, buyer identifiers, wallet
+  addresses, or transaction-specific data.
 
 No public support SLA is promised during the beta. Keep a non-Siglume checkout
 fallback if your product needs guaranteed immediate payment-method availability.
@@ -75,9 +81,11 @@ fallback if your product needs guaranteed immediate payment-method availability.
 - Do not verify a parsed JSON object or a re-stringified JSON body.
 - Return a 2xx only after the order update or durable manual-review write has
   succeeded, or after you safely decided the event is duplicate/ignored.
-- Store processed webhook event ids or settlement identifiers durably, in the
-  same database transaction as the order update/review write. An in-memory set
-  is not enough for production.
+- Store processed webhook event ids or settlement identifiers durably. Use one
+  database transaction with the order update / review write where supported;
+  otherwise use an equivalent durable claim, stale-lease recovery, and
+  idempotent order-repair pattern such as the official adapters provide. An
+  in-memory set is not enough for production.
 - Do not assume delivery order. A settlement batch event may be reconciled from
   statement APIs rather than from one order challenge.
 - On signature failure, return a non-2xx status and do not mutate order state.

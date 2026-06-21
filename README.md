@@ -3,45 +3,26 @@
 [![npm version](https://img.shields.io/npm/v/@siglume/direct-request-payment.svg)](https://www.npmjs.com/package/@siglume/direct-request-payment)
 [![PyPI version](https://img.shields.io/pypi/v/siglume-direct-request-payment.svg)](https://pypi.org/project/siglume-direct-request-payment/)
 
-## Protocol Overview
-
-Siglume Direct Request Payment (SDRP) is a wallet payment protocol for products
-that want to accept Siglume wallet payments. The merchant fixes the order,
-amount, and currency on its server; the buyer pays with a Siglume wallet;
-Siglume applies the correct pricing and settlement path from the payment amount.
-
-**Relationship to HTTP 402.** SDRP is built around the HTTP **402 Payment
-Required** status: the Siglume platform returns **402 Payment Required** when a
-payment is required but not yet completed (for example, attempting to consume a
-payment requirement before it is confirmed). SDRP is **not wire-compatible with
-Coinbase's x402** — the challenge and payment-payload design is different. SDRP
-binds a signed `scheme:nonce:signature` challenge to the merchant, amount, and
-currency, settles through a Siglume wallet (JPYC / USDC), and confirms via a
-signed webhook; it does **not** use x402's HTTP-header payment payload or its
-single-request pay-and-retry handshake. The internal mode name `external_402`
-reflects this 402 lineage.
-
-Use this package when an external EC site, booking service, membership service,
-or paid API wants to accept Siglume wallet payments without taking custody of
-customer funds. The SDK creates and verifies one-time and recurring wallet
-payment authorizations; it does not hold customer funds or wallets.
+Siglume Direct Request Payment (SDRP) lets an existing Express or FastAPI
+product add Siglume wallet checkout with a local sandbox, signed webhooks, and
+official database adapters. The merchant fixes the order, amount, and currency
+on its server; the buyer pays with a Siglume wallet; Siglume applies the
+correct pricing and settlement path from the payment amount.
 
 ## Start Here
 
 - [Run the sandbox](./docs/sandbox.md) before using live credentials.
 - [Request Hosted Checkout access](https://github.com/taihei-05/siglume-direct-request-payment/issues/new?title=Hosted%20Checkout%20access%20request) for a beta merchant account. Include your merchant key and desired live origin; do not include tokens, webhook secrets, or wallet private material.
-- [Contact integration support](https://github.com/taihei-05/siglume-direct-request-payment/issues/new?title=SDRP%20integration%20support) with `request_id`, `trace_id`, or `support_reference` when available.
+- Use public GitHub issues for access requests and documentation / SDK bugs only.
+  Do not post request IDs, trace IDs, support references, buyer identifiers,
+  wallet addresses, tokens, or transaction-specific data in a public issue. For
+  payment investigation, use your private Siglume support channel or account
+  contact.
 - Read the [current beta limitations](#current-public-beta-scope) before promising refunds, recurring lifecycle, or Micro / Nano settlement behavior to your own users.
 
-## Documentation Map
+## Current Public Beta Scope
 
-- [10-Minute Product Integration](./docs/quickstart-10-minutes.md): Standard Hosted Checkout plumbing for Express/FastAPI when prerequisites are ready.
-- [SDRP Sandbox](./docs/sandbox.md): local checkout, signed webhook, and Micro / Nano accounting inspection before live credentials.
-- [Merchant Quickstart](./docs/merchant-quickstart.md): manual API flow and recurring challenge notes.
-- [API Reference](./docs/api-reference.md): TypeScript/Python methods, CLI checks, webhook helpers, and statement APIs.
-- [Troubleshooting](./docs/troubleshooting.md): Hosted Checkout access, refunds, support escalation, and safe buyer messages.
-
-**Current public beta scope.** SDRP currently settles JPYC / USDC on **Polygon
+SDRP currently settles JPYC / USDC on **Polygon
 PoS only**. The public SDK does not expose chain selection, cross-chain payment,
 multiple merchant settlement wallets, per-payment settlement-wallet override, or
 split / multi-wallet charging. Route each payment through the buyer's Siglume
@@ -60,6 +41,27 @@ token for setup. `DirectRequestPaymentClient` requires the buyer's Siglume
 bearer token for payment requirements and buyer statements, or the provider /
 merchant user's Siglume bearer token for provider statements. Do not use a
 Developer Portal `cli_` API key with this package.
+
+## Documentation Map
+
+- [10-Minute Standard Checkout Integration](./docs/quickstart-10-minutes.md): Standard Hosted Checkout plumbing for Express/FastAPI when prerequisites are ready.
+- [SDRP Sandbox](./docs/sandbox.md): local checkout, signed webhook, and Micro / Nano accounting inspection before live credentials.
+- [Merchant Quickstart](./docs/merchant-quickstart.md): manual API overview and recurring challenge notes.
+- [Pricing and settlement](./docs/pricing.md): amount bands, seller-borne fees, and Micro / Nano threshold close rules.
+- [API Reference](./docs/api-reference.md): TypeScript/Python methods, CLI checks, webhook helpers, and statement APIs.
+- [Troubleshooting](./docs/troubleshooting.md): Hosted Checkout access, refunds, support escalation, and safe buyer messages.
+- [SDRP vs x402](./docs/concepts/sdrp-vs-x402.md): how SDRP relates to HTTP 402 and why it is not x402 wire-compatible.
+
+## Protocol Overview
+
+Use this package when an external EC site, booking service, membership service,
+or paid API wants to accept Siglume wallet payments without taking custody of
+customer funds. The SDK creates and verifies one-time and recurring wallet
+payment authorizations; it does not hold customer funds or wallets.
+
+SDRP is built around the HTTP **402 Payment Required** lineage, but it is not
+wire-compatible with Coinbase's x402. See [SDRP vs x402](./docs/concepts/sdrp-vs-x402.md)
+for the detailed comparison.
 
 ## Two Kinds of Buyer
 
@@ -98,7 +100,7 @@ card-style "instant" checkout for first-time buyers.
 
 ## Fast Path
 
-Use [10-Minute Product Integration](./docs/quickstart-10-minutes.md) to add
+Use [10-Minute Standard Checkout Integration](./docs/quickstart-10-minutes.md) to add
 Standard Hosted Checkout plumbing to an existing Express or FastAPI product
 when merchant credentials, active billing mandate, Hosted Checkout access, an
 HTTPS webhook URL, login/session middleware, and a real order database already
@@ -183,6 +185,7 @@ you must inspect the settlement machine fields before deciding whether the event
 means Standard settled payment, Micro / Nano accepted usage, or aggregated
 Micro / Nano settlement.
 
+<!-- siglume-example: ts readme-hosted-checkout -->
 ```ts
 import { DirectRequestPaymentMerchantClient } from "@siglume/direct-request-payment";
 
@@ -216,6 +219,7 @@ redirect(session.checkout_url); // -> https://siglume.com/pay/<session_id>
 //    show status in your own UI.
 ```
 
+<!-- siglume-example: py readme-hosted-checkout -->
 ```py
 import os
 

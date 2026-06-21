@@ -1,4 +1,4 @@
-# 10-Minute Product Integration
+# 10-Minute Standard Checkout Integration
 
 This guide is the supported 10-minute path for adding SDRP Hosted Checkout to
 an existing product when these prerequisites are already ready:
@@ -10,10 +10,11 @@ an existing product when these prerequisites are already ready:
 - your product already has a real order database,
 - the live path has a public HTTPS webhook URL.
 
-The 10-minute scope is Standard Payment plumbing, not full payment operations.
-Start with dependencies installed and merchant credentials ready; finish when a
-sandbox Standard checkout succeeds, a signed webhook reaches your product, the
-DB order becomes paid, and duplicate delivery does not update the order twice.
+The 10-minute scope is Standard Payment plumbing in sandbox, not full payment
+operations or a live go-live. Start with dependencies installed and merchant
+credentials ready; finish the 10-minute sandbox phase when a sandbox Standard
+checkout succeeds, a signed webhook reaches your product, the DB order becomes
+paid, and duplicate delivery does not update the order twice.
 
 The goal is to add two routes to your own server:
 
@@ -105,6 +106,7 @@ generated files are intentionally small and are meant to be edited.
 
 Express:
 
+<!-- siglume-example: ts quickstart-express -->
 ```ts
 import express from "express";
 import type { Request } from "express";
@@ -114,6 +116,9 @@ import {
   type SiglumeSdrpRouterOptions,
 } from "./siglume/siglume-sdrp-routes.js";
 import { createPrismaSiglumeOrderStore } from "./siglume/siglume-order-store.sql.js";
+import { prisma } from "../database/prisma.js";
+
+const app = express();
 
 function currentUserId(req: Request): string | null {
   return String((req as Request & { user?: { id?: string } }).user?.id || "") || null;
@@ -160,11 +165,15 @@ app.use("/payments", createSiglumeSdrpCheckoutRouter(siglumeOptions));
 
 FastAPI:
 
+<!-- siglume-example: py quickstart-fastapi -->
 ```py
+from fastapi import FastAPI
 from .auth import current_user_id
 from .database import SessionLocal, user_can_pay_order
 from .siglume.siglume_order_store_sqlalchemy import SQLAlchemySiglumeOrderStore
 from .siglume.siglume_sdrp_routes import create_siglume_sdrp_router
+
+app = FastAPI()
 
 def authorize_order(order: dict, request) -> bool:
     user_id = current_user_id(request)
@@ -190,7 +199,10 @@ Replace the example store with your product's order database. The adapter must:
 - return the server-authored `amount_minor` and `currency`,
 - create or reuse one active checkout attempt with a stable nonce,
 - persist `challenge_hash`, `checkout_session_id`, and `checkout_url` before redirecting,
-- process webhook event ids durably in the same transaction as the order update,
+- process webhook event ids durably in the same database transaction as the
+  order update where supported; otherwise use an equivalent durable claim,
+  stale-lease recovery, and idempotent order-repair pattern supplied by the
+  official adapter,
 - mark Standard orders paid exactly once,
 - route unknown classifications to manual review.
 
@@ -401,18 +413,31 @@ curl -X POST https://api.your-product.example/payments/checkout/siglume/start \
 
 Redirect the shopper to the returned `checkout_url`.
 
-## 8. Done means
+## 8. 10-Minute Sandbox Complete
 
-Your product is integrated when:
+Your local Standard checkout plumbing is integrated when:
 
 - `npx siglume-check verify --sandbox` passes against your local product,
-- `npx siglume-check verify` passes against live Siglume credentials,
 - your product has mounted checkout and webhook routes,
 - your order database uses the SQL/ORM, DynamoDB, MongoDB, Firestore, or
-  SQLAlchemy adapter, or an equivalent transactional store,
+  SQLAlchemy adapter, or an equivalent durable store,
 - the signed webhook verifies against the raw body,
 - `standard_settled` marks the order paid once,
 - a failed webhook handler is retried and duplicate webhook deliveries do not double-fulfill the order.
+
+## 9. Live Go-Live Complete
+
+Your live checkout path is ready only after the sandbox phase above and all of
+these live checks pass:
+
+- `siglume-check preflight` passes with live credentials,
+- `siglume-check verify` passes against the public HTTPS webhook URL,
+- Hosted Checkout access is enabled for the merchant account,
+- the merchant billing mandate is active,
+- your support / refund / adjustment process is documented for your account,
+- production monitoring captures webhook failures, checkout-session creation
+  failures, and payment investigation identifiers without exposing them in
+  public issues.
 
 For Micro / Nano revenue reconciliation, read
 [Payment lifecycle](./payment-lifecycle.md) and

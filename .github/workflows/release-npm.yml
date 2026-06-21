@@ -83,6 +83,7 @@ jobs:
             exit 1
           fi
       - run: npm run typecheck
+      - run: npm run docs:check
       - run: npm test
       - run: npm run prisma:generate:test
       - run: npm run test:orm-matrix

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.29 - 2026-06-21
+
+- Made Micro / Nano amount-threshold close wording normative across pricing and
+  statement docs: `accrued_provider_gross_minor >= settlement_threshold_minor`
+  closes the active buyer / provider / token / pricing-band batch.
+- Reworked the 10-minute guide as Standard Checkout sandbox completion plus a
+  separate live go-live checklist, and added missing Express `prisma` import.
+- Clarified that manual Hosted Checkout snippets are API-shape examples, while
+  production integrations should use the generated checkout route / official
+  order-store adapter or an equivalent durable checkout-attempt pattern.
+- Split public issue guidance from private payment-investigation support so
+  request IDs, trace IDs, support references, buyer identifiers, wallet
+  addresses, tokens, and transaction-specific data are not posted publicly.
+- Expanded the API Reference environment-variable table for CLI, sandbox, and
+  generated template variables used by the 10-minute path.
+- Added documentation CI for Markdown links, settlement wording invariants, and
+  type / syntax checks for marked README and quickstart code blocks.
+
 ## 0.4.28 - 2026-06-21
 
 - Hardened the MongoDB order-store adapter so webhook redelivery repairs the

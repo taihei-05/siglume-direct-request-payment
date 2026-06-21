@@ -16,6 +16,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run docs:check
       - run: npm test
       - run: npm run build
       - run: node bin/siglume-sdrp.mjs preflight --no-api --merchant example_merchant --origin https://shop.example.com --webhook-url https://api.example.com/payments/webhooks/siglume

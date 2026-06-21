@@ -59,10 +59,13 @@ users:
 - `siglume-order-store.firestore.ts`: Firestore transactions and single-field
   challenge lookup.
 
-Keep `processWebhookEventOnce()` transactional: record the webhook event as
-processed only after the order update or review write succeeds. The generated
-route defaults to Standard-only. Enable `allow_metered_payments` only after you
-implement Micro / Nano settlement reconciliation and past-due handling.
+Keep `processWebhookEventOnce()` durable: use one database transaction where
+your database supports it, and otherwise use the official adapter's equivalent
+durable claim, stale-lease recovery, and idempotent order-repair pattern. Record
+the webhook event as processed only after the order update or review write
+succeeds. The generated route defaults to Standard-only. Enable
+`allow_metered_payments` only after you implement Micro / Nano settlement
+reconciliation and past-due handling.
 The route paths become:
 
 - `POST /payments/checkout/siglume/start`

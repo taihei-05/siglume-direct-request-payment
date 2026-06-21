@@ -7,14 +7,14 @@ is `siglume-direct-request-payment` and imports as
 ## Navigation
 
 - [Environment variables](#environment-variables)
-- [One-time challenge helpers](#createdirectrequestpaymentchallengeinput--create_direct_request_payment_challenge)
-- [Recurring challenge helpers](#createdirectrequestpaymentrecurringchallengeinput--create_direct_request_payment_recurring_challenge)
-- [Hosted Checkout](#createcheckoutsessioninput--create_checkout_session)
-- [Webhook subscription helpers](#createwebhooksubscriptioninput--create_webhook_subscription)
-- [Webhook verification](#verifydirectpaymentwebhookinput--verify_direct_payment_webhook)
-- [Payment classification](#classifydirectpaymentconfirmationevent--classify_direct_payment_confirmationevent)
-- [Statement APIs](#statement-apis)
-- [Constants and compatibility aliases](#constants)
+- [One-time challenge helpers](#createdirectrequestpaymentchallengeinput-create_direct_request_payment_challenge)
+- [Recurring challenge helpers](#createdirectrequestpaymentrecurringchallengeinput-create_direct_request_payment_recurring_challenge)
+- [Hosted Checkout](#createcheckoutsessioninput-create_checkout_session)
+- [Webhook subscription helpers](#createwebhooksubscriptioninput-create_webhook_subscription)
+- [Webhook verification](#webhook-helpers)
+- [Payment classification](#classifydirectpaymentconfirmationevent-classify_direct_payment_confirmationevent)
+- [Statement APIs](#metered-statement-apis)
+- [Constants and compatibility aliases](#exported-constants)
 
 ## Current Public Beta Scope
 
@@ -31,7 +31,7 @@ cases the buyer pays from a Siglume wallet (JPYC for JPY, USDC for USD) — not 
 card — and the merchant SDK never authenticates the buyer.
 
 - **Human web shopper → Hosted Checkout (Beta; server rollout in progress).** Call
-  [`createCheckoutSession`](#createcheckoutsessioninput--create_checkout_session)
+  [`createCheckoutSession`](#createcheckoutsessioninput-create_checkout_session)
   on `DirectRequestPaymentMerchantClient` and redirect the shopper to the
   returned `checkout_url`. The shopper signs into Siglume on the hosted page,
   approves, and pays from their own wallet.
@@ -54,15 +54,29 @@ Standard can be marked paid only after settled per-payment finality, while Micro
 
 ## Environment Variables
 
+### SDK and API clients
+
 | Name | Used by | Purpose |
 | --- | --- | --- |
 | `SIGLUME_DIRECT_PAYMENT_CHALLENGE_SECRET` | merchant server | HMAC secret for order challenges |
-| `SIGLUME_MERCHANT_AUTH_TOKEN` | merchant setup helper | merchant Siglume bearer token for self-service setup |
+| `SIGLUME_MERCHANT_AUTH_TOKEN` | merchant setup / Hosted Checkout helper | merchant Siglume bearer token for self-service setup and checkout-session creation |
 | `SIGLUME_AUTH_TOKEN` | user-authenticated helper | buyer Siglume bearer token for payment / buyer statements, or provider Siglume bearer token for provider statements |
 | `SIGLUME_API_BASE` | optional | API base URL override; defaults to `https://siglume.com/v1` |
 | `SIGLUME_ENV` | optional | Set to `sandbox` to default clients and readiness to the local sandbox API |
 | `SIGLUME_SANDBOX_API_BASE` | optional | Sandbox API override; defaults to `http://127.0.0.1:8787/v1` when `SIGLUME_ENV=sandbox` |
-| `SIGLUME_WEBHOOK_SECRET` | merchant server | webhook signing secret returned as `whsec_...` |
+| `SIGLUME_WEBHOOK_SECRET` | merchant server / generated routes / CLI verify | webhook signing secret returned as `whsec_...` |
+
+### CLI, sandbox, and generated templates
+
+| Name | Used by | Purpose |
+| --- | --- | --- |
+| `SIGLUME_DIRECT_PAYMENT_MERCHANT` | generated routes / CLI checks | merchant key used for checkout sessions and challenge validation; not a secret |
+| `SHOP_PUBLIC_ORIGIN` | generated routes / CLI checks / sandbox | public origin used to build checkout return URLs, for example `https://www.your-product.example` or `http://localhost:3000` |
+| `SHOP_WEBHOOK_URL` | CLI checks / sandbox | public or local webhook callback URL for signed webhook delivery |
+| `SIGLUME_DIRECT_PAYMENT_TEST_CURRENCY` | CLI checks | optional probe currency; defaults to `JPY` |
+| `SIGLUME_DIRECT_PAYMENT_TEST_AMOUNT_MINOR` | CLI checks | optional Standard-band probe amount in minor units; defaults to a Standard amount |
+| `SIGLUME_ENV` | CLI checks / generated routes | set to `sandbox` for local sandbox defaults |
+| `SIGLUME_API_BASE` | CLI checks / generated routes | live or sandbox API base override |
 
 Do not use a Developer Portal `cli_` API key as either auth token. Merchant
 setup is merchant-JWT authenticated; payment requirement creation is
