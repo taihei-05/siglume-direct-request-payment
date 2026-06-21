@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.3 - 2026-06-21
+
+- Removed the public refund SDK/API surface that was introduced during the
+  Standard Hosted Checkout GA hardening pass. SDRP is a payment protocol and
+  hosted checkout interface; merchant refund policy, support, transfer, and
+  accounting stay outside the SDK.
+- Removed refund webhook and refund receipt language from the public stability,
+  troubleshooting, responsibility-boundary, and API reference docs.
+- Renamed the status document to "Status and Service Objectives" because the
+  published SDK docs describe operational targets, not a contractual SLA.
+- Updated `siglume-check preflight` / `siglume-check verify` to call the
+  Standard Hosted Checkout readiness API directly and print `ready`,
+  `missing_requirements`, `blockers`, responsibility attestation, and live-mode
+  checks before the checkout probe.
+
 ## 0.5.2 - 2026-06-21
 
 - Updated PyPI package metadata so the public project page reflects the
@@ -15,9 +30,8 @@
   Direct Request Payment developer page, including
   `merchant_responsibility_attested`, `provider_role`, and
   `responsibility_boundary` fields.
-- Reworded Standard refunds as a merchant refund workflow with idempotency,
-  amount caps, audit/CSV/webhook surfaces, and receipt-tracked `succeeded`
-  semantics rather than a custody or PSP refund rail.
+- Added responsibility-boundary wording that was superseded by 0.5.3, where the
+  public SDK refund surface was removed.
 - Added a responsibility-boundary guide and updated setup examples so external
   reviews do not treat merchant underwriting, card acquiring, custody, or
   merchant-of-record obligations as SDK readiness blockers.
@@ -26,10 +40,10 @@
 
 - Added self-service Standard Hosted Checkout readiness fields and SDK helpers
   for merchant setup, readiness reads, and live-mode requests.
-- Added Standard refund SDK helpers for create/list/get/fail flows with
-  `Idempotency-Key` support.
-- Added public operating-draft docs for status/SLA, API stability, refund
-  handling, reconciliation, and Beta-separated Micro/Nano scope.
+- Added a public refund SDK surface that was removed in 0.5.3 after the
+  responsibility boundary was narrowed back to payment protocol behavior.
+- Added public operating-draft docs for service status, API stability,
+  reconciliation, and Beta-separated Micro/Nano scope.
 - Made official checkout adapters fail closed when `authorize_order` is missing
   unless `allow_unverified_order_lookup` is explicitly set, added the
   `SIGLUME_ACCOUNT_REQUIRED` export, and made sandbox redelivery expose failed

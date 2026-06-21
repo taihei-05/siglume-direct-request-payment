@@ -138,6 +138,13 @@ async function readiness(options, mode = { requireProbe: true, label: "readiness
     });
     let matchingWebhookSubscription = null;
     try {
+      const hostedReadiness = await merchantClient.getMerchantReadiness(merchant);
+      recordHostedCheckoutReadinessChecks(checks, hostedReadiness, { sandboxMode });
+    } catch (error) {
+      check(checks, "hosted_checkout_readiness_api", false, apiErrorMessage(error, "Could not read Standard Hosted Checkout readiness."));
+    }
+
+    try {
       const merchantResponse = await merchantClient.getMerchant(merchant);
       const account = merchantResponse.merchant_account || {};
       check(checks, "merchant_exists", Boolean(account.merchant), "Run merchant setup before checkout.");
@@ -345,6 +352,23 @@ async function handleSandboxRequest(req, res, state, port) {
       },
       challenge_secret_created: true,
       mandate: { mandate_id: "mandate_sandbox_active", status: "active" },
+    });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === `/v1/sdrp/direct-payments/merchants/${state.merchant}/readiness`) {
+    sendEnvelope(res, 200, {
+      standard_hosted_checkout_readiness: {
+        scope: "standard_hosted_checkout",
+        ready: true,
+        status: "ready",
+        checks: [],
+        missing_requirements: [],
+        blockers: [],
+        merchant_responsibility_attested: true,
+        responsibility_attestation_version: "sdrp_standard_hosted_checkout_responsibility_v1",
+        live_mode_enabled: true,
+      },
     });
     return;
   }
@@ -952,6 +976,10 @@ function check(checks, name, passed, message) {
   checks.push({ name, status: passed ? "pass" : "fail", message: passed ? "ready" : message });
 }
 
+function detailCheck(checks, name, passed, passMessage, failMessage) {
+  checks.push({ name, status: passed ? "pass" : "fail", message: passed ? passMessage : failMessage });
+}
+
 function warnIf(checks, name, condition, message) {
   if (condition) {
     checks.push({ name, status: "warn", message });
@@ -960,6 +988,58 @@ function warnIf(checks, name, condition, message) {
 
 function hasFailures(checks) {
   return checks.some((item) => item.status === "fail");
+}
+
+function recordHostedCheckoutReadinessChecks(checks, readiness, { sandboxMode }) {
+  const data = readiness && typeof readiness === "object" ? readiness : {};
+  const missing = stringList(data.missing_requirements);
+  const blockers = stringList(data.blockers);
+  const status = String(data.status || "unknown");
+  detailCheck(checks, "hosted_checkout_readiness_api", true, `status=${status}`, "unreachable");
+  detailCheck(
+    checks,
+    "hosted_checkout_readiness_ready",
+    data.ready === true,
+    "ready=true",
+    `ready=false; status=${status}; missing=${formatList(missing)}; blockers=${formatList(blockers)}`,
+  );
+  detailCheck(
+    checks,
+    "hosted_checkout_missing_requirements",
+    missing.length === 0,
+    "missing_requirements=[]",
+    `missing_requirements=${formatList(missing)}`,
+  );
+  detailCheck(
+    checks,
+    "hosted_checkout_blockers",
+    blockers.length === 0,
+    "blockers=[]",
+    `blockers=${formatList(blockers)}`,
+  );
+  detailCheck(
+    checks,
+    "merchant_responsibility_attested",
+    data.merchant_responsibility_attested === true,
+    `merchant_responsibility_attested=true; version=${String(data.responsibility_attestation_version || "unspecified")}`,
+    "merchant_responsibility_attested=false",
+  );
+  detailCheck(
+    checks,
+    "live_mode_enabled",
+    sandboxMode || data.live_mode_enabled === true,
+    sandboxMode ? "sandbox mode" : "live_mode_enabled=true",
+    "live_mode_enabled=false",
+  );
+}
+
+function stringList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function formatList(value) {
+  return value.length ? value.join(",") : "[]";
 }
 
 function isHttpsOrigin(value) {

@@ -26,7 +26,7 @@ DIRECT_REQUEST_PAYMENT_RECEIPT_KIND = "sdrp_direct_payment"
 DIRECT_REQUEST_PAYMENT_ALLOWANCE_RECEIPT_KIND = "sdrp_direct_payment_allowance"
 DIRECT_REQUEST_PAYMENT_REFERENCE_TYPE = "sdrp_direct_payment_requirement"
 DEFAULT_WEBHOOK_TOLERANCE_SECONDS = 300
-DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.5.2"
+DIRECT_REQUEST_PAYMENT_SDK_VERSION = "0.5.3"
 SIGLUME_ACCOUNT_REQUIRED = "SIGLUME_ACCOUNT_REQUIRED"
 DIRECT_REQUEST_PAYMENT_STANDARD_SETTLED_STATUS = "settled"
 DIRECT_REQUEST_PAYMENT_METERED_ACCEPTED_STATUS = "pending_settlement"
@@ -179,32 +179,6 @@ class DirectRequestPaymentMerchantResponse(TypedDict, total=False):
     mandate: dict[str, Any] | None
     standard_hosted_checkout_readiness: dict[str, Any] | None
     next_steps: dict[str, Any]
-
-
-class DirectRequestPaymentRefund(TypedDict, total=False):
-    refund_id: str
-    id: str
-    merchant: str
-    merchant_user_id: str
-    buyer_user_id: str
-    checkout_session_id: str | None
-    direct_payment_requirement_id: str | None
-    direct_payment_requirement_row_id: str | None
-    payment_chain_receipt_id: str | None
-    refund_chain_receipt_id: str | None
-    currency: str
-    token_symbol: str
-    amount_minor: int
-    reason: str | None
-    status: str
-    failure_code: str | None
-    failure_message: str | None
-    metadata_jsonb: dict[str, Any]
-    requested_at: str | None
-    succeeded_at: str | None
-    failed_at: str | None
-    created_at: str | None
-    updated_at: str | None
 
 
 class DirectRequestPaymentWebhookSubscription(TypedDict, total=False):
@@ -725,71 +699,6 @@ class DirectRequestPaymentMerchantClient:
             f"/sdrp/direct-payments/merchants/{merchant_key}/billing-mandate",
             json_body=payload,
         )
-
-    def create_refund(
-        self,
-        *,
-        idempotency_key: str,
-        requirement_id: str | None = None,
-        direct_payment_requirement_id: str | None = None,
-        checkout_session_id: str | None = None,
-        amount_minor: int | None = None,
-        reason: str | None = None,
-        refund_chain_receipt_id: str | None = None,
-    ) -> DirectRequestPaymentRefund:
-        payload: dict[str, Any] = {}
-        if requirement_id is not None:
-            payload["requirement_id"] = _require_non_empty(requirement_id, "requirement_id")
-        if direct_payment_requirement_id is not None:
-            payload["direct_payment_requirement_id"] = _require_non_empty(
-                direct_payment_requirement_id,
-                "direct_payment_requirement_id",
-            )
-        if checkout_session_id is not None:
-            payload["checkout_session_id"] = _require_non_empty(checkout_session_id, "checkout_session_id")
-        if amount_minor is not None:
-            payload["amount_minor"] = _positive_int(amount_minor, "amount_minor")
-        if reason is not None:
-            payload["reason"] = _require_non_empty(reason, "reason")
-        if refund_chain_receipt_id is not None:
-            payload["refund_chain_receipt_id"] = _require_non_empty(refund_chain_receipt_id, "refund_chain_receipt_id")
-        return self._request(
-            "POST",
-            "/sdrp/direct-payments/refunds",
-            json_body=payload,
-            headers={"Idempotency-Key": _require_non_empty(idempotency_key, "idempotency_key")},
-        )
-
-    def list_refunds(self, *, status: str | None = None, limit: int | None = None) -> DirectRequestPaymentListResponse:
-        params: dict[str, str] = {}
-        if status is not None:
-            params["status"] = _require_non_empty(status, "status")
-        if limit is not None:
-            params["limit"] = str(_positive_int(limit, "limit"))
-        query = f"?{urlencode(params)}" if params else ""
-        return self._request("GET", f"/sdrp/direct-payments/refunds{query}")
-
-    def get_refund(self, refund_id: str) -> DirectRequestPaymentRefund:
-        rid = _require_non_empty(refund_id, "refund_id")
-        return self._request("GET", f"/sdrp/direct-payments/refunds/{quote(rid, safe='')}")
-
-    def fail_refund(
-        self,
-        refund_id: str,
-        *,
-        failure_code: str | None = None,
-        failure_message: str | None = None,
-        reason: str | None = None,
-    ) -> DirectRequestPaymentRefund:
-        payload: dict[str, Any] = {}
-        if failure_code is not None:
-            payload["failure_code"] = _require_non_empty(failure_code, "failure_code")
-        if failure_message is not None:
-            payload["failure_message"] = _require_non_empty(failure_message, "failure_message")
-        if reason is not None:
-            payload["reason"] = _require_non_empty(reason, "reason")
-        rid = _require_non_empty(refund_id, "refund_id")
-        return self._request("POST", f"/sdrp/direct-payments/refunds/{quote(rid, safe='')}/fail", json_body=payload)
 
     def create_webhook_subscription(
         self,

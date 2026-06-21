@@ -1,9 +1,12 @@
-# Standard Hosted Checkout Status And SLA
+# Standard Hosted Checkout Status And Service Objectives
 
 This SDK page summarizes the public status and support surfaces for Standard
 Hosted Checkout. The service boundary is governed by the published Siglume Terms
 (`https://siglume.com/legal/terms`) and Direct Request Payment developer page
 (`https://siglume.com/developers/direct-request-payment`).
+
+These are operational objectives, not a contractual SLA, service-credit policy,
+or plan-specific support agreement.
 
 ## Scope
 
@@ -40,15 +43,15 @@ Free, sandbox, and Beta surfaces do not receive the same operational targets.
 
 | Severity | Definition | Target response |
 | --- | --- | --- |
-| Sev 1 | Broad inability to create or settle Standard Hosted Checkout payments, or confirmed double-charge/double-refund risk | Acknowledge within 1 hour, publish/update incident report |
+| Sev 1 | Broad inability to create or settle Standard Hosted Checkout payments, or confirmed double-charge risk | Acknowledge within 1 hour, publish/update incident report |
 | Sev 2 | Material degradation, delayed webhooks, partial region/account impact, or reconciliation hold | Acknowledge within 4 business hours |
 | Sev 3 | Isolated integration issue, documentation defect, or non-urgent support question | Acknowledge within 2 business days |
 
 ## Maintenance
 
 Scheduled maintenance should be announced at least 3 business days in advance
-when it may affect live checkout, webhook delivery, merchant refund workflow
-records, or reconciliation. Emergency maintenance may be shorter.
+when it may affect live checkout, webhook delivery, readiness, or
+reconciliation. Emergency maintenance may be shorter.
 
 ## Incident Reports
 
@@ -59,11 +62,11 @@ an incident report covering:
 - affected endpoints or merchants
 - customer impact
 - mitigation
-- reconciliation / merchant refund workflow actions
+- reconciliation actions
 - prevention follow-up
 
-## Refund And Reconciliation Holds
+## Reconciliation Holds
 
 If reconciliation detects a ledger/on-chain/settlement mismatch, affected
-settlement or protocol workflow actions should be held, an incident record
-opened, and operator review required before release.
+settlement or protocol actions should be held, an incident record opened, and
+operator review required before release.

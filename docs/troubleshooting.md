@@ -66,9 +66,9 @@ Use these escalation paths:
   investigation, request / trace / support references, buyer identifiers, wallet
   addresses, or transaction-specific data.
 
-Public SLA/status terms must be taken from your Siglume account agreement or
-the published status/SLA document for your plan. Until those are published for
-your account, keep a non-Siglume checkout fallback if your product needs
+Public support/status terms must be taken from your Siglume account agreement
+or the published service objectives for your plan. Until those are published
+for your account, keep a non-Siglume checkout fallback if your product needs
 guaranteed immediate payment-method availability.
 
 ## API errors
@@ -77,7 +77,7 @@ guaranteed immediate payment-method availability.
 | --- | --- | --- | --- | --- | --- |
 | `401` / `403` | Missing token, expired token, wrong account, or insufficient scope. | No, not until credentials are fixed. | n/a | "Payment setup needs attention. Please try later." | Check whether you used a merchant Siglume bearer token for merchant setup and a buyer/provider Siglume bearer token for buyer/provider APIs. Do not use `cli_` keys. |
 | `409` / `HOSTED_CHECKOUT_READINESS_REQUIRED` | Merchant readiness is incomplete. | No. | n/a | "Payment setup needs attention. Please try later." | Read readiness details; complete billing, webhook, terms, sandbox, merchant responsibility attestation, and live-mode checks. |
-| `404` / `409` Hosted Checkout unavailable | Hosted Checkout route or platform switch is unavailable. | No. | n/a | "This payment method is not available for this store yet." | Check status/SLA docs or private support; use agent/API only if that is actually your buyer flow. |
+| `404` / `409` Hosted Checkout unavailable | Hosted Checkout route or platform switch is unavailable. | No. | n/a | "This payment method is not available for this store yet." | Check service-objectives docs or private support; use agent/API only if that is actually your buyer flow. |
 | `409` idempotency conflict | The same idempotency key was reused with different Micro / Nano input. | No. | Do not reuse with different payload. | "This payment attempt could not be completed. Please retry from the order page." | Create a new payment attempt nonce/key for the changed order. |
 | `422` validation error | Invalid amount, currency, nonce, URL, origin, or metadata shape. | No, fix input. | n/a | "Payment information is invalid. Please refresh and retry." | Validate server-side amount/currency and registered URL origins. |
 | `429` | Rate limit. | Yes, after `Retry-After` when present. | Reuse only for the same logical attempt and same payload. | "Payment is busy. Please retry shortly." | Back off; do not create many new payment attempts. |
@@ -103,19 +103,10 @@ guaranteed immediate payment-method availability.
 
 ## Refunds and adjustments
 
-Standard Payment refunds use the merchant refund workflow API:
-
-- `POST /v1/sdrp/direct-payments/refunds` with `Idempotency-Key`
-- `GET /v1/sdrp/direct-payments/refunds/{refund_id}`
-- `GET /v1/sdrp/direct-payments/refunds`
-- `GET /v1/sdrp/direct-payments/refunds.csv`
-
-The API supports full/partial refund records, pending/succeeded/failed states,
-refund webhooks, audit logs, remaining refundable amount caps, and statement CSV
-export. It does not move buyer or merchant funds through the endpoint. The
-merchant executes the refund transfer from its settlement wallet or another
-lawful merchant rail, then links a refund chain receipt. A refund is
-`succeeded` only after the receipt is validated.
+The SDRP SDK does not provide refund endpoints, refund webhooks, or a refund
+state machine. If your product offers refunds, handle the buyer policy, support
+workflow, transfer, and accounting inside your own merchant system. Use SDRP
+payment identifiers and signed payment evidence only as reconciliation inputs.
 
 Micro / Nano adjustments remain outside the Standard Hosted Checkout GA scope.
 Use the explicit Siglume support or platform process available to your account.

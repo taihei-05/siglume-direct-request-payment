@@ -567,7 +567,7 @@ describe("DirectRequestPaymentMerchantClient", () => {
     ]);
   });
 
-  it("reads readiness and creates refunds with Idempotency-Key", async () => {
+  it("reads hosted checkout readiness", async () => {
     const calls: Array<{ url: string; method: string; headers: Record<string, string>; body: any }> = [];
     const responses = [
       envelope({
@@ -579,47 +579,9 @@ describe("DirectRequestPaymentMerchantClient", () => {
           checks: [],
           missing_requirements: [],
           blockers: [],
+          merchant_responsibility_attested: true,
+          live_mode_enabled: true,
         },
-      }),
-      envelope({
-        refund_id: "rfnd_123",
-        id: "row_123",
-        merchant: "shop",
-        merchant_user_id: "usr_merchant",
-        buyer_user_id: "usr_buyer",
-        direct_payment_requirement_id: "dpr_123",
-        currency: "JPY",
-        token_symbol: "JPYC",
-        amount_minor: 500,
-        status: "pending",
-        metadata_jsonb: {},
-      }),
-      envelope({
-        items: [
-          {
-            refund_id: "rfnd_123",
-            id: "row_123",
-            merchant: "shop",
-            merchant_user_id: "usr_merchant",
-            buyer_user_id: "usr_buyer",
-            currency: "JPY",
-            token_symbol: "JPYC",
-            amount_minor: 500,
-            status: "pending",
-          },
-        ],
-        next_cursor: null,
-      }),
-      envelope({
-        refund_id: "rfnd_123",
-        id: "row_123",
-        merchant: "shop",
-        merchant_user_id: "usr_merchant",
-        buyer_user_id: "usr_buyer",
-        currency: "JPY",
-        token_symbol: "JPYC",
-        amount_minor: 500,
-        status: "failed",
       }),
     ];
     const fetchImpl: typeof fetch = async (input, init = {}) => {
@@ -641,32 +603,13 @@ describe("DirectRequestPaymentMerchantClient", () => {
     });
 
     const readiness = await client.getMerchantReadiness("Shop");
-    const refund = await client.createRefund({
-      idempotency_key: "refund-key-1",
-      checkout_session_id: "chk_123",
-      amount_minor: 500,
-      reason: "customer_request",
-    });
-    const refunds = await client.listRefunds({ status: "pending", limit: 10 });
-    const failed = await client.failRefund("rfnd_123", { failure_code: "MANUAL_REFUND_FAILED" });
 
     expect(readiness.ready).toBe(true);
-    expect(refund.refund_id).toBe("rfnd_123");
-    expect(refunds.items[0]?.refund_id).toBe("rfnd_123");
-    expect(failed.status).toBe("failed");
+    expect(readiness.merchant_responsibility_attested).toBe(true);
+    expect(readiness.live_mode_enabled).toBe(true);
     expect(calls.map((call) => [call.method, call.url])).toEqual([
       ["GET", "https://siglume.example/v1/sdrp/direct-payments/merchants/shop/readiness"],
-      ["POST", "https://siglume.example/v1/sdrp/direct-payments/refunds"],
-      ["GET", "https://siglume.example/v1/sdrp/direct-payments/refunds?status=pending&limit=10"],
-      ["POST", "https://siglume.example/v1/sdrp/direct-payments/refunds/rfnd_123/fail"],
     ]);
-    expect(calls[1]?.headers["Idempotency-Key"]).toBe("refund-key-1");
-    expect(calls[1]?.body).toEqual({
-      checkout_session_id: "chk_123",
-      amount_minor: 500,
-      reason: "customer_request",
-    });
-    expect(calls[3]?.body).toEqual({ failure_code: "MANUAL_REFUND_FAILED" });
   });
 
   it("creates and reads a Hosted Checkout session", async () => {

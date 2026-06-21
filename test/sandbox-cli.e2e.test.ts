@@ -202,6 +202,22 @@ describe("readiness CLI", () => {
         }));
         return;
       }
+      if (req.method === "GET" && url.pathname === "/v1/sdrp/direct-payments/merchants/example_merchant/readiness") {
+        sendJson(res, 200, envelope({
+          standard_hosted_checkout_readiness: {
+            scope: "standard_hosted_checkout",
+            ready: true,
+            status: "ready",
+            checks: [],
+            missing_requirements: [],
+            blockers: [],
+            merchant_responsibility_attested: true,
+            responsibility_attestation_version: "sdrp_standard_hosted_checkout_responsibility_v1",
+            live_mode_enabled: true,
+          },
+        }));
+        return;
+      }
       if (req.method === "GET" && url.pathname === "/v1/market/webhooks/subscriptions") {
         sendJson(res, 200, envelope([{
           id: "whsub_test",
@@ -250,9 +266,15 @@ describe("readiness CLI", () => {
       const body = JSON.parse(result.stdout) as { ok: boolean; checks: Array<{ name: string; status: string }> };
       expect(body.ok).toBe(true);
       expect(body.checks).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "hosted_checkout_readiness_ready", status: "pass" }),
+        expect.objectContaining({ name: "hosted_checkout_missing_requirements", status: "pass" }),
+        expect.objectContaining({ name: "hosted_checkout_blockers", status: "pass" }),
+        expect.objectContaining({ name: "merchant_responsibility_attested", status: "pass" }),
+        expect.objectContaining({ name: "live_mode_enabled", status: "pass" }),
         expect.objectContaining({ name: "hosted_checkout_probe", status: "pass" }),
         expect.objectContaining({ name: "webhook_delivery_probe_skipped", status: "pass" }),
       ]));
+      expect(calls).toContain("GET /v1/sdrp/direct-payments/merchants/example_merchant/readiness");
       expect(calls).toContain("POST /v1/sdrp/direct-payments/checkout-sessions");
       expect(calls).not.toContain("POST /v1/market/webhooks/test-deliveries");
     } finally {

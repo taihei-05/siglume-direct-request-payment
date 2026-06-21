@@ -38,14 +38,12 @@ surfaces. New nullable fields may be added. Existing fields should not be
 renamed or repurposed without a migration guide.
 
 Standard Hosted Checkout merchants should treat `direct_payment.confirmed` as
-the durable payment signal and `direct_payment.refund.*` as the durable refund
-workflow signal.
+the durable payment signal. The SDK does not define refund webhook events.
 
 ## Error Code Compatibility
 
 Documented error codes are public contract. Clients may branch on codes such as
-`HOSTED_CHECKOUT_READINESS_REQUIRED`, `HOSTED_CHECKOUT_NOT_ENABLED`, and
-`SDRP_REFUND_AMOUNT_EXCEEDS_REFUNDABLE`.
+`HOSTED_CHECKOUT_READINESS_REQUIRED` and `HOSTED_CHECKOUT_NOT_ENABLED`.
 
 New error codes may be added for new failure modes. Existing codes should not
 change meaning during the same major API version.

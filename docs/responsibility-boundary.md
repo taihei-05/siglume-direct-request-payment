@@ -27,8 +27,8 @@ The Standard Hosted Checkout GA surface is limited to:
 - Polygon PoS
 - JPY/JPYC and USD/USDC
 - Express and FastAPI SDK integrations
-- merchant-authenticated setup, signed webhooks, refund workflow records, and
-  receipt-based reconciliation surfaces
+- merchant-authenticated setup, signed payment webhooks, and payment
+  reconciliation/status surfaces
 
 Micro Payment, Nano Payment, subscription, scheduled autopay, custom settlement
 rails, card payment, cross-chain payment, and merchant underwriting/KYC are not
@@ -43,8 +43,6 @@ Siglume provides:
 - buyer Siglume wallet authentication on the hosted page
 - signed payment requirement/session creation
 - signed webhook delivery and retry surfaces
-- refund workflow records, amount caps, idempotency, audit entries, CSV export,
-  and refund receipt verification
 - public status/readiness and reconciliation status surfaces
 - SDK/API compatibility policy for the public protocol surface
 
@@ -58,8 +56,8 @@ The integrating merchant remains responsible for:
 
 - being merchant of record for the goods or services sold
 - product legality, fulfillment, buyer support, and order disputes
-- refund decisions, refund customer support, and executing any refund transfer
-  from the merchant-controlled settlement wallet or another lawful merchant rail
+- refund policy, refund decisions, refund customer support, and any refund
+  transfer outside SDRP
 - taxes, accounting treatment, jurisdictional compliance, and prohibited or
   restricted business screening
 - webhook endpoint operation, order-state updates, and buyer-facing messaging
@@ -98,15 +96,8 @@ regulatory step.
 
 ## Refund Boundary
 
-The refund API is a merchant refund workflow and receipt-tracking API. It
-creates idempotent refund records, caps the remaining refundable amount, emits
-refund webhooks, writes audit entries, exports CSV rows, and marks a refund
-`succeeded` only when a validated refund chain receipt is attached.
-
-It does not, by itself, move buyer or merchant funds. The merchant executes the
-refund transfer from its settlement wallet or another lawful merchant refund
-rail, then links the resulting receipt for protocol reconciliation.
-
-Do not present `POST /refunds` success as proof that money has returned to the
-buyer. Treat `pending` as an open merchant refund workflow and `succeeded` as a
-receipt-verified refund state.
+The public SDRP SDK does not provide a merchant refund API, refund receipt
+registry, refund webhook, or refund state machine. Siglume records and exposes
+the original payment evidence for Standard Hosted Checkout. If a merchant offers
+refunds to its buyers, that policy, support flow, transfer, and accounting are
+handled by the merchant outside SDRP under the merchant's own terms and systems.

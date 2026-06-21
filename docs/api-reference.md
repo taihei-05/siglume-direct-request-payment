@@ -10,7 +10,6 @@ is `siglume-direct-request-payment` and imports as
 - [One-time challenge helpers](#createdirectrequestpaymentchallengeinput-create_direct_request_payment_challenge)
 - [Recurring challenge helpers](#createdirectrequestpaymentrecurringchallengeinput-create_direct_request_payment_recurring_challenge)
 - [Hosted Checkout](#createcheckoutsessioninput-create_checkout_session)
-- [Refunds](#refunds)
 - [Webhook subscription helpers](#createwebhooksubscriptioninput-create_webhook_subscription)
 - [Webhook verification](#webhook-helpers)
 - [Payment classification](#classifydirectpaymentconfirmationevent-classify_direct_payment_confirmationevent)
@@ -595,61 +594,14 @@ POST /v1/sdrp/direct-payments/merchants/{merchant}/challenge-secret/rotate
 
 Returns the new challenge secret once.
 
-### Refunds
+### Refund Boundary
 
-Standard Payment refunds are merchant-authenticated and idempotent workflow
-records. The `Idempotency-Key` header is required for create. Siglume records
-the workflow, caps the refundable amount, emits webhooks, writes audit/CSV rows,
-and verifies refund receipts; it does not move buyer or merchant funds through
-this endpoint.
-
-```ts
-const refund = await merchant.createRefund({
-  idempotency_key: `refund-${order.id}-1`,
-  checkout_session_id: "chk_...",
-  amount_minor: 500,
-  reason: "customer_request",
-});
-```
-
-```py
-refund = merchant.create_refund(
-    idempotency_key=f"refund-{order['id']}-1",
-    checkout_session_id="chk_...",
-    amount_minor=500,
-    reason="customer_request",
-)
-```
-
-Calls:
-
-```text
-POST /v1/sdrp/direct-payments/refunds
-GET /v1/sdrp/direct-payments/refunds/{refund_id}
-GET /v1/sdrp/direct-payments/refunds
-POST /v1/sdrp/direct-payments/refunds/{refund_id}/fail
-GET /v1/sdrp/direct-payments/refunds.csv
-```
-
-Create input:
-
-- `idempotency_key`: SDK field sent as `Idempotency-Key` header
-- `checkout_session_id` or `requirement_id` / `direct_payment_requirement_id`
-- `amount_minor`: optional positive integer; omit for full remaining refund
-- `reason`: optional merchant reason
-- `refund_chain_receipt_id`: optional confirmed refund receipt reference
-
-Response fields include `refund_id`, `status` (`pending`, `succeeded`, or
-`failed`), `amount_minor`, `reason`, payment/refund receipt ids, and
-`metadata_jsonb.accounting` with remaining refundable amount, protocol accounting
-caps, `refund_transfer_boundary`, and `refund_succeeded_requires`.
-
-The refund API records and caps the merchant refund workflow. It does not claim
-that the protocol endpoint itself returns funds without a separate merchant
-refund transfer and validated refund receipt.
-`POST /refunds` without `refund_chain_receipt_id` creates a `pending` workflow
-record. A refund is `succeeded` only when a confirmed refund chain receipt is
-attached and validated.
+This SDK does not expose refund endpoints, refund webhooks, refund receipts, or
+a merchant refund state machine. Standard Hosted Checkout is a payment protocol
+and hosted checkout interface. If a merchant offers refunds to its buyers, that
+policy, support flow, transfer, and accounting live in the merchant's own order
+system outside SDRP. Use SDRP payment identifiers and signed payment evidence
+only as inputs to your own reconciliation.
 
 ### `prepareBillingMandate(merchant, input)` / `prepare_billing_mandate(...)`
 

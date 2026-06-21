@@ -50,8 +50,8 @@ Beta/out of this GA scope.
   payment investigation, use your private Siglume support channel or account
   contact.
 - Read the [current public scope](#current-public-scope) before promising
-  refunds, recurring lifecycle, or Micro / Nano settlement behavior to your own
-  users.
+  Siglume-provided refund APIs, recurring lifecycle, or Micro / Nano settlement
+  behavior to your own users.
 
 ## Current Public Scope
 
@@ -64,11 +64,11 @@ wallet and the merchant account's configured Siglume settlement wallet.
 Standard Hosted Checkout for one-time JPY/JPYC or USD/USDC payments is the
 general integration path when merchant readiness passes. Micro Payment, Nano
 Payment, subscription, and scheduled autopay remain Beta/out of this GA scope.
-Standard refunds use the merchant refund workflow API for idempotency, amount
-caps, audit, webhooks, CSV, and receipt tracking. The merchant executes the
-actual refund transfer from its settlement wallet or another lawful merchant
-rail. Micro / Nano adjustments still use the explicit Siglume support or
-platform process available to your account.
+The SDK does not provide a merchant refund API, refund state machine, refund
+receipt registry, or refund webhook. Refund policy, buyer support, and any
+refund transfer are handled by the merchant outside SDRP using the merchant's
+own lawful process. SDRP exposes the original payment identifiers and signed
+payment evidence so the merchant can reconcile its own order system.
 
 Payment requirement creation must run in the authenticated buyer's Siglume
 context. Your merchant server must not use a merchant secret or API key to
@@ -88,11 +88,11 @@ Developer Portal `cli_` API key with this package.
 - [SDRP Sandbox](./docs/sandbox.md): local checkout, signed webhook, and Micro / Nano accounting inspection before live credentials.
 - [Merchant Quickstart](./docs/merchant-quickstart.md): manual API overview and recurring challenge notes.
 - [Pricing and settlement](./docs/pricing.md): amount bands, seller-borne fees, and Micro / Nano threshold close rules.
-- [Responsibility Boundary](./docs/responsibility-boundary.md): non-custodial protocol role, merchant-of-record duties, refund transfer boundary, and GA review scope.
+- [Responsibility Boundary](./docs/responsibility-boundary.md): non-custodial protocol role, merchant-of-record duties, non-Siglume refund boundary, and GA review scope.
 - [API Reference](./docs/api-reference.md): TypeScript/Python methods, CLI checks, webhook helpers, and statement APIs.
-- [Troubleshooting](./docs/troubleshooting.md): Hosted Checkout readiness, refunds, support escalation, and safe buyer messages.
+- [Troubleshooting](./docs/troubleshooting.md): Hosted Checkout readiness, support escalation, and safe buyer messages.
 - [API and SDK Stability](./docs/api-stability.md): SemVer, API versioning, webhook compatibility, error-code compatibility, and deprecation.
-- [Status and SLA](./docs/status-and-sla.md): public status endpoint, severity levels, response targets, and support scope.
+- [Status and Service Objectives](./docs/status-and-service-objectives.md): public status endpoint, severity levels, response targets, and support scope.
 - [SDRP vs x402](./docs/concepts/sdrp-vs-x402.md): how SDRP relates to HTTP 402 and why it is not x402 wire-compatible.
 
 ## Protocol Overview
@@ -105,7 +105,7 @@ For Standard Hosted Checkout, Siglume is the non-custodial protocol provider and
 hosted checkout operator under the published Terms and Direct Request Payment
 developer page. The integrating business remains merchant of record, handles
 fulfillment, buyer support, taxes, prohibited-business screening, and refund
-transfer execution.
+policy/transfer execution outside SDRP.
 
 SDRP is built around the HTTP **402 Payment Required** lineage, but it is not
 wire-compatible with Coinbase's x402. See [SDRP vs x402](./docs/concepts/sdrp-vs-x402.md)
@@ -210,7 +210,7 @@ fulfilling orders.
 
 | Use case | Recommended path | 10-minute integration path? | Production work still required |
 | --- | --- | --- | --- |
-| EC one-time Standard payment | Hosted Checkout | Yes, with `siglume-sdrp init`, sandbox, and `siglume-check verify` when prerequisites are ready | Product DB adapter, order-owner authorization, refund handling, support process, monitoring |
+| EC one-time Standard payment | Hosted Checkout | Yes, with `siglume-sdrp init`, sandbox, and `siglume-check verify` when prerequisites are ready | Product DB adapter, order-owner authorization, merchant-owned refund/support policy, monitoring |
 | Game consumables | Hosted Checkout or agent/API | Conditional | Idempotent entitlement grants, disconnect recovery, Micro / Nano settlement reconciliation and past-due handling |
 | Paid API / AtoA | Direct API or Siglume marketplace tool | Conditional | Request idempotency, buyer auth context, reconciliation |
 | SaaS subscription | Recurring challenge plus raw API | No | Renewal, cancellation, failed renewal, plan-change lifecycle |
