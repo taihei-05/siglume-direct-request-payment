@@ -45,7 +45,7 @@ function walkMarkdown(dir) {
 function examplesFrom(file) {
   const text = fs.readFileSync(path.join(root, file), "utf8");
   const pattern =
-    /<!--\s*siglume-example:\s*(ts|py)\s+([A-Za-z0-9_-]+)\s*-->\s*```(?:ts|typescript|py|python)\n([\s\S]*?)```/g;
+    /<!--\s*siglume-example:\s*(ts|py)\s+([A-Za-z0-9_-]+)\s*-->\s*```(?:ts|typescript|py|python)\r?\n([\s\S]*?)```/g;
   return [...text.matchAll(pattern)].map((match) => ({
     file,
     language: match[1],

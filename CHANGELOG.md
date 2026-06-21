@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.32 - 2026-06-21
+
+- Made Markdown example validation robust to CRLF and LF line endings so the
+  documented 10-minute examples remain checked on Windows and CI.
+
 ## 0.4.31 - 2026-06-21
 
 - Fixed the FastAPI sync SQLAlchemy adapter to await async `authorize_order`
