@@ -9,6 +9,11 @@ official database adapters. The merchant fixes the order, amount, and currency
 on its server; the buyer pays with a Siglume wallet; Siglume applies the
 correct pricing and settlement path from the payment amount.
 
+**GA scope:** Standard Hosted Checkout for one-time JPY/JPYC or USD/USDC
+payments on Polygon PoS is generally available when merchant readiness passes.
+Micro Payment, Nano Payment, subscription, and scheduled autopay remain
+Beta/out of this GA scope.
+
 ## Start Here
 
 - **10-minute account-free sandbox:** use the local sandbox first. It needs no

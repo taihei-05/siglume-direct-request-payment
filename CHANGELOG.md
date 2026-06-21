@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.2 - 2026-06-21
+
+- Updated PyPI package metadata so the public project page reflects the
+  Standard Hosted Checkout GA scope instead of classifying the whole SDK as
+  Beta.
+- Promoted the GA/Beta scope statement to the README opening section so PyPI,
+  npm, and GitHub readers see the same distribution boundary before reviewing
+  detailed docs.
+
 ## 0.5.1 - 2026-06-21
 
 - Mapped Standard Hosted Checkout readiness to the published Siglume Terms and
