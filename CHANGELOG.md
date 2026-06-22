@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.7 - 2026-06-23
+
+- Removed retired approval fallback wording from the public README and API
+  guides so npm and PyPI package pages describe only the supported SDRP
+  approval and budget surfaces.
+
 ## 0.5.6 - 2026-06-21
 
 - Expanded docs CI invariants to block all withdrawn refund preview method and
