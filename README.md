@@ -148,7 +148,7 @@ buyer**.
    buyer's **Siglume bearer token (JWT)**. Either way a Siglume authentication
    context must be established before paying — the merchant SDK does not log the
    buyer in. Unattended runs are bounded by Siglume's **approval gates / spending
-   budgets** (per-run / daily / monthly auto-pay budgets, or Works approval), not
+   budgets** (per-run / daily / monthly auto-pay budgets), not
    by the merchant.
 
 Honest framing: the part that integrates quickly is the **merchant plumbing**

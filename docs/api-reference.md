@@ -45,7 +45,7 @@ card — and the merchant SDK never authenticates the buyer.
   (OAuth authorization with a consent screen), or a custom app holds the buyer's
   Siglume bearer token. The merchant SDK does not log the buyer in. Unattended
   runs are bounded by Siglume's approval gates / spending budgets (per-run /
-  daily / monthly auto-pay budgets, or Works approval).
+  daily / monthly auto-pay budgets).
 
 In both systems the merchant handles the same signed `direct_payment.confirmed`
 webhook. Hosted Checkout adds no new money movement and no new webhook. Inspect

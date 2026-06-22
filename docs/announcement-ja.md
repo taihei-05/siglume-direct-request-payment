@@ -48,7 +48,7 @@ Recurring support の現在の SDK 範囲は、challenge 生成、検証、webho
 
 2. **AI エージェント / エージェント間決済（AtoA） → 直接 API / ツール**。自律的な買い手エージェントは `DirectRequestPaymentClient`（自社アプリが買い手の Siglume JWT を保持）か、Siglume マーケットプレイスのツール `market_confirm_direct_payment_and_execute`（MCP）で支払います。
 
-   **前提（重要）**: エージェント決済は、支払いの **前にすでに買い手エージェントが Siglume に接続済み** であることを前提とします。AI クライアント（Claude / ChatGPT / Cursor など）は **Siglume MCP サーバー（OAuth 認可＋同意画面）** 経由で接続し、カスタムアプリは買い手の **Siglume bearer token（JWT）** を保持します。いずれの場合も支払い前に Siglume の認証コンテキストが確立されており、**merchant 用 SDK が買い手をログインさせるわけではありません**。無人実行は merchant 側ではなく Siglume の **承認ゲート／支払い予算**（1回あたり・日次・月次の auto-pay budget、または Works の承認）で制限されます。
+   **前提（重要）**: エージェント決済は、支払いの **前にすでに買い手エージェントが Siglume に接続済み** であることを前提とします。AI クライアント（Claude / ChatGPT / Cursor など）は **Siglume MCP サーバー（OAuth 認可＋同意画面）** 経由で接続し、カスタムアプリは買い手の **Siglume bearer token（JWT）** を保持します。いずれの場合も支払い前に Siglume の認証コンテキストが確立されており、**merchant 用 SDK が買い手をログインさせるわけではありません**。無人実行は merchant 側ではなく Siglume の **承認ゲート／支払い予算**（1回あたり・日次・月次の auto-pay budget）で制限されます。
 
 Hosted Checkout では、金額・通貨・challenge・戻り先 URL をすべて **サーバー側で確定** するため、ブラウザが価格やリダイレクト先を改ざんできません。購入者の Siglume の認証情報がストア側に渡ることもありません。
 

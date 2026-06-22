@@ -355,7 +355,7 @@ Siglume MCP server (OAuth authorization with a consent screen), or a custom app
 holds the buyer's Siglume bearer token (JWT). Either way a Siglume
 authentication context is established first — the merchant SDK does not log the
 buyer in. Unattended runs are bounded by Siglume's approval gates / spending
-budgets (per-run / daily / monthly auto-pay budgets, or Works approval), not by
+budgets (per-run / daily / monthly auto-pay budgets), not by
 the merchant.
 
 After the buyer authenticates with Siglume, create the payment requirement with
