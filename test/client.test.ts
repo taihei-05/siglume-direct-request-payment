@@ -500,6 +500,62 @@ describe("DirectRequestPaymentClient", () => {
     });
   });
 
+  it("preserves prepared identity for replay and separates tampered payload bytes", async () => {
+    const bodies: string[] = [];
+    const fetchImpl: typeof fetch = async (_input, init = {}) => {
+      bodies.push(String(init.body));
+      return new Response(JSON.stringify(envelope({
+        receipt: { receipt_id: "receipt_1" },
+        idempotent_replay: bodies.length > 1,
+      })), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const client = new DirectRequestPaymentClient({
+      auth_token: "buyer_token",
+      base_url: "https://siglume.example/v1",
+      fetch: fetchImpl,
+    });
+    const requirement = fixtureRequirement();
+    requirement.transaction_request = {
+      request_id: "web3tx_direct_payment_1",
+      network: "polygon",
+      chain_id: 137,
+      from_address: `0x${"11".repeat(20)}`,
+      to: `0x${"22".repeat(20)}`,
+      value_hex: "0x0",
+      contract_key: "direct_payment_hub",
+      function_name: "pay",
+      function_signature: "pay(bytes32,address,address,uint256,uint256)",
+      selector: "0x12345678",
+      data: `0x12345678${"33".repeat(32)}`,
+      expected_event_name: "DirectPaymentExecuted",
+      expected_topic0: `0x${"44".repeat(32)}`,
+      metadata_jsonb: {
+        direct_payment_requirement_id: "dpr_test",
+        requirement_hash: "sha256:req",
+        payment_kind: "direct_payment",
+      },
+      external_signature: `0x${"55".repeat(65)}`,
+      external_safe_tx_hash: `0x${"66".repeat(32)}`,
+    };
+    const payload = buildPaymentExecutionPayload(requirement, { await_finality: true });
+
+    await client.executePreparedTransaction(payload);
+    await client.executePreparedTransaction(payload);
+    await client.executePreparedTransaction({
+      ...payload,
+      transaction_request: { ...payload.transaction_request, data: "0xdeadbeef" },
+    });
+
+    expect(bodies[0]).toBe(JSON.stringify(payload));
+    expect(bodies[1]).toBe(bodies[0]);
+    expect(bodies[2]).not.toBe(bodies[0]);
+    expect(JSON.parse(bodies[0]!)).not.toHaveProperty("execution_token");
+    expect(JSON.parse(bodies[0]!)).not.toHaveProperty("trace_id");
+  });
+
   it("raises typed API errors", async () => {
     const fetchImpl: typeof fetch = async () =>
       new Response(JSON.stringify({ error: { code: "EXTERNAL_402_MERCHANT_NOT_FOUND", message: "merchant missing" } }), {
