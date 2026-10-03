@@ -27,7 +27,7 @@ Documentation = "https://github.com/taihei-05/siglume-direct-request-payment#rea
 Issues = "https://github.com/taihei-05/siglume-direct-request-payment/issues"
 
 [project.optional-dependencies]
-test = ["pytest>=8.0", "pytest-asyncio>=0.24", "respx>=0.21", "fastapi>=0.115,<1", "SQLAlchemy>=2,<3", "aiosqlite>=0.20"]
+test = ["pytest>=8.0", "pytest-asyncio>=0.24", "respx>=0.21", "fastapi>=0.115,<1", "SQLAlchemy[asyncio]>=2,<3", "aiosqlite>=0.20"]
 
 [project.scripts]
 siglume-check = "siglume_direct_request_payment._cli:main"

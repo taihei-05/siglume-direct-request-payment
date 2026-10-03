@@ -421,6 +421,56 @@ def test_builds_prepared_transaction_payloads() -> None:
 
 
 @respx.mock
+def test_execute_prepared_preserves_identity_for_replay_and_separates_tampered_payload() -> None:
+    route = respx.post("https://siglume.test/v1/market/web3/transactions/execute-prepared").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": {"receipt": {"receipt_id": "receipt_1"}, "idempotent_replay": False}},
+        )
+    )
+    client = DirectRequestPaymentClient(auth_token="buyer_jwt", base_url="https://siglume.test/v1")
+    requirement = requirement_payload()
+    requirement["transaction_request"] = {
+        "request_id": "web3tx_direct_payment_1",
+        "network": "polygon",
+        "chain_id": 137,
+        "from_address": "0x" + "11" * 20,
+        "to": "0x" + "22" * 20,
+        "value_hex": "0x0",
+        "contract_key": "direct_payment_hub",
+        "function_name": "pay",
+        "function_signature": "pay(bytes32,address,address,uint256,uint256)",
+        "selector": "0x12345678",
+        "data": "0x12345678" + "33" * 32,
+        "expected_event_name": "DirectPaymentExecuted",
+        "expected_topic0": "0x" + "44" * 32,
+        "metadata_jsonb": {
+            "direct_payment_requirement_id": "dpr_test",
+            "requirement_hash": "sha256:req",
+            "payment_kind": "direct_payment",
+        },
+        "external_signature": "0x" + "55" * 65,
+        "external_safe_tx_hash": "0x" + "66" * 32,
+    }
+    payload = build_payment_execution_payload(requirement, await_finality=True)
+
+    client.execute_prepared_transaction(payload)
+    client.execute_prepared_transaction(payload)
+    tampered = {
+        **payload,
+        "transaction_request": {**payload["transaction_request"], "data": "0xdeadbeef"},
+    }
+    client.execute_prepared_transaction(tampered)
+
+    bodies = [json.loads(call.request.content) for call in route.calls]
+    assert bodies[0] == payload
+    assert bodies[1] == bodies[0]
+    assert bodies[2] != bodies[0]
+    assert "execution_token" not in bodies[0]
+    assert "trace_id" not in bodies[0]
+
+
+@respx.mock
 def test_merchant_client_sets_up_checkout() -> None:
     merchant_account = {
         "merchant_account_id": "macc_test",
